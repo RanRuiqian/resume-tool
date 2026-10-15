@@ -1,0 +1,102 @@
+import {
+  Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle, ImageRun,
+  TabStopType, LevelFormat, AlignmentType, HeadingLevel, VerticalAlign, TableLayoutType,
+} from 'docx';
+import type { LayoutModel, LSection } from '../../render/layout';
+
+const TW = 56.6929; // twips per mm
+const hex = (c: string) => c.replace('#', '').toUpperCase();
+const NONE = { style: BorderStyle.NONE, size: 0, color: 'FFFFFF' };
+const NO_BORDERS = { top: NONE, bottom: NONE, left: NONE, right: NONE, insideHorizontal: NONE, insideVertical: NONE };
+
+function dataUrlToBytes(d: string): { data: Uint8Array; type: 'png' | 'jpg' } {
+  const [head, b64] = d.split(',');
+  const bin = typeof atob === 'function' ? atob(b64) : Buffer.from(b64, 'base64').toString('binary');
+  const data = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) data[i] = bin.charCodeAt(i);
+  return { data, type: /png/.test(head) ? 'png' : 'jpg' };
+}
+
+/** Word 渲染器：真实段落 + 内置标题样式 + 无边框表格（双栏/照片），不使用文本框（F6.4） */
+export function buildDocx(m: LayoutModel): Document {
+  const latin = m.typography.fontFamily === 'Times-Roman' ? 'Times New Roman' : m.typography.fontFamily === 'Helvetica' ? 'Arial' : 'Calibri';
+  const font = { ascii: latin, hAnsi: latin, eastAsia: m.lang === 'zh' ? 'Microsoft YaHei' : 'SimSun', cs: latin };
+  const sz = Math.round(m.typography.bodySizePt * 2);
+  const pageW = m.pageSize === 'A4' ? 11906 : 12240, pageH = m.pageSize === 'A4' ? 16838 : 15840;
+  const mL = Math.round(m.marginMm.left * TW), mR = Math.round(m.marginMm.right * TW);
+  const contentW = pageW - mL - mR;
+  const twoCol = m.columns === 2 && m.side.length > 0;
+  const sideW = twoCol ? Math.round((contentW * m.sidebarWidthPercent) / 100) : 0;
+  const mainW = contentW - sideW;
+  const itemAfter = Math.round(m.spacing.itemGapMm * TW);
+  const line = Math.round(240 * m.typography.lineHeight * 0.85);
+
+  const sectionParas = (s: LSection, width: number, narrow: boolean): Paragraph[] => {
+    const out: Paragraph[] = [new Paragraph({ text: s.title, heading: HeadingLevel.HEADING_1 })];
+    s.blocks.forEach((b, bi) => {
+      if (!narrow && s.key === 'skills' && b.text) {
+        out.push(new Paragraph({ spacing: { after: 40 }, children: [...(b.title ? [new TextRun({ text: b.title + (m.lang === 'zh' ? '：' : ': '), bold: true })] : []), new TextRun(b.text)] }));
+        return;
+      }
+      const last = bi === s.blocks.length - 1;
+      if (b.title || b.date) {
+        if (narrow) {
+          if (b.title) out.push(new Paragraph({ keepNext: true, children: [new TextRun({ text: b.title, bold: true })] }));
+          if (b.date) out.push(new Paragraph({ keepNext: true, children: [new TextRun({ text: b.date, color: hex(m.colors.muted), size: sz - 2 })] }));
+          if (b.subtitle) out.push(new Paragraph({ children: [new TextRun({ text: b.subtitle, color: hex(m.colors.muted) })] }));
+        } else {
+          const runs = [new TextRun({ text: b.title ?? '', bold: true })];
+          if (b.subtitle) runs.push(new TextRun({ text: '  ' + b.subtitle, color: hex(m.colors.muted) }));
+          if (b.date) runs.push(new TextRun({ text: '\t' + b.date, color: hex(m.colors.muted) }));
+          out.push(new Paragraph({ keepNext: true, tabStops: [{ type: TabStopType.RIGHT, position: width - 100 }], children: runs }));
+        }
+      }
+      if (b.text) out.push(new Paragraph({ children: [new TextRun(b.text)], spacing: { after: b.bullets.length ? 0 : itemAfter } }));
+      b.bullets.forEach((x, i) => out.push(new Paragraph({ numbering: { reference: 'bullets', level: 0 }, children: [new TextRun(x)], spacing: { after: i === b.bullets.length - 1 && !b.tags?.length ? (last ? 0 : itemAfter) : 0 } })));
+      if (b.tags?.length) out.push(new Paragraph({ spacing: { after: itemAfter }, children: [new TextRun({ text: b.tags.join(' · '), color: hex(m.colors.muted), size: sz - 2 })] }));
+    });
+    return out;
+  };
+
+  const headerParas: Paragraph[] = [new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun(m.header.name)] })];
+  if (m.header.headline) headerParas.push(new Paragraph({ children: [new TextRun({ text: m.header.headline, color: hex(m.colors.accent), size: sz + 3 })] }));
+  const contact = [...m.header.contacts, ...m.header.personal].join('  |  ');
+  if (contact) headerParas.push(new Paragraph({ children: [new TextRun({ text: contact, color: hex(m.colors.muted), size: sz - 1 })] }));
+  headerParas.push(new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: hex(m.headerStyle === 'band' ? m.colors.accent : m.colors.primary), space: 2 } }, spacing: { after: 120 }, children: [] }));
+
+  const children: (Paragraph | Table)[] = [];
+  if (m.photo) {
+    const img = dataUrlToBytes(m.photo.dataUrl);
+    const hPx = Math.round(m.photo.sizeMm * 3.78), wPx = Math.round(hPx * 0.8);
+    const photoW = Math.round(m.photo.sizeMm * 0.8 * TW) + 300;
+    const photoCell = new TableCell({ width: { size: photoW, type: WidthType.DXA }, borders: NO_BORDERS, verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: img.type, data: img.data, transformation: { width: wPx, height: hPx } })] })] });
+    const infoCell = new TableCell({ width: { size: contentW - photoW, type: WidthType.DXA }, borders: NO_BORDERS, verticalAlign: VerticalAlign.CENTER, children: headerParas.slice(0, -1) });
+    children.push(new Table({ layout: TableLayoutType.FIXED, width: { size: contentW, type: WidthType.DXA }, columnWidths: m.photo.position === 'left' ? [photoW, contentW - photoW] : [contentW - photoW, photoW], borders: NO_BORDERS, rows: [new TableRow({ children: m.photo.position === 'left' ? [photoCell, infoCell] : [infoCell, photoCell] })] }));
+    children.push(headerParas[headerParas.length - 1]);
+  } else children.push(...headerParas);
+
+  if (twoCol) {
+    const cell = (w: number, kids: Paragraph[], side: boolean) => new TableCell({ width: { size: w, type: WidthType.DXA }, borders: NO_BORDERS, margins: side ? { right: 200 } : { left: 200 }, children: kids.length ? kids : [new Paragraph('')] });
+    children.push(new Table({
+      layout: TableLayoutType.FIXED, width: { size: contentW, type: WidthType.DXA }, columnWidths: [sideW, mainW], borders: NO_BORDERS,
+      rows: [new TableRow({ children: [cell(sideW, m.side.flatMap((s) => sectionParas(s, sideW, true)), true), cell(mainW, m.main.flatMap((s) => sectionParas(s, mainW - 200, false)), false)] })],
+    }));
+  } else m.main.forEach((s) => children.push(...sectionParas(s, contentW, false)));
+
+  return new Document({
+    creator: 'resume-tool', title: m.header.name,
+    styles: {
+      default: { document: { run: { font, size: sz, color: hex(m.colors.text) }, paragraph: { spacing: { line, after: 0 } } } },
+      paragraphStyles: [
+        { id: 'Title', name: 'Title', basedOn: 'Normal', next: 'Normal', run: { font, size: Math.round(m.typography.nameSizePt * 2), bold: true, color: hex(m.colors.primary) }, paragraph: { spacing: { after: 40 } } },
+        { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { font, size: sz + 4, bold: true, color: hex(m.colors.primary) }, paragraph: { keepNext: true, spacing: { before: Math.round(m.spacing.sectionGapMm * TW * 0.8), after: 60 }, border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: hex(m.colors.primary), space: 1 } } } },
+      ],
+    },
+    numbering: { config: [{ reference: 'bullets', levels: [{ level: 0, format: LevelFormat.BULLET, text: '•', alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 300, hanging: 220 } } } }] }] },
+    sections: [{ properties: { page: { size: { width: pageW, height: pageH }, margin: { top: Math.round(m.marginMm.top * TW), bottom: Math.round(m.marginMm.bottom * TW), left: mL, right: mR } } }, children }],
+  });
+}
+
+export async function docxBytes(m: LayoutModel): Promise<Uint8Array> {
+  return new Uint8Array(await Packer.toArrayBuffer(buildDocx(m)));
+}

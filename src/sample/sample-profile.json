@@ -1,0 +1,547 @@
+{
+  "version": "1.2",
+  "primaryLanguage": "zh",
+  "glossary": [
+    {
+      "zh": "星河科技",
+      "en": "Galaxy Tech"
+    },
+    {
+      "zh": "云帆数据",
+      "en": "Yunfan Data"
+    },
+    {
+      "zh": "华东理工大学",
+      "en": "East China University of Science and Technology"
+    }
+  ],
+  "profile": {
+    "name": {
+      "zh": "李明",
+      "source": "zh",
+      "status": {
+        "zh": "manual",
+        "en": "confirmed"
+      },
+      "en": "Ming Li"
+    },
+    "headline": {
+      "zh": "高级前端工程师",
+      "source": "zh",
+      "status": {
+        "zh": "manual",
+        "en": "confirmed"
+      },
+      "en": "Senior Frontend Engineer"
+    },
+    "summary": {
+      "zh": "6 年 Web 前端开发经验，擅长 React、TypeScript 与前端工程化，主导过 3 个百万级用户产品的性能优化与架构升级。",
+      "source": "zh",
+      "status": {
+        "zh": "manual",
+        "en": "confirmed"
+      },
+      "en": "Frontend engineer with 6 years of web experience, specializing in React, TypeScript and frontend engineering; led performance and architecture upgrades for 3 products serving millions of users."
+    },
+    "photo": "data:image/png;base64,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",
+    "contacts": {
+      "email": "liming@example.com",
+      "phone": "+86 138-0000-0000",
+      "location": {
+        "zh": "上海",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Shanghai, China"
+      },
+      "github": "github.com/liming-demo",
+      "linkedin": "",
+      "website": ""
+    },
+    "personal": {
+      "birth": "1995-03",
+      "gender": "男",
+      "hometown": "江苏南京"
+    }
+  },
+  "education": [
+    {
+      "id": "edu-1",
+      "enabled": true,
+      "school": {
+        "zh": "华东理工大学",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "East China University of Science and Technology"
+      },
+      "degree": {
+        "zh": "本科",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "B.Eng."
+      },
+      "major": {
+        "zh": "计算机科学与技术",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Computer Science and Technology"
+      },
+      "start": "2014-09",
+      "end": "2018-06",
+      "highlights": [
+        {
+          "zh": "GPA 3.6/4.0，专业前 10%",
+          "source": "zh",
+          "status": {
+            "zh": "manual",
+            "en": "confirmed"
+          },
+          "en": "GPA 3.6/4.0, top 10% of major",
+          "id": "edu-1-h1"
+        }
+      ]
+    }
+  ],
+  "work": [
+    {
+      "id": "work-1",
+      "enabled": true,
+      "company": {
+        "zh": "星河科技",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Galaxy Tech"
+      },
+      "title": {
+        "zh": "高级前端工程师",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Senior Frontend Engineer"
+      },
+      "start": "2021-07",
+      "end": "present",
+      "tags": [
+        "React",
+        "TypeScript",
+        "Vite",
+        "Node.js"
+      ],
+      "bullets": [
+        {
+          "zh": "主导在线文档编辑器重构，将首屏加载时间从 3.2 秒降低到 1.9 秒（降低 40%）",
+          "source": "zh",
+          "status": {
+            "zh": "manual",
+            "en": "confirmed"
+          },
+          "en": "Led the rewrite of the online document editor, cutting first-screen load time from 3.2s to 1.9s (40% faster)",
+          "id": "work-1-b1"
+        },
+        {
+          "zh": "搭建基于 Vite 与 Monorepo 的前端工程体系，构建速度提升 5 倍，支撑 12 个业务团队",
+          "source": "zh",
+          "status": {
+            "zh": "manual",
+            "en": "confirmed"
+          },
+          "en": "Built a Vite + monorepo frontend toolchain, making builds 5x faster for 12 product teams",
+          "id": "work-1-b2"
+        },
+        {
+          "zh": "设计并落地组件库与设计系统，沉淀 80+ 通用组件，新页面开发效率提升 30%",
+          "source": "zh",
+          "status": {
+            "zh": "manual",
+            "en": "confirmed"
+          },
+          "en": "Designed and shipped a component library and design system with 80+ shared components, raising page delivery speed by 30%",
+          "id": "work-1-b3"
+        },
+        {
+          "zh": "带领 5 人前端小组，负责代码评审与新人培养",
+          "source": "zh",
+          "status": {
+            "zh": "manual",
+            "en": "confirmed"
+          },
+          "en": "Led a 5-person frontend team, owning code reviews and onboarding",
+          "id": "work-1-b4"
+        }
+      ]
+    },
+    {
+      "id": "work-2",
+      "enabled": true,
+      "company": {
+        "zh": "云帆数据",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Yunfan Data"
+      },
+      "title": {
+        "zh": "前端工程师",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Frontend Engineer"
+      },
+      "start": "2018-07",
+      "end": "2021-06",
+      "tags": [
+        "Vue",
+        "ECharts",
+        "WebSocket"
+      ],
+      "bullets": [
+        {
+          "zh": "负责 B 端数据可视化平台开发，支持 200+ 企业客户的实时报表",
+          "source": "zh",
+          "status": {
+            "zh": "manual",
+            "en": "confirmed"
+          },
+          "en": "Developed a B2B data-visualization platform delivering real-time reports to 200+ enterprise clients",
+          "id": "work-2-b1"
+        },
+        {
+          "zh": "基于 WebSocket 实现实时数据推送，图表刷新延迟降至 500 毫秒以内",
+          "source": "zh",
+          "status": {
+            "zh": "manual",
+            "en": "confirmed"
+          },
+          "en": "Implemented WebSocket-based live data push, bringing chart refresh latency under 500ms",
+          "id": "work-2-b2"
+        },
+        {
+          "zh": "推动前端单元测试覆盖率从 15% 提升到 70%",
+          "source": "zh",
+          "status": {
+            "zh": "manual",
+            "en": "confirmed"
+          },
+          "en": "Raised frontend unit test coverage from 15% to 70%",
+          "id": "work-2-b3"
+        }
+      ]
+    }
+  ],
+  "projects": [
+    {
+      "id": "proj-1",
+      "enabled": true,
+      "name": {
+        "zh": "开源简历生成器",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Open-Source Resume Generator"
+      },
+      "role": {
+        "zh": "作者",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Author"
+      },
+      "start": "2026-09",
+      "end": "present",
+      "tags": [
+        "React",
+        "IndexedDB",
+        "LLM"
+      ],
+      "link": "",
+      "bullets": [
+        {
+          "zh": "纯前端、隐私优先的双语简历生成工具，一键导出中英文 PDF 与 Word",
+          "source": "zh",
+          "status": {
+            "zh": "manual",
+            "en": "confirmed"
+          },
+          "en": "Privacy-first, browser-only bilingual resume generator exporting CN/EN PDF and Word in one click",
+          "id": "proj-1-b1"
+        }
+      ]
+    },
+    {
+      "id": "proj-2",
+      "enabled": true,
+      "name": {
+        "zh": "移动端性能监控 SDK",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Mobile Performance Monitoring SDK"
+      },
+      "role": {
+        "zh": "核心开发者",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Core Developer"
+      },
+      "start": "2020-03",
+      "end": "2020-12",
+      "tags": [
+        "TypeScript",
+        "Performance"
+      ],
+      "link": "",
+      "bullets": [
+        {
+          "zh": "采集 FCP、LCP 等 6 项核心指标，接入 30 个线上应用",
+          "source": "zh",
+          "status": {
+            "zh": "manual",
+            "en": "confirmed"
+          },
+          "en": "Collected 6 core metrics such as FCP and LCP across 30 production apps",
+          "id": "proj-2-b1"
+        }
+      ]
+    }
+  ],
+  "skills": [
+    {
+      "id": "sk-1",
+      "enabled": true,
+      "name": {
+        "zh": "React",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "React"
+      },
+      "category": {
+        "zh": "前端",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Frontend"
+      },
+      "level": "expert"
+    },
+    {
+      "id": "sk-2",
+      "enabled": true,
+      "name": {
+        "zh": "TypeScript",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "TypeScript"
+      },
+      "category": {
+        "zh": "前端",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Frontend"
+      },
+      "level": "expert"
+    },
+    {
+      "id": "sk-3",
+      "enabled": true,
+      "name": {
+        "zh": "Vue",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Vue"
+      },
+      "category": {
+        "zh": "前端",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Frontend"
+      },
+      "level": "advanced"
+    },
+    {
+      "id": "sk-4",
+      "enabled": true,
+      "name": {
+        "zh": "性能优化",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Performance optimization"
+      },
+      "category": {
+        "zh": "工程",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Engineering"
+      },
+      "level": "expert"
+    },
+    {
+      "id": "sk-5",
+      "enabled": true,
+      "name": {
+        "zh": "Vite / Webpack",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Vite / Webpack"
+      },
+      "category": {
+        "zh": "工程",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Engineering"
+      },
+      "level": "advanced"
+    },
+    {
+      "id": "sk-6",
+      "enabled": true,
+      "name": {
+        "zh": "Node.js",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Node.js"
+      },
+      "category": {
+        "zh": "后端",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Backend"
+      },
+      "level": "intermediate"
+    },
+    {
+      "id": "sk-7",
+      "enabled": true,
+      "name": {
+        "zh": "英语（CET-6）",
+        "source": "zh",
+        "status": {
+          "zh": "manual"
+        }
+      },
+      "category": {
+        "zh": "语言",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Languages"
+      },
+      "level": ""
+    }
+  ],
+  "certificates": [
+    {
+      "id": "cert-1",
+      "enabled": true,
+      "name": {
+        "zh": "AWS 认证开发者 – 助理级",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "AWS Certified Developer – Associate"
+      },
+      "issuer": {
+        "zh": "亚马逊云科技",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Amazon Web Services"
+      },
+      "date": "2023-05"
+    }
+  ],
+  "awards": [
+    {
+      "id": "award-1",
+      "enabled": true,
+      "name": {
+        "zh": "年度优秀员工",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Employee of the Year"
+      },
+      "issuer": {
+        "zh": "星河科技",
+        "source": "zh",
+        "status": {
+          "zh": "manual",
+          "en": "confirmed"
+        },
+        "en": "Galaxy Tech"
+      },
+      "date": "2023-12"
+    }
+  ]
+}
