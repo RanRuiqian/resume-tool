@@ -50,6 +50,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         const j = parseJdRules(SAMPLE_JD);
         const r = { ...runConsistency(generateRules(sp, j, 'zh')), templateId: BUILTIN_TEMPLATES[0].id };
         setProfileS(sp); setJobS(j); setResumeS(r);
+        localStorage.setItem('wizardStep', '3');
+        if (!s?.setupDone) { const ns = { ...DEFAULT_SETTINGS, ...(s ?? {}), demoMode: true, setupDone: true }; setSettingsS(ns); await db.settings.put(ns); }
         await Promise.all([db.profile.put({ id: 'me', doc: sp }), db.jobs.put(j), db.resumes.put(r), db.state.bulkPut([{ id: 'jobId', value: j.id }, { id: 'resumeId', value: r.id }])]);
         history.replaceState(null, '', location.pathname + location.hash);
       }

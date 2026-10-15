@@ -65,3 +65,63 @@ table.items td:first-child { width: 120px; } tr.bad { background: #fff5f5; } tr.
 .modal { background: #fff; border-radius: 12px; padding: 18px 22px; width: 520px; max-width: 95vw; }
 .names { background: #f7fafc; border-radius: 8px; padding: 10px; font-family: ui-monospace, monospace; font-size: 12.5px; margin: 10px 0; } .indent { padding-left: 20px; }
 .loading { padding: 40px; text-align: center; }
+
+/* ---------- 向导 ---------- */
+.nav .main-nav { font-weight: 700; color: var(--c); }
+.adv-menu { position: relative; } .adv-menu summary { cursor: pointer; padding: 5px 11px; color: #3e4c59; list-style: none; }
+.adv-menu[open] > button { display: block; position: absolute; z-index: 20; left: 0; white-space: nowrap; background: #fff; border: 1px solid var(--line); }
+.adv-menu[open] > button:nth-of-type(1) { top: 32px; } .adv-menu[open] > button:nth-of-type(2) { top: 66px; }
+.wizard { max-width: 1240px; }
+.hero-text { text-align: center; padding: 30px 10px 10px; } .hero-text h1 { font-size: 28px; margin: 0 0 10px; color: var(--c); } .hero-text p { color: var(--muted); font-size: 15px; max-width: 680px; margin: 0 auto; }
+.card.setup.hero { max-width: 640px; margin: 18px auto; padding: 22px 26px; box-shadow: 0 4px 24px rgba(26,54,93,.08); }
+.setup h3 { margin: 0 0 4px; } .setup label { margin: 12px 0; font-size: 13.5px; } .setup a { color: #2b6cb0; }
+.provider-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+.provider { padding: 9px 14px; border-radius: 8px; } .provider.active { background: #e6eef8; border: 2px solid var(--c); font-weight: 600; }
+.stepper { display: flex; list-style: none; padding: 0; margin: 4px 0 16px; gap: 6px; counter-reset: s; }
+.stepper li { flex: 1; } .stepper button { width: 100%; display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-radius: 10px; font-size: 15px; background: #fff; }
+.stepper .num { width: 26px; height: 26px; border-radius: 50%; background: #e2e8f0; display: inline-flex; align-items: center; justify-content: center; font-weight: 700; font-size: 13px; flex: none; }
+.stepper li.active button { border: 2px solid var(--c); color: var(--c); font-weight: 700; } .stepper li.active .num { background: var(--c); color: #fff; }
+.stepper li.done .num { background: #38a169; color: #fff; }
+.step h2 { margin: 6px 0 4px; } .step > p.muted { margin: 0 0 12px; }
+.step h3 { margin: 0 0 8px; }
+.nav-row { margin-top: 16px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.chip { background: #edf2f7; border-radius: 12px; padding: 2px 10px; font-size: 12.5px; } .chip.must { background: #e6eef8; color: var(--c); font-weight: 600; }
+.chip.kw { background: #f0fff4; color: #276749; } .chip.gap { background: #fff5f5; color: #c53030; margin: 0 3px; }
+.big-name { font-size: 22px; font-weight: 700; }
+.photo-pick { width: 76px; height: 96px; border: 2px dashed #cbd5e0; border-radius: 8px; display: flex; align-items: center; justify-content: center; text-align: center; cursor: pointer; color: var(--muted); overflow: hidden; flex: none; }
+.photo-pick img { width: 100%; height: 100%; object-fit: cover; }
+.filebtn { display: inline-block; cursor: pointer; color: #2b6cb0; }
+.dropzone { border: 2px dashed #a0aec0; border-radius: 12px; padding: 28px; text-align: center; cursor: pointer; background: #f7fafc; margin-bottom: 12px; transition: .15s; }
+.dropzone:hover { border-color: var(--c); background: #ebf4ff; } .dropzone.busy { opacity: .7; }
+.dz-icon { font-size: 36px; } .thumbs { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; } .thumbs img { max-height: 140px; max-width: 45%; border: 1px solid var(--line); }
+.empty { color: var(--muted); text-align: center; padding: 60px 20px; }
+.result-bar { display: flex; gap: 16px; align-items: center; }
+.err-text { color: #c53030; } .ok-text { color: #276749; }
+.quick-layout .row b { font-size: 13px; color: #3e4c59; } .sep { width: 1px; height: 22px; background: var(--line); margin: 0 6px; }
+.swatch { width: 26px; height: 26px; padding: 0; border-radius: 50%; } .swatch.active { outline: 3px solid #90cdf4; }
+.big-link { font-size: 14px; padding: 4px 0; }
+.narrow-card { max-width: 640px; }
+.spinner { display: inline-block; width: 14px; height: 14px; border: 2px solid #90cdf4; border-top-color: transparent; border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+details summary { cursor: pointer; color: #2b6cb0; margin: 10px 0; }
+@media (max-width: 860px) { .grid2, .layout-grid, .lt-row { grid-template-columns: 1fr; } .stepper button { font-size: 12px; padding: 8px; } }
+
+/* ---------- 素材池 ---------- */
+.pool-layout { display: grid; grid-template-columns: minmax(330px, 400px) 1fr; gap: 16px; align-items: start; }
+.pool { border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; padding: 10px; max-height: 1150px; overflow: auto; position: sticky; top: 60px; }
+.pool-title { display: flex; flex-direction: column; gap: 2px; padding: 4px 4px 8px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+.pool-sec { margin: 8px 0 12px; } .pool-sec-title { font-weight: 700; color: var(--c); font-size: 13.5px; margin: 4px 4px 6px; }
+.pool-entry { background: #fff; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; margin-bottom: 6px; }
+.pool-entry.on { border-color: #90cdf4; background: #f5faff; } .pool-entry.off { opacity: .78; }
+.pool-head { display: flex; flex-direction: row; gap: 8px; align-items: flex-start; cursor: pointer; font-size: 13px; color: inherit; }
+.pool-head input, .pool-bullet input { margin-top: 3px; width: 16px; height: 16px; flex: none; cursor: pointer; }
+.pool-meta { display: block; font-size: 11.5px; color: var(--muted); }
+.pool-hints { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
+.hint { background: #f0fff4; color: #276749; border-radius: 10px; padding: 0 7px; font-size: 11px; } .small-hint { margin-left: 6px; }
+.pool-toggle { font-size: 11.5px; margin-left: 22px; }
+.pool-bullets { margin: 4px 0 2px 22px; border-left: 2px solid #e2e8f0; padding-left: 8px; }
+.pool-bullet { display: flex; flex-direction: row; gap: 6px; align-items: flex-start; font-size: 12.5px; color: #2d3748; padding: 3px 0; cursor: pointer; }
+.pool-bullet.off { color: #a0aec0; }
+.pool-unused { font-size: 11.5px; color: var(--muted); margin: 8px 4px 4px; border-top: 1px dashed var(--line); padding-top: 6px; }
+@media (max-width: 1000px) { .pool-layout { grid-template-columns: 1fr; } .pool { position: static; max-height: none; } }

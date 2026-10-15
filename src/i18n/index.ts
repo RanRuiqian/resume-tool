@@ -3,7 +3,7 @@ import { useApp } from '../store';
 
 /** UI 文案（v1 以中文为主，英文为部分翻译，缺失回退中文） */
 const zh = {
-  appName: '双语简历生成器', navProfile: '资料库', navJob: '岗位解析', navGenerate: '生成简历', navLayout: '版式设置', navSettings: '设置',
+  appName: '双语简历生成器', navWizard: '开始制作', navProfile: '我的资料', navJob: '岗位解析（逐项模式）', navGenerate: '生成（逐项模式）', navLayout: '版式设置', navSettings: '设置',
   demoBadge: '演示模式（无需 API Key）', save: '保存', cancel: '取消', add: '添加', remove: '删除', up: '上移', down: '下移',
   exportZip: '一键导出 zip', importJson: '导入 JSON', exportJson: '导出 JSON 备份', loadSample: '载入示例资料',
   translateToEn: 'AI 补译英文', translateToZh: 'AI 补译中文', parse: '解析岗位', ocr: '识别截图文字', generate: '生成中英两版',
@@ -11,7 +11,7 @@ const zh = {
 };
 type Dict = typeof zh;
 const en: Partial<Dict> = {
-  appName: 'Bilingual Resume Builder', navProfile: 'Profile', navJob: 'Job Parsing', navGenerate: 'Generate', navLayout: 'Layout', navSettings: 'Settings',
+  appName: 'Bilingual Resume Builder', navWizard: 'Start', navProfile: 'Profile', navJob: 'Job Parsing', navGenerate: 'Generate', navLayout: 'Layout', navSettings: 'Settings',
   demoBadge: 'Demo mode (no API key)', save: 'Save', cancel: 'Cancel', add: 'Add', remove: 'Delete', up: 'Up', down: 'Down',
   exportZip: 'Export zip', importJson: 'Import JSON', exportJson: 'Export JSON', loadSample: 'Load sample', translateToEn: 'AI translate → EN',
   translateToZh: 'AI translate → ZH', parse: 'Parse job', ocr: 'OCR screenshot', generate: 'Generate CN + EN', preview: 'Preview',

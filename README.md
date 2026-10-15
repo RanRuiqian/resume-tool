@@ -4,7 +4,11 @@ English | [中文](./README.zh-CN.md)
 
 A browser-only, privacy-first, open-source resume tool. Keep a structured career library locally → upload a job-post screenshot or paste the JD → AI parses the role, picks and rewrites relevant entries from your library (**never fabricating**) → one click downloads a zip with **CN/EN × PDF/Word** (4 files).
 
-## Features (v1 MVP)
+## How it works (4-step wizard)
+
+Connect an AI provider once (DeepSeek recommended; or try demo mode) → ① paste your old resume / free text, AI structures it and translates → ② drop a job-post screenshot (OCR runs locally in the browser via tesseract.js when the model has no vision) → ③ review: the full material pool on the left (AI pre-checks the most relevant entries), tick/untick to update the live preview; quick style / photo / page-count / colour switches → ④ download the zip.
+
+## Features
 
 - **Profile library** – education, work, projects, skills, certificates, awards, photo, contacts. Every text field is bilingual (zh/en); fill one side and let AI translate the other (status: machine / confirmed / stale). Glossary of fixed translations. JSON import/export. Stored in IndexedDB.
 - **JD parsing** – screenshot (vision model OCR) or pasted text → must-haves, nice-to-haves, years, bilingual keywords, company short name, role abbreviation (left blank if unsure). Editable.

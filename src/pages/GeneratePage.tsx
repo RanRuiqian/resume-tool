@@ -1,12 +1,12 @@
 import { useState } from 'react';
 import { useApp } from '../store';
 import { useT } from '../i18n';
-import type { Lang, GenItem } from '../types';
-import { generateResume, localizeAi, runConsistency, textIndex } from '../ai/generate';
+import type { Lang } from '../types';
+import { generateResume, localizeAi, runConsistency } from '../ai/generate';
 import { buildLayout } from '../render/layout';
 import { Preview } from '../render/Preview';
 import { ExportDialog } from '../components/ExportDialog';
-import { lt } from '../locale/text';
+import { ItemsEditor } from '../components/ItemsEditor';
 
 export function GeneratePage({ go }: { go: (p: string) => void }) {
   const { profile, settings, job, resume, setResume, template, templates, templateId, setTemplateId } = useApp();
@@ -16,19 +16,12 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
   const [err, setErr] = useState('');
   const [view, setView] = useState<'zh' | 'en' | 'both'>('both');
   const [showExport, setShowExport] = useState(false);
-  const idx = textIndex(profile);
-  const issueIds = new Set(resume?.consistency.issues.map((i) => i.sourceId));
 
   const run = async () => {
     if (!job) return;
     setErr('');
     try { const r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy); setResume({ ...r, templateId }); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
-  };
-  const editItem = (i: number, l: Lang, v: string) => {
-    if (!resume) return;
-    const items = resume.items.map((x, j): GenItem => (j === i ? { ...x, [l]: v, syncStatus: l === resume.primaryLanguage ? 'pending' : x.syncStatus } : x));
-    setResume(runConsistency({ ...resume, items }));
   };
   const resync = async () => {
     if (!resume) return;
@@ -76,24 +69,7 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
             </div>
             {pending > 0 && <div className="notice warn">{pending} 条主版本已修改，副版本待同步。<button onClick={resync}>重新本地化</button></div>}
           </div>
-          <div className="card">
-            <h4>逐条微调（左：中文，右：English）</h4>
-            <table className="items">
-              <thead><tr><th>来源</th><th>中文</th><th>English</th></tr></thead>
-              <tbody>
-                {resume.items.map((it, i) => {
-                  const src = idx.get(it.sourceId);
-                  return (
-                    <tr key={it.sourceId} className={issueIds.has(it.sourceId) ? 'bad' : it.syncStatus === 'pending' ? 'pending' : ''}>
-                      <td className="small" title={src ? lt(src.t, resume.primaryLanguage) : ''}>{it.sourceId}<div className="muted">{src?.parent}</div></td>
-                      <td><textarea rows={2} value={it.zh} onChange={(e) => editItem(i, 'zh', e.target.value)} /></td>
-                      <td><textarea rows={2} value={it.en} onChange={(e) => editItem(i, 'en', e.target.value)} /></td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+          <div className="card"><h4>逐条微调（左：中文，右：English）</h4><ItemsEditor /></div>
         </>
       )}
       <div className="card">
