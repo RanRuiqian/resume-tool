@@ -19,7 +19,11 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
     name: { fontSize: ty.nameSizePt, fontWeight: 700, color: m.colors.primary, lineHeight: 1.2 },
     headline: { fontSize: body + 1.5, color: m.colors.accent, marginTop: 2 },
     contact: { fontSize: body - 0.5, color: m.colors.muted, marginTop: 3 },
-    secTitle: { fontSize: body + 2, fontWeight: 700, color: m.colors.primary, borderBottomWidth: 0.6, borderBottomColor: m.colors.primary, paddingBottom: 1.5, marginBottom: 3 },
+    secTitle: m.titleStyle === 'band'
+      ? { fontSize: body + 1.5, fontWeight: 700, color: '#ffffff', backgroundColor: m.colors.primary, paddingTop: 2, paddingBottom: 2, paddingLeft: 6, marginBottom: 4 }
+      : m.titleStyle === 'bar'
+        ? { fontSize: body + 2, fontWeight: 700, color: m.colors.primary, borderLeftWidth: 3, borderLeftColor: m.colors.accent, paddingLeft: 6, marginBottom: 4 }
+        : { fontSize: body + 2, fontWeight: 700, color: m.colors.primary, borderBottomWidth: 0.6, borderBottomColor: m.colors.primary, paddingBottom: 1.5, marginBottom: 3 },
     section: { marginBottom: m.spacing.sectionGapMm * MM },
     block: { marginBottom: m.spacing.itemGapMm * MM },
     row: { flexDirection: 'row', justifyContent: 'space-between' },
@@ -29,7 +33,7 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
     dot: { width: 9, color: m.colors.accent },
   });
   const photoPt = (m.photo?.sizeMm ?? 28) * MM;
-  const photoEl = m.photo ? <Image src={m.photo.dataUrl} style={{ width: photoPt * 0.8, height: photoPt, objectFit: 'cover' }} /> : null;
+  const photoEl = m.photo ? <Image src={m.photo.dataUrl} style={{ width: photoPt * (m.photo?.aspect ?? 0.8), height: photoPt, objectFit: 'cover' }} /> : null;
   const contactLine = [...m.header.contacts, ...m.header.personal].join('  |  ');
   const twoCol = m.columns === 2 && m.side.length > 0;
 
@@ -66,10 +70,10 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
   );
 
   const headerInfo = (
-    <View style={{ flex: 1 }}>
+    <View style={{ flex: 1, alignItems: m.headerAlign === 'center' ? 'center' : 'flex-start' }}>
       <Text style={[st.name, F(m.header.name)]}>{m.header.name}</Text>
       {m.header.headline ? <Text style={[st.headline, F(m.header.headline)]}>{m.header.headline}</Text> : null}
-      {contactLine ? <Text style={[st.contact, F(contactLine)]}>{contactLine}</Text> : null}
+      {contactLine ? <Text style={[st.contact, F(contactLine), { textAlign: m.headerAlign === 'center' ? 'center' : 'left' }]}>{contactLine}</Text> : null}
     </View>
   );
   const photoInHeader = !!photoEl;

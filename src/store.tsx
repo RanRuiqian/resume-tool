@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState, ty
 import type { JobParse, ProfileDoc, ResumeDoc, Settings, TemplateConfig } from './types';
 import { db, DEFAULT_SETTINGS } from './storage/db';
 import { emptyProfile } from './storage/profileIO';
-import { BUILTIN_TEMPLATES } from './templates';
+import { BUILTIN_TEMPLATES, ALL_TEMPLATES } from './templates';
 import { normalizeProfile } from './storage/profileIO';
 import sample from './sample/sample-profile.json';
 import { SAMPLE_JD } from './sample/sampleJd';
@@ -17,6 +17,7 @@ interface AppState {
   templateId: string; setTemplateId: (id: string) => void;
   job: JobParse | null; setJob: (j: JobParse | null) => void;
   resume: ResumeDoc | null; setResume: (r: ResumeDoc | null) => void;
+  canUndo: boolean; undo: () => void;
   template: TemplateConfig;
 }
 const Ctx = createContext<AppState | null>(null);
@@ -32,6 +33,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [job, setJobS] = useState<JobParse | null>(null);
   const [resume, setResumeS] = useState<ResumeDoc | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  const [history, setHistory] = useState<ResumeDoc[]>([]);
 
   useEffect(() => {
     (async () => {
@@ -53,7 +55,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('wizardStep', '3');
         if (!s?.setupDone) { const ns = { ...DEFAULT_SETTINGS, ...(s ?? {}), demoMode: true, setupDone: true }; setSettingsS(ns); await db.settings.put(ns); }
         await Promise.all([db.profile.put({ id: 'me', doc: sp }), db.jobs.put(j), db.resumes.put(r), db.state.bulkPut([{ id: 'jobId', value: j.id }, { id: 'resumeId', value: r.id }])]);
-        history.replaceState(null, '', location.pathname + location.hash);
+        window.history.replaceState(null, '', location.pathname + location.hash);
       }
       setReady(true);
     })();
@@ -69,9 +71,14 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const deleteTemplate = (id: string) => { setCustom((c) => c.filter((x) => x.id !== id)); db.templates.delete(id); if (templateId === id) setTemplateId(BUILTIN_TEMPLATES[0].id); };
   const setTemplateId = (id: string) => { setTemplateIdS(id); db.state.put({ id: 'templateId', value: id }); };
   const setJob = (j: JobParse | null) => { setJobS(j); if (j) db.jobs.put(j); db.state.put({ id: 'jobId', value: j?.id ?? '' }); };
-  const setResume = (r: ResumeDoc | null) => { setResumeS(r); if (r) db.resumes.put(r); db.state.put({ id: 'resumeId', value: r?.id ?? '' }); };
-  const templates = [...BUILTIN_TEMPLATES, ...custom];
+  const setResume = (r: ResumeDoc | null) => {
+    // 同一份简历的修改记入撤销栈（最多 50 步）；换岗位/重新生成则清空
+    setHistory((h) => (resume && r && resume.id === r.id ? [...h.slice(-49), resume] : []));
+    setResumeS(r); if (r) db.resumes.put(r); db.state.put({ id: 'resumeId', value: r?.id ?? '' });
+  };
+  const undo = () => { const prev = history[history.length - 1]; if (!prev) return; setHistory((h) => h.slice(0, -1)); setResumeS(prev); db.resumes.put(prev); };
+  const templates = [...ALL_TEMPLATES, ...custom];
   const template = templates.find((t) => t.id === templateId) ?? BUILTIN_TEMPLATES[0];
 
-  return <Ctx.Provider value={{ ready, profile, setProfile, settings, setSettings, templates, saveTemplate, deleteTemplate, templateId, setTemplateId, job, setJob, resume, setResume, template }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ ready, profile, setProfile, settings, setSettings, templates, saveTemplate, deleteTemplate, templateId, setTemplateId, job, setJob, resume, setResume, template, canUndo: history.length > 0, undo }}>{children}</Ctx.Provider>;
 }

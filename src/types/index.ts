@@ -50,6 +50,8 @@ export interface ProfileDoc {
   profile: {
     name: LocalizedText; headline: LocalizedText; summary: LocalizedText;
     photo?: string; // data URL
+    /** 照片宽高比（宽/高），裁剪时写入；默认 0.75 */
+    photoAspect?: number;
     contacts: Contacts;
     personal: PersonalInfo;
   };
@@ -81,7 +83,7 @@ export interface TemplateConfig {
   version: string;
   builtin?: boolean;
   page: { size: 'A4' | 'LETTER'; marginMm: { top: number; right: number; bottom: number; left: number }; targetPages: number; autoFit?: boolean };
-  layout: { columns: 1 | 2; sidebarWidthPercent: number; sidebarModules: ModuleKey[]; headerStyle: 'band' | 'plain' };
+  layout: { columns: 1 | 2; sidebarWidthPercent: number; sidebarModules: ModuleKey[]; headerStyle: 'band' | 'plain'; titleStyle?: 'underline' | 'bar' | 'band'; headerAlign?: 'left' | 'center' };
   moduleOrder: ModuleKey[];
   colors: { primary: string; text: string; muted: string; accent: string };
   spacing: { sectionGapMm: number; itemGapMm: number };
@@ -89,8 +91,12 @@ export interface TemplateConfig {
 }
 
 export interface Bi { zh: string; en: string }
+/** 备考大方向：每条必须引用 JD 原文 */
+export interface PrepDirection { area: Bi; why: Bi; source: string }
 export interface JobParse {
   id: string;
+  /** 原始岗位截图（data URL，仅存本机） */
+  screenshots?: string[];
   createdAt: string;
   rawText: string;
   jdLanguage: Lang;
@@ -121,11 +127,15 @@ export interface ResumeDoc {
   consistency: { checkedAt: string; issues: ConsistencyIssue[] };
   generatedBy: 'ai' | 'rules';
   notes?: string[];
+  /** 求职信 / 自我介绍 / 面试准备（可选功能） */
+  extras?: { coverLetter?: Bi; selfIntro?: Bi; prep?: PrepDirection[] };
 }
 
 export interface ExportRecord {
   id: string; resumeId: string; company: string; roleAbbr: string; date: string; seq: number;
   zipName: string; files: string[]; exportedAt: string;
+  /** 投递记录用：生成文件本体（仅存本机 IndexedDB） */
+  jobId?: string; zip?: Uint8Array; blobs?: Record<string, Uint8Array>;
 }
 
 export interface Settings {

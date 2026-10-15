@@ -11,13 +11,17 @@ export interface LayoutModel {
   columns: 1 | 2;
   sidebarWidthPercent: number;
   headerStyle: 'band' | 'plain';
+  titleStyle: 'underline' | 'bar' | 'band';
+  headerAlign: 'left' | 'center';
   colors: TemplateConfig['colors'];
   spacing: TemplateConfig['spacing'];
   typography: Typography;
-  photo: { dataUrl: string; position: Exclude<PhotoPosition, 'none'>; sizeMm: number } | null;
+  photo: { dataUrl: string; position: Exclude<PhotoPosition, 'none'>; sizeMm: number; aspect: number } | null;
   header: { name: string; headline: string; contacts: string[]; personal: string[] };
   main: LSection[];
   side: LSection[];
+  /** 侧栏放不下、被移到主栏末尾的模块（用于提示，不静默截断） */
+  movedFromSide: ModuleKey[];
 }
 
 /** 生成结果为空时（仅预览），按资料库全部启用条目构造 */
@@ -79,18 +83,54 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   const main: LSection[] = [], sideS: LSection[] = [];
   order.forEach((k) => { const s = sections[k]; if (s) (side.includes(k) ? sideS : main).push(s); });
 
+  // 侧栏只在第一页显示：估算高度，放不下的模块依次移到主栏末尾
+  const movedFromSide: ModuleKey[] = [];
+  if (sideS.length) {
+    const ty = loc.typography;
+    const pageW = tpl.page.size === 'A4' ? 595 : 612, pageH = tpl.page.size === 'A4' ? 842 : 792;
+    const mg = tpl.page.marginMm;
+    const colW = ((pageW - (mg.left + mg.right) * MM) * tpl.layout.sidebarWidthPercent) / 100 - 12;
+    const photoH = loc.photo.enabled && p.profile.photo ? loc.photo.sizeMm * MM : 0;
+    const headerH = Math.max(photoH, ty.nameSizePt * 1.2 + ty.bodySizePt * ty.lineHeight * 2.4) + 8 + tpl.spacing.sectionGapMm * MM;
+    const avail = pageH - (mg.top + mg.bottom) * MM - headerH - 6;
+    while (sideS.length && sideS.reduce((h, sec) => h + estimateSectionPt(sec, colW, ty, tpl.spacing), 0) > avail) {
+      movedFromSide.unshift(sideS.pop()!.key);
+    }
+    movedFromSide.forEach((k) => main.push(sections[k]!));
+  }
+
   const c = p.profile.contacts;
   const contacts = [c.phone, c.email, T(c.location), c.github, c.linkedin, c.website].filter((x): x is string => !!x && !!x.trim());
   const personal = loc.personalFields.map((f) => (p.profile.personal[f] ? `${PERSONAL_LABEL[lang][f]}: ${p.profile.personal[f]}` : '')).filter(Boolean);
   const photo = loc.photo.enabled && loc.photo.position !== 'none' && p.profile.photo
-    ? { dataUrl: p.profile.photo, position: loc.photo.position, sizeMm: loc.photo.sizeMm } : null;
+    ? { dataUrl: p.profile.photo, position: loc.photo.position, sizeMm: loc.photo.sizeMm, aspect: p.profile.photoAspect ?? 0.8 } : null;
 
   return {
     lang, pageSize: tpl.page.size, marginMm: tpl.page.marginMm, columns: tpl.layout.columns, sidebarWidthPercent: tpl.layout.sidebarWidthPercent,
-    headerStyle: tpl.layout.headerStyle, colors: tpl.colors, spacing: tpl.spacing, typography: loc.typography, photo,
+    headerStyle: tpl.layout.headerStyle, titleStyle: tpl.layout.titleStyle ?? 'underline', headerAlign: tpl.layout.headerAlign ?? 'left', colors: tpl.colors, spacing: tpl.spacing, typography: loc.typography, photo,
     header: { name: T(p.profile.name), headline: T(p.profile.headline), contacts, personal },
-    main, side: sideS,
+    main, side: sideS, movedFromSide,
   };
 }
 
 export const MM = 72 / 25.4; // pt per mm
+
+/** 粗略估算文本宽度（pt）：中日韩字符按 1em，拉丁字符按 0.52em */
+function textWidthPt(t: string, size: number) {
+  let w = 0;
+  for (const ch of t) w += /[\u2e80-\u9fff\uff00-\uffef\u3000-\u303f]/.test(ch) ? size : size * 0.52;
+  return w;
+}
+/** 估算侧栏（窄栏）模块高度（pt），偏保守 */
+export function estimateSectionPt(sec: LSection, colW: number, ty: Typography, sp: TemplateConfig['spacing']): number {
+  const lh = ty.bodySizePt * ty.lineHeight;
+  const lines = (t: string | undefined, size = ty.bodySizePt, indent = 0) => (t ? Math.max(1, Math.ceil(textWidthPt(t, size) / (colW - indent))) : 0);
+  let h = (ty.bodySizePt + 2) * 1.4 + 6;
+  for (const b of sec.blocks) {
+    h += (lines(b.title) + lines(b.subtitle) + lines(b.text) + (b.tags?.length ? lines(b.tags.join(' · ')) : 0)) * lh;
+    if (b.date) h += lh * 0.9;
+    for (const x of b.bullets) h += lines(x, ty.bodySizePt, 9) * lh + 1;
+    h += sp.itemGapMm * MM;
+  }
+  return h + sp.sectionGapMm * MM;
+}

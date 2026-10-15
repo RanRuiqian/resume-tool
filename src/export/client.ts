@@ -38,12 +38,12 @@ function call<T>(type: string, args: unknown, onProgress?: (s: string) => void):
 }
 
 /** 优先在 Worker 中生成；Worker 不可用时回退主线程 */
-export async function exportZip(profile: ProfileDoc, tpl: TemplateConfig, resume: ResumeDoc | null, names: ExportNames, onProgress?: (s: string) => void): Promise<BuildZipResult> {
-  try { return await call<BuildZipResult>('zip', { profile, tpl, resume, names, fontBase: fontBase() }, onProgress); }
+export async function exportZip(profile: ProfileDoc, tpl: TemplateConfig, resume: ResumeDoc | null, names: ExportNames, onProgress?: (s: string) => void, extraFiles: Record<string, Uint8Array> = {}): Promise<BuildZipResult> {
+  try { return await call<BuildZipResult>('zip', { profile, tpl, resume, names, fontBase: fontBase(), extraFiles }, onProgress); }
   catch (e) {
     if ((e as Error).message !== 'no-worker') console.warn('worker export failed, fallback', e);
     const { buildZip } = await import('./zip');
-    return buildZip(profile, tpl, resume, names, fontBase(), onProgress);
+    return buildZip(profile, tpl, resume, names, fontBase(), onProgress, extraFiles);
   }
 }
 

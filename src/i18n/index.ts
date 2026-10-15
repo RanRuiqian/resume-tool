@@ -20,3 +20,6 @@ const DICTS: Record<Lang, Partial<Dict>> = { zh, en };
 export type MsgKey = keyof Dict;
 export const translate = (lang: Lang, k: MsgKey) => DICTS[lang][k] ?? zh[k];
 export function useT() { const { settings } = useApp(); return (k: MsgKey) => translate(settings.uiLang, k); }
+
+/** 内联双语文案：L('中文', 'English')。新增界面文字统一用它，便于完整中英切换 */
+export function useL() { const { settings } = useApp(); return (zh: string, en: string) => (settings.uiLang === 'en' ? en : zh); }

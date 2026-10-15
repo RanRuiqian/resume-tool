@@ -1,3 +1,4 @@
+import { FEATURES } from '../features';
 import type { TemplateConfig, TemplateLocale, ModuleKey } from '../types';
 
 const zhTitles: Record<ModuleKey, string> = { summary: '个人简介', work: '工作经历', projects: '项目经历', education: '教育背景', skills: '专业技能', certificates: '证书', awards: '获奖' };
@@ -47,6 +48,30 @@ export const BUILTIN_TEMPLATES: TemplateConfig[] = [
     },
   },
 ];
+
+/** 额外模板（FEATURES.extraTemplates 控制） */
+export const EXTRA_TEMPLATES: TemplateConfig[] = [
+  {
+    id: 'tpl-elegant', name: { zh: '简约居中', en: 'Elegant Centered' }, version: '1.2', builtin: true,
+    page: { size: 'A4', marginMm: { top: 14, right: 18, bottom: 14, left: 18 }, targetPages: 1 },
+    layout: { columns: 1, sidebarWidthPercent: 30, sidebarModules: [], headerStyle: 'plain', titleStyle: 'bar', headerAlign: 'center' },
+    moduleOrder: ['summary', 'education', 'work', 'projects', 'skills', 'certificates', 'awards'],
+    colors: { primary: '#2d3748', text: '#1a202c', muted: '#6b7280', accent: '#b7791f' },
+    spacing: { sectionGapMm: 4, itemGapMm: 2.2 },
+    locales: { zh: zh({ photo: { enabled: false, position: 'none', sizeMm: 28 } }), en: en({ typography: { fontFamily: 'Times-Roman', nameSizePt: 22, bodySizePt: 10.5, lineHeight: 1.3 } }) },
+  },
+  {
+    id: 'tpl-business', name: { zh: '商务色块', en: 'Business Blocks' }, version: '1.2', builtin: true,
+    page: { size: 'A4', marginMm: { top: 12, right: 14, bottom: 12, left: 14 }, targetPages: 1 },
+    layout: { columns: 1, sidebarWidthPercent: 30, sidebarModules: [], headerStyle: 'band', titleStyle: 'band', headerAlign: 'left' },
+    moduleOrder: ['summary', 'work', 'projects', 'education', 'skills', 'certificates', 'awards'],
+    colors: { primary: '#1e3a5f', text: '#1f2933', muted: '#5f6b7a', accent: '#c05621' },
+    spacing: { sectionGapMm: 3.5, itemGapMm: 2 },
+    locales: { zh: zh(), en: en() },
+  },
+];
+
+export const ALL_TEMPLATES: TemplateConfig[] = [...BUILTIN_TEMPLATES, ...(FEATURES.extraTemplates ? EXTRA_TEMPLATES : [])];
 
 export const FONT_OPTIONS = ['Noto Sans SC', 'Helvetica', 'Times-Roman'];
 export const defaultTemplate = BUILTIN_TEMPLATES[0];

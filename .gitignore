@@ -25,3 +25,5 @@ dist-ssr
 out/
 *.tsbuildinfo
 *.traineddata
+public/ocr/core/
+public/ocr/worker.min.js

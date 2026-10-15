@@ -9,7 +9,9 @@ export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number })
   const wMm = m.pageSize === 'A4' ? 210 : 215.9, hMm = m.pageSize === 'A4' ? 297 : 279.4;
   const sec = (s: LSection, narrow: boolean) => (
     <div key={s.key} style={{ marginBottom: m.spacing.sectionGapMm * PX }}>
-      <div style={{ fontSize: pt(ty.bodySizePt + 2), fontWeight: 700, color: m.colors.primary, borderBottom: `1px solid ${m.colors.primary}`, marginBottom: 4 }}>{s.title}</div>
+      <div style={m.titleStyle === 'band' ? { fontSize: pt(ty.bodySizePt + 1.5), fontWeight: 700, color: '#fff', background: m.colors.primary, padding: '2px 8px', marginBottom: 5 }
+        : m.titleStyle === 'bar' ? { fontSize: pt(ty.bodySizePt + 2), fontWeight: 700, color: m.colors.primary, borderLeft: `4px solid ${m.colors.accent}`, paddingLeft: 8, marginBottom: 5 }
+        : { fontSize: pt(ty.bodySizePt + 2), fontWeight: 700, color: m.colors.primary, borderBottom: `1px solid ${m.colors.primary}`, marginBottom: 4 }}>{s.title}</div>
       {s.blocks.map((b, i) => (
         !narrow && s.key === 'skills' && b.text ? (
           <div key={i}>{b.title && <b>{b.title}{m.lang === 'zh' ? '：' : ': '}</b>}{b.text}</div>
@@ -31,14 +33,14 @@ export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number })
       ))}
     </div>
   );
-  const photo = m.photo && <img src={m.photo.dataUrl} style={{ width: m.photo.sizeMm * 0.8 * PX, height: m.photo.sizeMm * PX, objectFit: 'cover', [m.photo.position === 'left' ? 'marginRight' : 'marginLeft']: 12 }} />;
+  const photo = m.photo && <img src={m.photo.dataUrl} style={{ width: m.photo.sizeMm * m.photo.aspect * PX, height: m.photo.sizeMm * PX, objectFit: 'cover', [m.photo.position === 'left' ? 'marginRight' : 'marginLeft']: 12 }} />;
   const twoCol = m.columns === 2 && m.side.length > 0;
   return (
     <div className="preview-wrap" style={{ width: wMm * PX * scale, minHeight: hMm * PX * scale }}>
       <div className="preview-page" style={{ width: wMm * PX, minHeight: hMm * PX, transform: `scale(${scale})`, padding: `${m.marginMm.top * PX}px ${m.marginMm.right * PX}px ${m.marginMm.bottom * PX}px ${m.marginMm.left * PX}px`, fontFamily: font, fontSize: pt(ty.bodySizePt), lineHeight: ty.lineHeight, color: m.colors.text }}>
         <div style={{ display: 'flex', alignItems: 'center', borderBottom: `${m.headerStyle === 'band' ? 3 : 1}px solid ${m.headerStyle === 'band' ? m.colors.accent : m.colors.primary}`, paddingBottom: 6, marginBottom: m.spacing.sectionGapMm * PX }}>
           {m.photo?.position === 'left' && photo}
-          <div style={{ flex: 1 }}>
+          <div style={{ flex: 1, textAlign: m.headerAlign }}>
             <div style={{ fontSize: pt(ty.nameSizePt), fontWeight: 700, color: m.colors.primary, lineHeight: 1.2 }}>{m.header.name || '（姓名）'}</div>
             {m.header.headline && <div style={{ color: m.colors.accent, fontSize: pt(ty.bodySizePt + 1.5) }}>{m.header.headline}</div>}
             <div style={{ color: m.colors.muted, fontSize: pt(ty.bodySizePt - 0.5) }}>{[...m.header.contacts, ...m.header.personal].join('  |  ')}</div>

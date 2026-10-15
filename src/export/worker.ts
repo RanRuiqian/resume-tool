@@ -7,7 +7,7 @@ self.onmessage = async (ev: MessageEvent) => {
   const { id, type, args } = ev.data;
   try {
     if (type === 'zip') {
-      const r = await buildZip(args.profile, args.tpl, args.resume, args.names, args.fontBase, (f) => self.postMessage({ id, progress: f }));
+      const r = await buildZip(args.profile, args.tpl, args.resume, args.names, args.fontBase, (f) => self.postMessage({ id, progress: f }), args.extraFiles ?? {});
       self.postMessage({ id, result: r }, [r.zip.buffer]);
     } else if (type === 'pages') {
       registerPdfFonts(args.fontBase);

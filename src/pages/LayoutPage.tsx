@@ -49,6 +49,8 @@ export function LayoutPage() {
           <h4>共享版式</h4>
           <div className="grid2">
             <label>栏数<select value={tpl.layout.columns} onChange={(e) => upd((x) => { x.layout.columns = Number(e.target.value) as 1 | 2; if (x.layout.columns === 2 && !x.layout.sidebarModules.length) x.layout.sidebarModules = ['education', 'skills', 'certificates', 'awards']; })}><option value={1}>单栏</option><option value={2}>双栏</option></select></label>
+            <label>标题样式<select value={tpl.layout.titleStyle ?? 'underline'} onChange={(e) => upd((x) => { x.layout.titleStyle = e.target.value as 'underline' | 'bar' | 'band'; })}><option value="underline">下划线</option><option value="bar">左侧色条</option><option value="band">色块</option></select></label>
+            <label>页眉对齐<select value={tpl.layout.headerAlign ?? 'left'} onChange={(e) => upd((x) => { x.layout.headerAlign = e.target.value as 'left' | 'center'; })}><option value="left">左对齐</option><option value="center">居中</option></select></label>
             {tpl.layout.columns === 2 && <label>侧栏宽度 %<input type="number" min={20} max={45} value={tpl.layout.sidebarWidthPercent} onChange={(e) => upd((x) => { x.layout.sidebarWidthPercent = Number(e.target.value); })} /></label>}
             <label>页眉样式<select value={tpl.layout.headerStyle} onChange={(e) => upd((x) => { x.layout.headerStyle = e.target.value as 'band' | 'plain'; })}><option value="plain">细线</option><option value="band">强调色粗线</option></select></label>
             <label>纸张<select value={tpl.page.size} onChange={(e) => upd((x) => { x.page.size = e.target.value as 'A4' | 'LETTER'; })}><option>A4</option><option value="LETTER">Letter</option></select></label>

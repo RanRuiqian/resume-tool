@@ -125,3 +125,48 @@ details summary { cursor: pointer; color: #2b6cb0; margin: 10px 0; }
 .pool-bullet.off { color: #a0aec0; }
 .pool-unused { font-size: 11.5px; color: var(--muted); margin: 8px 4px 4px; border-top: 1px dashed var(--line); padding-top: 6px; }
 @media (max-width: 1000px) { .pool-layout { grid-template-columns: 1fr; } .pool { position: static; max-height: none; } }
+.progress-note .pct { float: right; font-variant-numeric: tabular-nums; }
+.progress-note .bar { height: 6px; background: #d6e4f5; border-radius: 3px; margin-top: 6px; overflow: hidden; }
+.progress-note .bar > div { height: 100%; background: var(--c); transition: width .2s; }
+.cropper { width: auto; min-width: 340px; }
+.crop-view { position: relative; overflow: hidden; margin: 10px auto; background: #222; cursor: grab; touch-action: none; border-radius: 4px; }
+.crop-view img { position: absolute; left: 0; top: 0; user-select: none; pointer-events: none; transform-origin: 0 0; }
+/* round 2 */
+.lang-switch { font-weight: 600; min-width: 44px; }
+.ats .bar, .progress-note .bar { height: 8px; background: #edf2f7; border-radius: 4px; overflow: hidden; margin: 6px 0; }
+.ats .bar > div { height: 100%; transition: width .3s; }
+.insights .grid2 { gap: 24px; }
+.career-kit .kit-field { display: block; margin-top: 10px; }
+.career-kit textarea { width: 100%; }
+.interview details { border-bottom: 1px solid #edf2f7; padding: 6px 0; }
+.interview summary { cursor: pointer; font-weight: 500; }
+.job-history table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+.job-history td { padding: 6px 8px; border-top: 1px solid #edf2f7; }
+.job-history tr.cur { background: #ebf8ff; }
+.job-history td.end { text-align: right; white-space: nowrap; }
+.link.danger { color: #c53030; }
+@media (max-width: 640px) {
+  .nav { flex-wrap: wrap; gap: 4px; padding: 6px 8px; }
+  .nav .brand { width: 100%; }
+  .page { padding: 10px; }
+  .stepper { flex-wrap: wrap; }
+  .stepper li { flex: 1 1 45%; }
+  .quick-layout .row { flex-wrap: wrap; }
+  .previews { overflow-x: auto; }
+  .result-bar { flex-direction: column; align-items: flex-start; }
+  .job-history td:nth-child(3) { display: none; }
+  .modal { width: 96vw; max-height: 92vh; overflow: auto; }
+  button.big { width: 100%; }
+}
+.prep-item { padding: 8px 0; border-bottom: 1px solid #edf2f7; }
+.prep-item blockquote { margin: 4px 0 0; padding-left: 8px; border-left: 3px solid #cbd5e0; }
+.job-history ul { list-style: none; padding: 0; margin: 8px 0 0; }
+.job-history li { padding: 4px 0; border-top: 1px solid #edf2f7; }
+.job-history li.cur { background: #ebf8ff; }
+.history-detail { width: min(860px, 96vw); max-height: 90vh; overflow: auto; }
+.history-detail section { margin: 14px 0; }
+.history-detail h4 { margin: 0 0 6px; color: #2b6cb0; }
+.kv td { padding: 3px 8px; vertical-align: top; } .kv td:first-child { color: #718096; white-space: nowrap; }
+.jd-raw { white-space: pre-wrap; max-height: 240px; overflow: auto; background: #f7fafc; padding: 8px; }
+.shots { display: flex; flex-wrap: wrap; gap: 8px; } .shots img { max-height: 260px; border: 1px solid #e2e8f0; }
+.export-rec { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin-bottom: 8px; }

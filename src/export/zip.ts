@@ -37,7 +37,7 @@ export interface BuildZipResult { zip: Uint8Array; files: Record<string, Uint8Ar
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 /** 生成 4 个文件并打包；单个文件失败时记录错误、仍打包其余文件 */
-export async function buildZip(p: ProfileDoc, tpl: TemplateConfig, r: ResumeDoc | null, names: ExportNames, fontBase: string, onProgress?: (s: string) => void): Promise<BuildZipResult> {
+export async function buildZip(p: ProfileDoc, tpl: TemplateConfig, r: ResumeDoc | null, names: ExportNames, fontBase: string, onProgress?: (s: string) => void, extraFiles: Record<string, Uint8Array> = {}): Promise<BuildZipResult> {
   registerPdfFonts(fontBase);
   const zip = new JSZip();
   const files: Record<string, Uint8Array> = {};
@@ -56,6 +56,7 @@ export async function buildZip(p: ProfileDoc, tpl: TemplateConfig, r: ResumeDoc 
     try { files[docxName] = await docxBytes(buildLayout(p, used, lang, r)); zip.file(docxName, files[docxName], { binary: true }); }
     catch (e) { errors.push(`${docxName}: ${(e as Error).message}`); }
   }
+  for (const [n, b] of Object.entries(extraFiles)) { files[n] = b; zip.file(n, b, { binary: true }); }
   // 按 CN.pdf, CN.docx, EN.pdf, EN.docx 顺序；JSZip 对非 ASCII 文件名写入 UTF-8 标志位
   const out = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
   return { zip: out, files, errors, pages, fitLevel };

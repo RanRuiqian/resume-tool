@@ -1,6 +1,6 @@
 import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle, ImageRun,
-  TabStopType, LevelFormat, AlignmentType, HeadingLevel, VerticalAlign, TableLayoutType,
+  TabStopType, LevelFormat, ShadingType, AlignmentType, HeadingLevel, VerticalAlign, TableLayoutType,
 } from 'docx';
 import type { LayoutModel, LSection } from '../../render/layout';
 
@@ -58,17 +58,18 @@ export function buildDocx(m: LayoutModel): Document {
     return out;
   };
 
-  const headerParas: Paragraph[] = [new Paragraph({ heading: HeadingLevel.TITLE, children: [new TextRun(m.header.name)] })];
-  if (m.header.headline) headerParas.push(new Paragraph({ children: [new TextRun({ text: m.header.headline, color: hex(m.colors.accent), size: sz + 3 })] }));
+  const al = m.headerAlign === 'center' ? AlignmentType.CENTER : AlignmentType.LEFT;
+  const headerParas: Paragraph[] = [new Paragraph({ alignment: al, heading: HeadingLevel.TITLE, children: [new TextRun(m.header.name)] })];
+  if (m.header.headline) headerParas.push(new Paragraph({ alignment: al, children: [new TextRun({ text: m.header.headline, color: hex(m.colors.accent), size: sz + 3 })] }));
   const contact = [...m.header.contacts, ...m.header.personal].join('  |  ');
-  if (contact) headerParas.push(new Paragraph({ children: [new TextRun({ text: contact, color: hex(m.colors.muted), size: sz - 1 })] }));
+  if (contact) headerParas.push(new Paragraph({ alignment: al, children: [new TextRun({ text: contact, color: hex(m.colors.muted), size: sz - 1 })] }));
   headerParas.push(new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: hex(m.headerStyle === 'band' ? m.colors.accent : m.colors.primary), space: 2 } }, spacing: { after: 120 }, children: [] }));
 
   const children: (Paragraph | Table)[] = [];
   if (m.photo) {
     const img = dataUrlToBytes(m.photo.dataUrl);
-    const hPx = Math.round(m.photo.sizeMm * 3.78), wPx = Math.round(hPx * 0.8);
-    const photoW = Math.round(m.photo.sizeMm * 0.8 * TW) + 300;
+    const hPx = Math.round(m.photo.sizeMm * 3.78), wPx = Math.round(hPx * m.photo.aspect);
+    const photoW = Math.round(m.photo.sizeMm * m.photo.aspect * TW) + 300;
     const photoCell = new TableCell({ width: { size: photoW, type: WidthType.DXA }, borders: NO_BORDERS, verticalAlign: VerticalAlign.CENTER, children: [new Paragraph({ alignment: AlignmentType.CENTER, children: [new ImageRun({ type: img.type, data: img.data, transformation: { width: wPx, height: hPx } })] })] });
     const infoCell = new TableCell({ width: { size: contentW - photoW, type: WidthType.DXA }, borders: NO_BORDERS, verticalAlign: VerticalAlign.CENTER, children: headerParas.slice(0, -1) });
     children.push(new Table({ layout: TableLayoutType.FIXED, width: { size: contentW, type: WidthType.DXA }, columnWidths: m.photo.position === 'left' ? [photoW, contentW - photoW] : [contentW - photoW, photoW], borders: NO_BORDERS, rows: [new TableRow({ children: m.photo.position === 'left' ? [photoCell, infoCell] : [infoCell, photoCell] })] }));
@@ -89,7 +90,14 @@ export function buildDocx(m: LayoutModel): Document {
       default: { document: { run: { font, size: sz, color: hex(m.colors.text) }, paragraph: { spacing: { line, after: 0 } } } },
       paragraphStyles: [
         { id: 'Title', name: 'Title', basedOn: 'Normal', next: 'Normal', run: { font, size: Math.round(m.typography.nameSizePt * 2), bold: true, color: hex(m.colors.primary) }, paragraph: { spacing: { after: 40 } } },
-        { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true, run: { font, size: sz + 4, bold: true, color: hex(m.colors.primary) }, paragraph: { keepNext: true, spacing: { before: Math.round(m.spacing.sectionGapMm * TW * 0.8), after: 60 }, border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: hex(m.colors.primary), space: 1 } } } },
+        { id: 'Heading1', name: 'Heading 1', basedOn: 'Normal', next: 'Normal', quickFormat: true,
+          run: { font, size: sz + 4, bold: true, color: m.titleStyle === 'band' ? 'FFFFFF' : hex(m.colors.primary) },
+          paragraph: {
+            keepNext: true, spacing: { before: Math.round(m.spacing.sectionGapMm * TW * 0.8), after: 60 },
+            ...(m.titleStyle === 'band' ? { shading: { type: ShadingType.CLEAR, color: 'auto', fill: hex(m.colors.primary) } }
+              : m.titleStyle === 'bar' ? { border: { left: { style: BorderStyle.SINGLE, size: 24, color: hex(m.colors.accent), space: 6 } } }
+              : { border: { bottom: { style: BorderStyle.SINGLE, size: 4, color: hex(m.colors.primary), space: 1 } } }),
+          } },
       ],
     },
     numbering: { config: [{ reference: 'bullets', levels: [{ level: 0, format: LevelFormat.BULLET, text: '•', alignment: AlignmentType.LEFT, style: { paragraph: { indent: { left: 300, hanging: 220 } } } }] }] },

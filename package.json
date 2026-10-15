@@ -11,13 +11,17 @@
     "test": "vitest run",
     "typecheck": "tsc -b",
     "verify:export": "tsx --tsconfig tsconfig.app.json scripts/verify-export.ts",
-    "e2e:ai": "tsx --tsconfig tsconfig.app.json scripts/e2e-ai.ts"
+    "e2e:ai": "tsx --tsconfig tsconfig.app.json scripts/e2e-ai.ts",
+    "prebuild": "node scripts/copy-ocr-assets.mjs",
+    "predev": "node scripts/copy-ocr-assets.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.9.0",
     "dexie": "^4.4.6",
     "docx": "^9.11.0",
     "jszip": "^3.10.2",
+    "mammoth": "^1.13.0",
+    "pdfjs-dist": "^6.4.299",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tesseract.js": "^7.0.0"
