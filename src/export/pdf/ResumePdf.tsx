@@ -82,11 +82,12 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
           {photoInHeader && m.photo?.position === 'right' && <View style={{ marginLeft: 12 }}>{photoEl}</View>}
         </View>
         {twoCol ? (
-          <View style={{ flexDirection: 'row' }}>
-            <View style={{ width: `${m.sidebarWidthPercent}%`, paddingRight: 10, borderRightWidth: 0.5, borderRightColor: '#d0d5dd' }}>
+          // 侧栏绝对定位于第一页；主栏用固定左边距，跨页时仍保持在右侧（修复第 2 页主栏左移）
+          <View style={{ position: 'relative' }}>
+            <View style={{ position: 'absolute', left: 0, top: 0, width: `${m.sidebarWidthPercent}%`, paddingRight: 10, borderRightWidth: 0.5, borderRightColor: '#d0d5dd' }}>
               {m.side.map((s) => renderSection(s, true))}
             </View>
-            <View style={{ flex: 1, paddingLeft: 10 }}>{m.main.map((s) => renderSection(s))}</View>
+            <View style={{ marginLeft: `${m.sidebarWidthPercent}%`, paddingLeft: 12 }}>{m.main.map((s) => renderSection(s))}</View>
           </View>
         ) : (
           m.main.map((s) => renderSection(s))

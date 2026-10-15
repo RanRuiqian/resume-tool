@@ -22,9 +22,7 @@ class ResumeDB extends Dexie {
 }
 export const db = new ResumeDB();
 
-export const DEFAULT_SETTINGS: Settings = {
-  id: 'settings', demoMode: true, baseUrl: 'https://api.openai.com/v1', apiKey: '', model: 'gpt-4o-mini', visionModel: 'gpt-4o-mini', translateModel: '', uiLang: 'zh',
-};
+export { DEFAULT_SETTINGS, PROVIDERS } from './defaults';
 
 export async function countExports(company: string, roleAbbr: string, date: string) {
   return db.exports.where('[company+roleAbbr+date]').equals([company, roleAbbr, date]).count();

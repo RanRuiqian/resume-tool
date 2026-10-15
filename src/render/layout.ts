@@ -44,15 +44,15 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   /** 生成结果中若存在某条目的 bullet 子集，则只取已选 bullet */
   const pickBullets = (arr: LocalizedText[]) => {
     if (!resume) return arr.map(B).filter(Boolean);
-    const chosen = arr.filter((b) => b.id && itemMap.has(b.id));
-    return (chosen.length ? chosen : arr).map(B).filter(Boolean);
+    // 生成结果中只显示被选中的要点（用户可在素材池中勾选/取消）
+    return arr.filter((b) => b.id && itemMap.has(b.id)).map(B).filter(Boolean);
   };
   const range = (s: string, e: string) => formatRange(s, e, loc.dateFormat, loc.presentLabel);
   const byIds = <X extends { id: string }>(arr: X[], ids: string[]) => ids.map((id) => arr.find((x) => x.id === id)).filter((x): x is X => !!x);
 
   const sections: Partial<Record<ModuleKey, LSection>> = {};
   const title = (k: ModuleKey) => loc.sectionTitles[k];
-  const summaryText = itemMap.get('summary')?.[lang]?.trim() || T(p.profile.summary);
+  const summaryText = resume ? (itemMap.get('summary')?.[lang]?.trim() || (itemMap.has('summary') ? T(p.profile.summary) : '')) : T(p.profile.summary);
   if (summaryText) sections.summary = { key: 'summary', title: title('summary'), blocks: [{ bullets: [], text: summaryText }] };
   const sep = lang === 'zh' ? ' | ' : ', ';
   const w = byIds(p.work, sel.work).map((e) => ({ title: T(e.company), subtitle: T(e.title), date: range(e.start, e.end), bullets: pickBullets(e.bullets) }));

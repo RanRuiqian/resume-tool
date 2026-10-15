@@ -1,10 +1,22 @@
 import type { ConsistencyIssue, GenItem } from '../types';
 
-/** 抽取数字 / 百分比 / 日期 token（全角转半角，去除千分位） */
+const UNIT: Record<string, number> = { 万: 1e4, 亿: 1e8, k: 1e3, K: 1e3, thousand: 1e3, m: 1e6, M: 1e6, mn: 1e6, million: 1e6, b: 1e9, B: 1e9, bn: 1e9, billion: 1e9 };
+/**
+ * 抽取数字 token 并做单位归一：全角转半角、去千分位、"20 万" = "200K" = "200,000"、"1200 万" = "12 million"。
+ * 字母中间的数字（B2B、H5）不计。
+ */
 export function numberTokens(s: string): string[] {
   const norm = s.replace(/[\uff10-\uff19]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/(\d),(?=\d{3}\b)/g, '$1');
-  const m = norm.match(/(?<![A-Za-z\d.])\d+(?:\.\d+)?/g) ?? [];
-  return m.map((x) => String(parseFloat(x))).sort();
+  const re = /(?<![A-Za-z\d.])(\d+(?:\.\d+)?)(?:\s*(万|亿|thousand|million|billion|mn|bn|[kKmMbB])(?![A-Za-z]))?/g;
+  const out: string[] = [];
+  for (const m of norm.matchAll(re)) {
+    let v = parseFloat(m[1]);
+    const u = m[2];
+    // 小写 m 仅在紧跟数字时视为 million 不可靠（如 5m 可能是分钟/米），仅接受大写 M 与单词
+    if (u && u !== 'm' && u !== 'b') v *= UNIT[u];
+    out.push(String(Math.round(v * 1000) / 1000));
+  }
+  return out.sort();
 }
 
 /**

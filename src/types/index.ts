@@ -80,7 +80,7 @@ export interface TemplateConfig {
   name: { zh: string; en: string };
   version: string;
   builtin?: boolean;
-  page: { size: 'A4' | 'LETTER'; marginMm: { top: number; right: number; bottom: number; left: number }; targetPages: number };
+  page: { size: 'A4' | 'LETTER'; marginMm: { top: number; right: number; bottom: number; left: number }; targetPages: number; autoFit?: boolean };
   layout: { columns: 1 | 2; sidebarWidthPercent: number; sidebarModules: ModuleKey[]; headerStyle: 'band' | 'plain' };
   moduleOrder: ModuleKey[];
   colors: { primary: string; text: string; muted: string; accent: string };
@@ -137,4 +137,7 @@ export interface Settings {
   visionModel: string;
   translateModel: string;
   uiLang: Lang;
+  provider: 'deepseek' | 'openai' | 'qwen' | 'custom';
+  ocrMode: 'local' | 'vision';
+  setupDone: boolean;
 }

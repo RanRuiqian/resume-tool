@@ -37,3 +37,12 @@ describe('locale helpers', () => {
     expect(editText(t, 'en', 'Edited').status?.en).toBe('manual');
   });
 });
+
+describe('unit normalization', () => {
+  it('treats 万/亿 and K/million as equal values', () => {
+    expect(numberTokens('覆盖 20 万日活')).toEqual(numberTokens('covering 200K DAU'));
+    expect(numberTokens('节省 1200 万元')).toEqual(numberTokens('saving RMB 12 million'));
+    expect(numberTokens('日均 5 亿条')).toEqual(numberTokens('500 million rows per day'));
+    expect(numberTokens('召回 3 万人')).toEqual(numberTokens('30,000 users'));
+  });
+});

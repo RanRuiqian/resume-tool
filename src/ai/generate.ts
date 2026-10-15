@@ -101,13 +101,30 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   const seen = new Set<string>();
   const items: GenItem[] = [];
   for (const it of out.items ?? []) {
-    if (!idx.has(it.sourceId) || seen.has(it.sourceId) || !it.text?.trim()) { if (it.sourceId && !idx.has(it.sourceId)) notes.push(`已丢弃无来源条目：${it.sourceId}`); continue; }
-    // 数字不得被改写：与原文数字集合不同则回退原文
+    const inSelection = Object.values(exists).some((set) => set.has(it.sourceId));
+    if (!idx.has(it.sourceId) || seen.has(it.sourceId) || !it.text?.trim()) { if (it.sourceId && !idx.has(it.sourceId) && !inSelection) notes.push(`已丢弃无来源条目：${it.sourceId}`); continue; }
     const orig = lt(idx.get(it.sourceId)!.t, primary);
-    const text = numberTokens(orig).join() === numberTokens(it.text).join() ? it.text.trim() : orig;
-    if (text === orig && orig !== it.text.trim()) notes.push(`${it.sourceId} 改写改动了数字，已回退原文`);
+    let text: string;
+    if (!orig) {
+      // 资料库没有简介时允许 AI 依据资料撰写，但其中每个数字都必须在资料库中出现过
+      const libNums = new Set(numberTokens(JSON.stringify(lib)));
+      if (it.sourceId !== 'summary' || !numberTokens(it.text).every((n) => libNums.has(n))) { notes.push(`${it.sourceId} 原文为空且含资料库外的数字，已丢弃`); continue; }
+      text = it.text.trim();
+    } else {
+      // 数字不得被改写：与原文数字集合不同则回退原文
+      text = numberTokens(orig).join() === numberTokens(it.text).join() ? it.text.trim() : orig;
+      if (text === orig && orig !== it.text.trim()) notes.push(`${it.sourceId} 改写改动了数字，已回退原文`);
+    }
     seen.add(it.sourceId);
     items.push({ sourceId: it.sourceId, zh: primary === 'zh' ? text : '', en: primary === 'en' ? text : '', syncStatus: 'in-sync' });
+  }
+  // 选中的经历若没有任何要点被保留，则带上其全部要点（避免空条目）
+  const withItems = new Set(items.map((i) => idx.get(i.sourceId)?.parent));
+  for (const e of [...p.work.filter((x) => selection.work.includes(x.id)), ...p.projects.filter((x) => selection.projects.includes(x.id))]) {
+    if (!withItems.has(e.id)) e.bullets.forEach((b) => b.id && items.push({ sourceId: b.id, zh: primary === 'zh' ? lt(b, 'zh') : '', en: primary === 'en' ? lt(b, 'en') : '', syncStatus: 'in-sync' }));
+  }
+  for (const e of p.education.filter((x) => selection.education.includes(x.id))) {
+    if (!withItems.has(e.id)) e.highlights.forEach((b) => b.id && items.push({ sourceId: b.id, zh: primary === 'zh' ? lt(b, 'zh') : '', en: primary === 'en' ? lt(b, 'en') : '', syncStatus: 'in-sync' }));
   }
   return {
     id: uid('resume'), jobId: job.id, templateId: '', primaryLanguage: primary, createdAt: new Date().toISOString(),
