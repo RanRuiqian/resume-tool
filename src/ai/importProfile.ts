@@ -8,9 +8,12 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 - 日期统一为 "YYYY-MM"（只有年份写 "YYYY"），至今写 "present"。
 - 每段工作/项目经历的要点拆成 bullets 数组，每条一句，保留所有数字与成果；tags 填该经历用到的技术/工具名。
 - headline 只写职位名称本身（如「数据分析师」），不要带「求职意向：」等前缀；education.highlights 只写成绩/奖项等亮点，不要重复学校、专业、学位。
+- 文字可能杂乱无序、混合口语，请自行归类；birth（出生年月 YYYY-MM）、gender、hometown（籍贯）、politics（政治面貌）只在原文明确写出时填写。
+- uncertain：列出你不确定的归类或字段（如日期只给了大概、无法判断是工作还是项目、学位不明），每项 {"field":"如 work[0].end","note":"原因"}；确定的不要列。
 - skills 每个技能一项，category 为分类（如 前端 / 后端 / 语言 / 工具），没有则空。
 输出 JSON：
 {"lang":"zh","name":"","headline":"","summary":"","email":"","phone":"","location":"","github":"","linkedin":"","website":"",
+"birth":"","gender":"","hometown":"","politics":"","uncertain":[{"field":"","note":""}],
 "education":[{"school":"","degree":"","major":"","start":"","end":"","highlights":[""]}],
 "work":[{"company":"","title":"","start":"","end":"","bullets":[""],"tags":[""]}],
 "projects":[{"name":"","role":"","start":"","end":"","bullets":[""],"tags":[""],"link":""}],
@@ -19,8 +22,9 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 "awards":[{"name":"","issuer":"","date":""}]}`;
 
 type S = string | undefined;
-interface Raw {
-  lang?: Lang; name?: S; headline?: S; summary?: S; email?: S; phone?: S; location?: S; github?: S; linkedin?: S; website?: S;
+export interface Uncertain { field: string; note: string }
+export interface Raw {
+  lang?: Lang; name?: S; birth?: S; gender?: S; hometown?: S; politics?: S; uncertain?: { field?: S; note?: S }[]; headline?: S; summary?: S; email?: S; phone?: S; location?: S; github?: S; linkedin?: S; website?: S;
   education?: { school?: S; degree?: S; major?: S; start?: S; end?: S; highlights?: S[] }[];
   work?: { company?: S; title?: S; start?: S; end?: S; bullets?: S[]; tags?: S[] }[];
   projects?: { name?: S; role?: S; start?: S; end?: S; bullets?: S[]; tags?: S[]; link?: S }[];
@@ -40,6 +44,7 @@ export function rawToProfile(r: Raw): ProfileDoc {
   p.primaryLanguage = lang;
   p.profile.name = L(r.name); p.profile.headline = L(r.headline); p.profile.summary = L(r.summary);
   p.profile.contacts = { email: d(r.email), phone: d(r.phone), location: L(r.location), github: d(r.github), linkedin: d(r.linkedin), website: d(r.website) };
+  p.profile.personal = { birth: d(r.birth), gender: d(r.gender), hometown: d(r.hometown), politics: d(r.politics) };
   let n = 0;
   const id = (k: string) => `${k}-${++n}`;
   p.education = arr(r.education).filter((e) => e.school).map((e) => { const i = id('edu'); return { id: i, enabled: true, school: L(e.school), degree: L(e.degree), major: L(e.major), start: d(e.start), end: d(e.end), highlights: strs(e.highlights).map((h, j) => ({ ...L(h), id: `${i}-h${j + 1}` })) }; });
@@ -51,24 +56,75 @@ export function rawToProfile(r: Raw): ProfileDoc {
   return normalizeProfile(p);
 }
 
-export async function importProfileFromText(s: Settings, text: string): Promise<ProfileDoc> {
-  const r = await chatJson<Raw>(s, [{ role: 'system', content: '你是严谨的简历整理助手，只输出 JSON。' }, { role: 'user', content: `${PROMPT}\n\n原文：\n"""\n${text.slice(0, 20000)}\n"""` }]);
-  return rawToProfile(r);
+const CHUNK = 6000;
+/** 长文本按段落切块（每块 ≤ CHUNK 字），避免超出模型上下文/输出长度 */
+export function chunkText(text: string, size = CHUNK): string[] {
+  const paras = text.replace(/\r/g, '').split(/\n\s*\n|\n(?=\S)/);
+  const out: string[] = []; let cur = '';
+  for (const p of paras) {
+    if (p.length > size) { if (cur) out.push(cur); for (let i = 0; i < p.length; i += size) out.push(p.slice(i, i + size)); cur = ''; continue; }
+    if ((cur + '\n' + p).length > size && cur) { out.push(cur); cur = p; } else cur = cur ? cur + '\n' + p : p;
+  }
+  if (cur.trim()) out.push(cur);
+  return out.filter((x) => x.trim());
 }
 
-/** 合并：已有资料为空时直接替换；否则追加经历条目、补齐空白的基本信息（id 加前缀避免冲突） */
+export async function importProfileDetailed(s: Settings, text: string, onProgress?: (i: number, n: number) => void): Promise<{ profile: ProfileDoc; uncertain: Uncertain[] }> {
+  const chunks = chunkText(text);
+  let acc: ProfileDoc | null = null; const uncertain: Uncertain[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    onProgress?.(i + 1, chunks.length);
+    const hint = chunks.length > 1 ? `（这是全部资料的第 ${i + 1}/${chunks.length} 段，可能只含部分信息）` : '';
+    const r = await chatJson<Raw>(s, [{ role: 'system', content: '你是严谨的简历整理助手，只输出 JSON。' }, { role: 'user', content: `${PROMPT}${hint}\n\n原文：\n"""\n${chunks[i]}\n"""` }]);
+    for (const u of Array.isArray(r.uncertain) ? r.uncertain : []) if (u?.field || u?.note) uncertain.push({ field: (u.field ?? '').trim(), note: (u.note ?? '').trim() });
+    const p = rawToProfile(r);
+    acc = acc ? mergeProfiles(acc, p) : p;
+  }
+  return { profile: acc ?? rawToProfile({}), uncertain };
+}
+
+export async function importProfileFromText(s: Settings, text: string): Promise<ProfileDoc> {
+  return (await importProfileDetailed(s, text)).profile;
+}
+
+const nk = (...v: (string | undefined)[]) => v.map((x) => (x ?? '').toLowerCase().replace(/[\s·,，.。()（）-]/g, '')).join('|');
+const ltk = (t: LocalizedText) => t.zh || t.en || '';
+
+/** 合并（去重）：基本信息只补空白；同一段经历（公司+职位 / 学校+专业 / 项目名 / 技能名 / 证书名）合并要点，不重复追加 */
 export function mergeProfiles(base: ProfileDoc, add: ProfileDoc): ProfileDoc {
-  const isEmpty = !base.profile.name.zh && !base.profile.name.en && !base.work.length && !base.education.length;
+  const isEmpty = !base.profile.name.zh && !base.profile.name.en && !base.work.length && !base.education.length && !base.projects.length && !base.skills.length;
   if (isEmpty) return { ...add, glossary: base.glossary };
   const out = structuredClone(base);
-  const tag = `i${Date.now().toString(36)}`;
+  const tag = `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const fill = (a: LocalizedText, b: LocalizedText) => (a.zh || a.en ? a : b);
   out.profile.name = fill(out.profile.name, add.profile.name);
   out.profile.headline = fill(out.profile.headline, add.profile.headline);
   out.profile.summary = fill(out.profile.summary, add.profile.summary);
+  out.profile.contacts.location = fill(out.profile.contacts.location ?? {}, add.profile.contacts.location ?? {});
   for (const k of ['email', 'phone', 'github', 'linkedin', 'website'] as const) out.profile.contacts[k] ||= add.profile.contacts[k];
+  out.profile.personal = out.profile.personal ?? {};
+  for (const k of ['birth', 'gender', 'hometown', 'politics'] as const) out.profile.personal[k] ||= add.profile.personal?.[k];
   const re = <T extends { id: string }>(e: T): T => JSON.parse(JSON.stringify(e).replace(/"id":"([^"]+)"/g, `"id":"${tag}-$1"`));
-  out.education.push(...add.education.map(re)); out.work.push(...add.work.map(re)); out.projects.push(...add.projects.map(re));
-  out.skills.push(...add.skills.map(re)); out.certificates.push(...add.certificates.map(re)); out.awards.push(...add.awards.map(re));
+  type WithList = { id: string; bullets?: LocalizedText[]; highlights?: LocalizedText[] };
+  const mergeList = <T extends WithList>(dst: T[], src: T[], key: (e: T) => string) => {
+    for (const e of src) {
+      const k = key(e); const hit = k.replace(/\|/g, '') ? dst.find((d) => key(d) === k) : undefined;
+      if (!hit) { dst.push(re(e)); continue; }
+      for (const f of ['bullets', 'highlights'] as const) {
+        const a = hit[f], b = e[f]; if (!a || !b) continue;
+        const seen = new Set(a.map((x) => nk(ltk(x))));
+        b.forEach((x, j) => { if (!seen.has(nk(ltk(x)))) a.push({ ...x, id: `${hit.id}-${tag}-${j}` } as never); });
+      }
+      const h = hit as unknown as Record<string, unknown>, s2 = e as unknown as Record<string, unknown>;
+      for (const f of ['start', 'end', 'date', 'link']) if (f in h && !h[f] && s2[f]) h[f] = s2[f];
+      if (Array.isArray(h.tags) && Array.isArray(s2.tags)) h.tags = [...new Set([...(h.tags as string[]), ...(s2.tags as string[])])];
+    }
+  };
+  mergeList(out.work, add.work, (e) => nk(ltk(e.company), ltk(e.title)));
+  mergeList(out.education, add.education, (e) => nk(ltk(e.school), ltk(e.major)));
+  mergeList(out.projects, add.projects, (e) => nk(ltk(e.name)));
+  mergeList(out.skills as WithList[], add.skills as WithList[], (e) => nk(ltk((e as unknown as { name: LocalizedText }).name)));
+  mergeList(out.certificates as WithList[], add.certificates as WithList[], (e) => nk(ltk((e as unknown as { name: LocalizedText }).name)));
+  mergeList(out.awards as WithList[], add.awards as WithList[], (e) => nk(ltk((e as unknown as { name: LocalizedText }).name)));
   return out;
 }

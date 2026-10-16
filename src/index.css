@@ -170,3 +170,11 @@ details summary { cursor: pointer; color: #2b6cb0; margin: 10px 0; }
 .jd-raw { white-space: pre-wrap; max-height: 240px; overflow: auto; background: #f7fafc; padding: 8px; }
 .shots { display: flex; flex-wrap: wrap; gap: 8px; } .shots img { max-height: 260px; border: 1px solid #e2e8f0; }
 .export-rec { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px; margin-bottom: 8px; }
+.smart-import { border: 2px solid #90cdf4; background: #f7fbff; }
+.smart-import .big-input { width: 100%; min-height: 200px; font-size: 14px; }
+.smart-import .big-input.drag { outline: 3px dashed #3182ce; background: #ebf8ff; }
+.smart-import .review table { width: 100%; border-collapse: collapse; }
+.smart-import .review td { border-top: 1px solid #e2e8f0; padding: 6px 8px; vertical-align: top; }
+.smart-import .review td.num { font-weight: 700; text-align: center; width: 40px; }
+.smart-import .empty-row { color: #a0aec0; }
+.uncertain { color: #b7791f; background: #fffbeb; padding: 2px 6px; margin-top: 2px; border-radius: 4px; }

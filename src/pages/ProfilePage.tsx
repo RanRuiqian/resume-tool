@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { SmartImport } from '../components/SmartImport';
 import { useApp } from '../store';
 import { useT } from '../i18n';
 import { LTField } from '../components/LTField';
@@ -113,6 +114,7 @@ export function ProfilePage() {
         <button disabled={!!busy} onClick={() => doTranslate('en')}>{t('translateToEn')}（{pending.en}）</button>
         <button disabled={!!busy} onClick={() => doTranslate('zh')}>{t('translateToZh')}（{pending.zh}）</button>
       </div>
+      <SmartImport />
       {(busy || msg) && <div className="notice">{busy || msg}</div>}
       {machine > 0 && <div className="notice warn">有 {machine} 个字段为「机翻待校对」，导出前建议逐条确认。</div>}
       <div className="tabs">{TABS.map((x) => <button key={x.key} className={tab === x.key ? 'active' : ''} onClick={() => setTab(x.key)}>{x.label}{x.key !== 'basic' && x.key !== 'glossary' ? `（${profile[x.key].length}）` : ''}</button>)}</div>
