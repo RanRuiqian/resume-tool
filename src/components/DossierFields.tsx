@@ -50,7 +50,7 @@ export function ProjectDossierEditor({ e, profile, set }: { e: ProjectEntry; pro
   const filled = DOSSIER_TEXT.filter(([k]) => d[k]).length + (d.phases?.length ? 1 : 0);
   return (
     <details className="df">
-      <summary>📂 项目详细档案{filled ? `（已填 ${filled} 项）` : '（可选：积累原始素材，AI 生成时只能用这里和要点里写过的事实）'}</summary>
+      <summary>📂 项目详细档案{filled ? `（已填 ${filled} 项）` : '（可选：积累项目原始素材，只存本机）'}</summary>
       <p className="muted small">档案只存在本机，是给你自己和以后核对用的原始素材；简历上显示的仍是上面的「经历要点」。</p>
       {DOSSIER_TEXT.map(([k, label, hint]) => <Txt key={k} label={label} hint={hint} value={d[k] as string} onChange={(v) => upd((x) => { (x as Record<string, unknown>)[k] = v; })} />)}
       <List label="使用的软件 / 硬件 / 工具" value={d.tools} onChange={(v) => upd((x) => { x.tools = v; })} hint="如：Halcon、ABB IRB 1200、海康工业相机、ROS2" />

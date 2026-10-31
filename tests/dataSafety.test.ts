@@ -120,3 +120,23 @@ describe('career profile v1.3 fields', () => {
     expect(p.education[0].expectedConferralDate).toBeUndefined();
   });
 });
+
+import sample from '../src/sample/sample-profile.json';
+import { parseJdRules } from '../src/ai/jd';
+import { generateRules, runConsistency } from '../src/ai/generate';
+import { SAMPLE_JD } from '../src/sample/sampleJd';
+import { forEachText } from '../src/locale/text';
+describe('generation still traceable with v1.3 profile', () => {
+  it('every generated item points to a real sourceId; CN & EN produced', () => {
+    const p = normalizeProfile(structuredClone(sample));
+    p.projects[0].dossier = { background: '模拟背景', tools: ['Vite'], phases: [{ id: 'ph1', name: '一期' }] };
+    p.evidence.push({ id: 'ev-x', fileName: 'mock.pdf', type: 'paper', location: 'D:/x.pdf', locationKind: 'note', projectIds: [p.projects[0].id], skillIds: [], proves: 'x', confirmed: false, publicOk: false });
+    const ids = new Set<string>(['summary']); forEachText(p, (t) => { if (t.id) ids.add(t.id); });
+    for (const lang of ['zh', 'en'] as const) {
+      const r = runConsistency(generateRules(p, parseJdRules(SAMPLE_JD), lang));
+      expect(r.items.length).toBeGreaterThan(3);
+      for (const it of r.items) expect(ids.has(it.sourceId) || it.sourceId.startsWith('summary')).toBe(true);
+      expect(r.items.every((i) => i.zh && i.en)).toBe(true);
+    }
+  });
+});
