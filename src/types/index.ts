@@ -37,6 +37,10 @@ export interface BaseEntry {
   /** 智能导入合并记录：被合并内容快照、覆盖字段、追加要点 id（v1.4） */
   /** 用户在资料库中确认「这条 AI 导入 / 合并的内容属实」的时间；早于最近一次导入则视为未确认（v1.5） */
   userConfirmedAt?: string;
+  /** 同一条记录的其它称呼（另一语言写法、论文题目、简称等），用于去重与检索，不直接打印（v1.6） */
+  aliases?: string[];
+  /** 原文中的备注 / 待核实 / 证据说明：只作内部素材，不进入简历正文（v1.6） */
+  notes?: string[];
   mergeHistory?: { at: string; importTag: string; incomingId: string; incomingTitle: string; fieldsOverwritten: { field: string; old: string; new: string }[]; pointsAdded: string[]; incomingSnapshot: string }[];
 }
 
@@ -91,19 +95,30 @@ export interface EducationEntry extends BaseEntry {
   degreeProofStatus?: DegreeProofStatus;
   /** 相关课程（每门一项） */
   courses?: string[];
+  /** 智能导入时 AI 报告的原文课程数，用于检查课程是否被漏掉（v1.6） */
+  coursesInText?: number;
   /** 通过学习获得的专业能力（自填，仅作素材） */
   abilities?: string;
 }
+/** 经历类型（v1.6）：正式工作、实习、兼职、社团任职、志愿服务等，便于按岗位挑选；未填 = 未区分 */
+export type WorkKind = '' | 'fulltime' | 'internship' | 'parttime' | 'club' | 'volunteer' | 'other';
+export const WORK_KIND_LABEL: Record<WorkKind, string> = { '': '未区分', fulltime: '正式工作', internship: '实习', parttime: '兼职', club: '社团 / 学生工作', volunteer: '志愿服务', other: '其它经历' };
 export interface WorkEntry extends BaseEntry {
   company: LocalizedText; title: LocalizedText; start: string; end: string;
   bullets: LocalizedText[]; tags: string[];
+  kind?: WorkKind;
 }
+/** 项目性质（v1.6）：core = 核心研究 / 毕业设计 / 主要项目；auxiliary = 课程实验、教学实训、个人小工具等辅助项目 */
+export type ProjectKind = '' | 'core' | 'auxiliary';
 export interface ProjectEntry extends BaseEntry {
   name: LocalizedText; role: LocalizedText; start: string; end: string;
   bullets: LocalizedText[]; tags: string[]; link?: string;
   /** 详细档案；简历用的表述仍是 bullets（v1.3） */
   dossier?: ProjectDossier;
   evidenceIds?: string[];
+  kind?: ProjectKind;
+  /** 项目性质说明，如「课程实验」「教学实训」「本科毕业设计」（原文写出时才填） */
+  nature?: string;
 }
 export interface SkillEntry extends BaseEntry {
   name: LocalizedText; level?: string; category?: LocalizedText;
@@ -138,7 +153,10 @@ export interface ProfileDoc {
   awards: SimpleEntry[];
   /** v1.3 证据库 */
   evidence: Evidence[];
+  /** v1.6 智能导入的完整原始文本（母库原件），可检索；不参与简历生成 */
+  sourceTexts?: SourceText[];
 }
+export interface SourceText { id: string; at: string; files: string[]; text: string }
 
 export type ModuleKey = 'summary' | 'work' | 'projects' | 'education' | 'skills' | 'certificates' | 'awards';
 export const MODULE_KEYS: ModuleKey[] = ['summary', 'work', 'projects', 'education', 'skills', 'certificates', 'awards'];

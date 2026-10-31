@@ -1,5 +1,7 @@
-import type { Lang, LocalizedText, ProfileDoc, Settings } from '../types';
+import type { Lang, LocalizedText, ProfileDoc, ProjectKind, Settings, WorkKind } from '../types';
+const WORK_KINDS: WorkKind[] = ['fulltime', 'internship', 'parttime', 'club', 'volunteer', 'other'];
 import { chatJson } from './provider';
+import { checkAgainstSource } from './sourceCheck';
 import { emptyProfile, normalizeEvidence, normalizeProfile } from '../storage/profileIO';
 
 const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 JSON。规则：
@@ -13,12 +15,18 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 - skills 每个技能一项，category 为分类（如 前端 / 后端 / 语言 / 工具），没有则空。只列原文明确写出会用/用过的技能，严禁根据专业、课程或岗位名称推断技能。
 - education 的 courseCompletionDate（课程结束）、expectedConferralDate（预计拿学位）、actualConferralDate（已拿学位）、availableFullTimeDate（可全职入职）分别填写，只在原文明确写出时填，不能互相推断；courses 为原文列出的课程。
 - evidence：原文提到的证明材料（论文、专利、证书、成绩单、代码仓库链接、报告、获奖证书、照片等）各一项：fileName 名称，type 取 paper/patent/certificate/transcript/code/report/photo/video/award/other，location 原文给出的链接或存放位置（没有就空），proves 它证明的具体事实，project/skill 填它关联的项目名/技能名（原文看得出才填）。没有提到就输出空数组。
+- 去重（非常重要）：同一段真实经历只输出一条。同一学校 / 学位 / 专业的中文与英文写法属于同一条 education，主语言写在 school/degree/major，另一语言写法填在 schoolOther/degreeOther/majorOther；同一单位同一时间段的同一职位只输出一条 work，原文写了「实习」就是实习（kind 填 internship），严禁据此推断另有一份正式工作；同一项目的中文名、英文名、论文题目、课程说明与成果归并到同一个 project，另一语言名称填 nameOther，论文题目 / 其它称呼放 aliases，成果写进 bullets。只有原文明确是不同的经历（单位、时间或内容不同）才分开，不要因为出现相同关键词就合并不同经历。
+- work.kind：fulltime 正式工作 / internship 实习 / parttime 兼职 / club 社团或学生工作任职 / volunteer 志愿服务 / other；看不出就留空，不要猜。社团、志愿、兼职也放在 work 里并标注 kind。
+- projects.kind：core（毕业设计、学位论文、核心研究或主要项目）/ auxiliary（课程实验、教学实训、个人小工具等辅助项目）；nature 写原文给出的性质（如「本科毕业设计」「课程实验」），没写就留空。
+- 课程：courses 必须完整列出原文中的全部课程（成绩单可能有几十门，一门都不能省略），每门一项，原文有学分 / 成绩就原样附在课程名后，如「高等数学 A（5 学分，88）」；coursesInText 填原文这一段里出现的课程总数。
+- 日期：四种日期严格区分——courseCompletionDate 课程结束、expectedConferralDate 预计毕业 / 预计授予、actualConferralDate 已实际授予、availableFullTimeDate 可全职入职。原文写「预计 / 在读 / expected」的日期只能填 expectedConferralDate，绝不能填 actualConferralDate，也不要填进 end；只有原文明确写「已授予 / 已获得学位」才填 actualConferralDate；未知的日期、分数、单位名称、证书编号一律留空，严禁补全或推测。
+- notes：原文里的备注、待核实说明、证据说明（如「需补充证明」「待核实」「证书在邮箱里」）放进对应条目的 notes 数组，不要写进 bullets / highlights / summary。
 输出 JSON：
 {"lang":"zh","name":"","headline":"","summary":"","email":"","phone":"","location":"","github":"","linkedin":"","website":"",
 "birth":"","gender":"","hometown":"","politics":"","uncertain":[{"field":"","note":""}],
-"education":[{"school":"","degree":"","major":"","start":"","end":"","highlights":[""],"courseCompletionDate":"","expectedConferralDate":"","actualConferralDate":"","availableFullTimeDate":"","courses":[""]}],
-"work":[{"company":"","title":"","start":"","end":"","bullets":[""],"tags":[""]}],
-"projects":[{"name":"","role":"","start":"","end":"","bullets":[""],"tags":[""],"link":""}],
+"education":[{"school":"","schoolOther":"","degree":"","degreeOther":"","major":"","majorOther":"","start":"","end":"","highlights":[""],"courseCompletionDate":"","expectedConferralDate":"","actualConferralDate":"","availableFullTimeDate":"","courses":[""],"coursesInText":0,"notes":[""]}],
+"work":[{"company":"","companyOther":"","title":"","titleOther":"","kind":"","start":"","end":"","bullets":[""],"tags":[""],"notes":[""]}],
+"projects":[{"name":"","nameOther":"","aliases":[""],"kind":"","nature":"","role":"","start":"","end":"","bullets":[""],"tags":[""],"link":"","notes":[""]}],
 "skills":[{"name":"","category":""}],
 "certificates":[{"name":"","issuer":"","date":""}],
 "awards":[{"name":"","issuer":"","date":""}],
@@ -29,9 +37,9 @@ type S = string | undefined;
 export interface Uncertain { field: string; note: string; entryId?: string; segment?: number }
 export interface Raw {
   lang?: Lang; name?: S; birth?: S; gender?: S; hometown?: S; politics?: S; uncertain?: { field?: S; note?: S }[]; headline?: S; summary?: S; email?: S; phone?: S; location?: S; github?: S; linkedin?: S; website?: S;
-  education?: { school?: S; degree?: S; major?: S; start?: S; end?: S; highlights?: S[]; courseCompletionDate?: S; expectedConferralDate?: S; actualConferralDate?: S; availableFullTimeDate?: S; courses?: S[] }[];
-  work?: { company?: S; title?: S; start?: S; end?: S; bullets?: S[]; tags?: S[] }[];
-  projects?: { name?: S; role?: S; start?: S; end?: S; bullets?: S[]; tags?: S[]; link?: S }[];
+  education?: { school?: S; schoolOther?: S; degree?: S; degreeOther?: S; major?: S; majorOther?: S; start?: S; end?: S; highlights?: S[]; courseCompletionDate?: S; expectedConferralDate?: S; actualConferralDate?: S; availableFullTimeDate?: S; courses?: S[]; coursesInText?: number; notes?: S[] }[];
+  work?: { company?: S; companyOther?: S; title?: S; titleOther?: S; kind?: S; start?: S; end?: S; bullets?: S[]; tags?: S[]; notes?: S[] }[];
+  projects?: { name?: S; nameOther?: S; aliases?: S[]; kind?: S; nature?: S; role?: S; start?: S; end?: S; bullets?: S[]; tags?: S[]; link?: S; notes?: S[] }[];
   skills?: { name?: S; category?: S }[];
   certificates?: { name?: S; issuer?: S; date?: S }[];
   awards?: { name?: S; issuer?: S; date?: S }[];
@@ -42,6 +50,18 @@ export interface Raw {
 export function rawToProfile(r: Raw): ProfileDoc {
   const lang: Lang = r.lang === 'en' ? 'en' : 'zh';
   const L = (v: S): LocalizedText => (v && v.trim() ? { [lang]: v.trim(), source: lang, status: { [lang]: 'manual' } } : {});
+  const isZh = (v: string) => /[\u4e00-\u9fff]/.test(v);
+  /** 主语言写法 + 原文里的另一语言写法 → 一个双语字段（两种写法都来自原文，均标为人工） */
+  const L2 = (v: S, o: S): LocalizedText => {
+    // 主写法的文字与文档语言不一致（如中文资料里 AI 把英文题目放在主字段）：放到对应语言位置，避免中英文混放
+    const vv = (v ?? '').trim(); const vl: Lang = vv && isZh(vv) !== (lang === 'zh') ? (isZh(vv) ? 'zh' : 'en') : lang;
+    const t: LocalizedText = vl === lang ? L(v) : { [vl]: vv, source: vl, status: { [vl]: 'manual' } };
+    const ov = (o ?? '').trim(); if (!ov || ov === vv) return t;
+    const ol: Lang = isZh(ov) ? 'zh' : 'en';
+    if (t[ol]) return t;
+    return { ...t, [ol]: ov, source: t.source ?? ol, status: { ...(t.status ?? {}), [ol]: 'manual' } };
+  };
+  const extra = (e: { notes?: S[]; aliases?: S[] }) => ({ ...(strs(e.notes).length ? { notes: strs(e.notes) } : {}), ...(strs(e.aliases).length ? { aliases: strs(e.aliases) } : {}) });
   const arr = <T,>(a: T[] | undefined) => (Array.isArray(a) ? a : []);
   const strs = (a: S[] | undefined) => arr(a).filter((x): x is string => !!x && !!x.trim());
   const d = (v: S) => (v ?? '').trim();
@@ -52,10 +72,10 @@ export function rawToProfile(r: Raw): ProfileDoc {
   p.profile.personal = { birth: d(r.birth), gender: d(r.gender), hometown: d(r.hometown), politics: d(r.politics) };
   let n = 0;
   const id = (k: string) => `${k}-${++n}`;
-  p.education = arr(r.education).filter((e) => e.school).map((e) => { const i = id('edu'); return { id: i, enabled: true, school: L(e.school), degree: L(e.degree), major: L(e.major), start: d(e.start), end: d(e.end), highlights: strs(e.highlights).map((h, j) => ({ ...L(h), id: `${i}-h${j + 1}` })),
+  p.education = arr(r.education).filter((e) => e.school).map((e) => { const i = id('edu'); return { id: i, enabled: true, school: L2(e.school, e.schoolOther), degree: L2(e.degree, e.degreeOther), major: L2(e.major, e.majorOther), start: d(e.start), end: d(e.end), ...extra(e), ...(Number(e.coursesInText) > 0 ? { coursesInText: Number(e.coursesInText) } : {}), highlights: strs(e.highlights).map((h, j) => ({ ...L(h), id: `${i}-h${j + 1}` })),
     ...Object.fromEntries((['courseCompletionDate', 'expectedConferralDate', 'actualConferralDate', 'availableFullTimeDate'] as const).filter((k) => d(e[k])).map((k) => [k, d(e[k])])), ...(strs(e.courses).length ? { courses: strs(e.courses) } : {}) }; });
-  p.work = arr(r.work).filter((e) => e.company || e.title).map((e) => { const i = id('work'); return { id: i, enabled: true, company: L(e.company), title: L(e.title), start: d(e.start), end: d(e.end), tags: strs(e.tags), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
-  p.projects = arr(r.projects).filter((e) => e.name).map((e) => { const i = id('proj'); return { id: i, enabled: true, name: L(e.name), role: L(e.role), start: d(e.start), end: d(e.end), tags: strs(e.tags), link: d(e.link), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
+  p.work = arr(r.work).filter((e) => e.company || e.title).map((e) => { const i = id('work'); return { id: i, enabled: true, company: L2(e.company, e.companyOther), title: L2(e.title, e.titleOther), ...(WORK_KINDS.includes(d(e.kind) as WorkKind) ? { kind: d(e.kind) as WorkKind } : /实习|intern/i.test(`${e.title ?? ''} ${e.titleOther ?? ''}`) ? { kind: 'internship' as WorkKind } : {}), ...extra(e), start: d(e.start), end: d(e.end), tags: strs(e.tags), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
+  p.projects = arr(r.projects).filter((e) => e.name).map((e) => { const i = id('proj'); return { id: i, enabled: true, name: L2(e.name, e.nameOther), role: L(e.role), ...(d(e.kind) === 'core' || d(e.kind) === 'auxiliary' ? { kind: d(e.kind) as ProjectKind } : {}), ...(d(e.nature) ? { nature: d(e.nature) } : {}), ...extra(e), start: d(e.start), end: d(e.end), tags: strs(e.tags), link: d(e.link), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
   p.skills = arr(r.skills).filter((e) => e.name).map((e) => ({ id: id('sk'), enabled: true, name: L(e.name), category: L(e.category) }));
   p.certificates = arr(r.certificates).filter((e) => e.name).map((e) => ({ id: id('cert'), enabled: true, name: L(e.name), issuer: L(e.issuer), date: d(e.date) }));
   p.awards = arr(r.awards).filter((e) => e.name).map((e) => ({ id: id('award'), enabled: true, name: L(e.name), issuer: L(e.issuer), date: d(e.date) }));
@@ -86,8 +106,9 @@ export async function importProfileDetailed(s: Settings, text: string, onProgres
   for (let i = 0; i < chunks.length; i++) {
     onProgress?.(i + 1, chunks.length);
     const hint = chunks.length > 1 ? `（这是全部资料的第 ${i + 1}/${chunks.length} 段，可能只含部分信息）` : '';
-    const r = await chatJson<Raw>(s, [{ role: 'system', content: '你是严谨的简历整理助手，只输出 JSON。' }, { role: 'user', content: `${PROMPT}${hint}\n\n原文：\n"""\n${chunks[i]}\n"""` }]);
-    const p = rawToProfile(r);
+    const r = await chatJson<Raw>(s, [{ role: 'system', content: '你是严谨的简历整理助手，只输出 JSON。' }, { role: 'user', content: `${PROMPT}${hint}\n\n原文：\n"""\n${chunks[i]}\n"""` }], { maxTokens: 8000, timeoutMs: 240_000 });
+    // 本地证据检查：日期 / 任职性质 / 证书信息必须能在本段原文中找到依据（v1.6.1）
+    const p = checkAgainstSource(rawToProfile(r), chunks[i]);
     // 先在「本段」内用本段下标解析成稳定 id，再随合并映射到最终条目（A3：不依赖跨段会错位的局部下标）
     const segU: Uncertain[] = [];
     for (const u of Array.isArray(r.uncertain) ? r.uncertain : []) if (u?.field || u?.note) segU.push(resolveUncertain({ field: (u.field ?? '').trim(), note: (u.note ?? '').trim() }, p, i + 1));
@@ -141,7 +162,10 @@ export function mergeProfiles(base: ProfileDoc, add: ProfileDoc, idMap?: Map<str
         b.forEach((x, j) => { if (!seen.has(nk(ltk(x)))) a.push({ ...x, id: `${hit.id}-${tag}-${j}` } as never); });
       }
       const h = hit as unknown as Record<string, unknown>, s2 = e as unknown as Record<string, unknown>;
-      for (const f of ['start', 'end', 'date', 'link']) if (f in h && !h[f] && s2[f]) h[f] = s2[f];
+      for (const f of ['start', 'end', 'date', 'link', 'kind', 'nature', 'courseCompletionDate', 'expectedConferralDate', 'actualConferralDate', 'availableFullTimeDate']) if (!h[f] && s2[f]) h[f] = s2[f];
+      // 分段导入：课程 / 别名 / 备注取并集（长成绩单可能被切到不同段，不能只保留第一段）
+      for (const f of ['courses', 'aliases', 'notes', 'uncertain']) if (Array.isArray(s2[f])) h[f] = [...new Set([...((h[f] as string[]) ?? []), ...(s2[f] as string[])])];
+      if (typeof s2.coursesInText === 'number') h.coursesInText = ((h.coursesInText as number) ?? 0) + s2.coursesInText;
       if (Array.isArray(h.tags) && Array.isArray(s2.tags)) h.tags = [...new Set([...(h.tags as string[]), ...(s2.tags as string[])])];
     }
   };

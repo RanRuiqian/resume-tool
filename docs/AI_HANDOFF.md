@@ -1,6 +1,6 @@
 # AI 交接说明（AI_HANDOFF）
 
-本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-10-31。
+本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-10-31（v1.6.1 智能导入修正）。
 
 ## 1. 产品
 面向中国求职者（主要是 2027 届机械 / 机器视觉方向）的双语简历工具：
@@ -51,12 +51,22 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 - **连接测试**：`testConnection(settingsForProfile(settings, p))`，最小请求（`max_tokens: 8`），不改变启用配置；网络故障归为 `network`，不会提示 Key 无效。
 - **演示模式**：启用 / 切换配置会关闭演示模式；设置页顶部 `AiModeBanner` 显示「演示 / 未启用 / 真实调用 xx」。
 
+## 4c. 智能导入资料库（v1.6 / v1.6.1）
+- **流程**（`src/components/SmartImport.tsx`）：上传 → 本地提取文本（文件卡片，可编辑，**不自动调用 AI**）→ 用户点击识别 → `importProfileDetailed` 分段（≤6000 字 / 段）调用 AI → 每段先 `rawToProfile` 再 `checkAgainstSource`（本段原文证据检查）→ `mergeProfiles` 跨段合并 → `buildImportPlan` 生成审核计划（**只是预览**）→ 用户逐条决定 → 选「合并 / 替换」模式 → 确认。替换前自动快照，导入后可回滚；有未决条目时确认按钮禁用；原始全文存入 `sourceTexts`。
+- **去重**（`src/ai/dedupe.ts`，只用结构化信号，不含任何具体学校 / 单位 / 人名规则）：
+  - 名称只在同一语言写法之间比较（含 `aliases`）；日期不相交 → 不是重复。
+  - 教育：学历层次不同、或同校同层次但学位名 / 专业明显不同（双学位）→ 不合并；同期不同学校 → 不提示。**自动合并（strong）只在学校名同语言一致 + 学位 / 专业不冲突 + 时间吻合时**；中英文校名无法对应时，即使日期相同也只标「可能重复」（undecided），由用户决定。
+  - 工作：同单位同期同职位 → 合并；同单位不同职位 → 不合并；另一条只有单位名（无职位、无日期，如公司简称片段）→ 视为同一段经历的补充并合并。合并时更具体的类型优先（实习 > 正式），不会推断出另一份正式工作。
+  - 项目：名称 / 别名一致 → 合并；中英文名 + 相同日期 → 只提示。
+- **原文证据检查**（`src/ai/sourceCheck.ts`）：日期必须能在本段原文找到（支持 2027.01 / 2027-01 / 2027年1月 / Jan 2027），否则清空并写入条目 `uncertain`；`actualConferralDate` 必须有「已于 / 已获得 / 实际授予 / conferred」等措辞，只有「预计 / expected / 在读 / 尚未」时清空并改为 `expectedConferralDate`；`end` 只来自「预计」措辞时同样移出；任职性质 fulltime / internship / parttime 需在单位名附近有对应字样；证书 / 奖项的颁发机构找不到原文就清空。以 `【严重】` 开头的说明在审核页列为「需要你决定 / 重要问题」。
+- **主语言纠正**：`rawToProfile` 中主字段文字的语言与文档语言不同（中文资料里英文题目）时，放到对应语言位置，避免中英文混放导致去重失效。
+
 ## 5. ran-application-handoff 1.0（旧导航工具）
 **重要：目前只按用户口头描述的结构实现和测试，尚未用真实导出文件验证。** 用户可以提供真实样本；拿到后请：把脱敏后的样本存为 fixture、跑 `tests/handoff10.test.ts` 同类测试、修正 `HANDOFF_MAPPING` / `HANDOFF_STATUS`。
 描述的结构与映射规则见 `docs/DATA_SCHEMA.md`「导入格式」。实现：`src/tracker/importers.ts` 中 `handoff10()`、`HANDOFF_MAPPING`、`HANDOFF_STATUS`。
 
 ## 6. 测试现状
-单元 / 集成 154 项（vitest），浏览器 e2e 33 + 35 + 46 项（`api_profiles_e2e.py`），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
+单元 / 集成 201 项（vitest），浏览器 e2e：`tracker_e2e.py` 33、`release_e2e.py` 35、`api_profiles_e2e.py` 47、`smart_import_e2e.py` 41（Mock AI），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
 
 ## 7. 待办与已知限制
 见 `docs/PROJECT_STATUS.md`。

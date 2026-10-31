@@ -20,6 +20,25 @@
 | `attachments` | `id, postingId, applicationId, sha256, uploadedAt` | 附件元数据：名称、类型、大小、SHA-256、种类（简历/JD 截图/笔试/Offer/其他） |
 | `attachmentBlobs` | `id` | 附件二进制，与元数据同 id，同一事务写入 |
 
+## 资料库可选字段（v1.6 / v1.6.1，存于 `profile` 表的同一条 JSON，不升级 Dexie）
+| 位置 | 字段 | 说明 |
+|---|---|---|
+| 所有条目 | `aliases?: string[]` | 其他写法（公司简称、论文题目、另一语言名称），参与去重 |
+| 所有条目 | `notes?: string[]` | 备注 / 待核实说明，**不进入简历正文** |
+| 所有条目 | `uncertain?: string[]` | 待核对说明；以 `【严重】` 开头的在导入审核页列为重要问题 |
+| 所有条目 | `mergeHistory?` | 合并记录（时间、来源、被合并条目快照） |
+| `work` | `kind?: '' \| 'fulltime' \| 'internship' \| 'parttime' \| 'club' \| 'volunteer' \| 'other'` | 经历类型；需原文依据，否则留空 |
+| `projects` | `kind?: 'core' \| 'auxiliary'`、`nature?: string` | 核心 / 辅助项目及原文性质 |
+| `education` | `courses?: string[]`、`coursesInText?: number` | 全部课程；原文课程数用于漏项检查 |
+| `education` | `start` / `end` | 就读起止；`end` 只填已结束或原文非「预计」的日期 |
+| `education` | `courseCompletionDate?` | 课程结束 |
+| `education` | `expectedConferralDate?` | 预计毕业 / 预计授予学位（原文「预计 / expected / 在读」） |
+| `education` | `actualConferralDate?` | 已实际授予；必须有原文「已授予 / 已获得」证据，否则留空 |
+| `education` | `availableFullTimeDate?` | 可全职入职 |
+| 顶层 | `sourceTexts?: {id, at, files, text}[]` | 智能导入的完整原始文本，可检索 |
+
+四种学历日期互不推断。
+
 ## 状态（10 种）
 `screening` 待筛选 · `saved` 已收藏 · `preparing` 准备材料 · `applied` 已投递 · `assessment` 在线测评/笔试 · `interviewing` 面试中 · `offer` Offer · `rejected` 已拒绝/未通过 · `withdrawn` 已撤回 · `closed` 已结束
 
