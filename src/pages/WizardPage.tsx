@@ -12,6 +12,9 @@ import { importProfileFromText, mergeProfiles } from '../ai/importProfile';
 import { translateProfile } from '../ai/translate';
 import { recognizeScreenshot } from '../ai/ocr';
 import { parseJdAi, parseJdRules } from '../ai/jd';
+import { JD_PREFILL_KEY, TRACKER_RETURN_KEY, type TrackerReturn } from '../tracker/useTracker';
+import { linkResumeSnapshot } from '../tracker/repo';
+import { db } from '../storage/db';
 import { generateResume, localizeAi, runConsistency } from '../ai/generate';
 import { forEachText, needsTranslation, lt } from '../locale/text';
 import { normalizeProfile } from '../storage/profileIO';
@@ -55,12 +58,35 @@ export function WizardPage({ go }: { go: (p: string) => void }) {
           </li>
         ); })}
       </ol>
+      <TrackerReturnBanner go={go} />
       {settings.demoMode && <div className="notice warn">{L('当前为演示模式：不调用 AI，只做关键词匹配，英文缺失处用占位文字。', 'Demo mode: no AI calls — keyword matching only, missing translations use placeholders.')}<button className="link" onClick={() => go('settings')}>{L('连接 AI 服务 →', 'Connect AI →')}</button></div>}
       {cur === 1 && <Step1 next={() => setStep(2)} go={go} hasProfile={hasProfile} />}
       {cur === 2 && <Step2 next={() => setStep(3)} back={() => setStep(1)} />}
       {cur === 2 && <JobHistory onOpen={() => setStep(3)} />}
       {cur === 3 && <Step3 next={() => setStep(4)} back={() => setStep(2)} go={go} />}
       {cur === 4 && <Step4 back={() => setStep(3)} restart={() => setStep(2)} />}
+    </div>
+  );
+}
+
+/** 从「求职投递」岗位详情进入时显示：生成后一键把简历快照关联回该岗位 */
+function TrackerReturnBanner({ go }: { go: (p: string) => void }) {
+  const { resume, profile, job } = useApp();
+  const [ret, setRet] = useState<TrackerReturn | null>(() => { try { const v = uiStorage.getItem(TRACKER_RETURN_KEY); return v ? JSON.parse(v) : null; } catch { return null; } });
+  const [err, setErr] = useState('');
+  if (!ret) return null;
+  const clear = () => { uiStorage.setItem(TRACKER_RETURN_KEY, ''); setRet(null); };
+  const linkBack = async () => {
+    if (!resume) return;
+    try { await linkResumeSnapshot(db, ret.applicationId, { resume, profile, job, label: `${ret.label} · 生成于 ${resume.createdAt.slice(0, 16).replace('T', ' ')}` }); clear(); go(`applications/${ret.postingId}`); }
+    catch (e) { setErr((e as Error).message); }
+  };
+  return (
+    <div className="notice tracker-return" data-testid="tracker-return">
+      正在为岗位「<b>{ret.label}</b>」准备简历。生成并检查满意后：
+      <button className="primary" data-testid="link-back" disabled={!resume} onClick={linkBack}>关联当前简历并返回该岗位</button>
+      <button className="link" onClick={() => go(`applications/${ret.postingId}`)}>先返回岗位</button><button className="link" onClick={clear}>不关联</button>
+      {err && <div className="bad">{err}</div>}
     </div>
   );
 }
@@ -175,7 +201,7 @@ function PhotoPicker() {
 function Step2({ next, back }: { next: () => void; back: () => void }) {
   const { settings, job, setJob, setResume } = useApp();
   const [imgs, setImgs] = useState<string[]>([]);
-  const [text, setText] = useState(job?.rawText ?? '');
+  const [text, setText] = useState(() => { const pre = uiStorage.getItem(JD_PREFILL_KEY); if (pre) { uiStorage.setItem(JD_PREFILL_KEY, ''); return pre; } return job?.rawText ?? ''; });
   const [busy, setBusy] = useState('');
   const [pct, setPct] = useState<number | undefined>();
   const [err, setErr] = useState('');

@@ -2,6 +2,7 @@ import Dexie, { type Table } from 'dexie';
 import type { ExportRecord, JobParse, ProfileDoc, ResumeDoc, Settings, TemplateConfig } from '../types';
 import { normalizeProfile } from './profileIO';
 import { DB_DEMO, DB_REAL, IS_DEMO } from './mode';
+import type { Application, ApplicationEvent, Attachment, AttachmentBlob, JobPosting, ResumeArtifact } from '../tracker/types';
 
 export interface ProfileRow { id: 'me'; doc: ProfileDoc }
 export interface StateRow { id: string; value: unknown }
@@ -17,6 +18,12 @@ export class ResumeDB extends Dexie {
   settings!: Table<Settings, string>;
   state!: Table<StateRow, string>;
   backups!: Table<BackupRow, string>;
+  postings!: Table<JobPosting, string>;
+  applications!: Table<Application, string>;
+  appEvents!: Table<ApplicationEvent, string>;
+  artifacts!: Table<ResumeArtifact, string>;
+  attachments!: Table<Attachment, string>;
+  attachmentBlobs!: Table<AttachmentBlob, string>;
   constructor(name: string = DB_REAL) {
     super(name);
     this.version(1).stores({
@@ -38,6 +45,15 @@ export class ResumeDB extends Dexie {
       await tx.table('resumes').toCollection().modify((r: ResumeDoc) => {
         r.items = (r.items ?? []).map((i) => ({ ...i, syncStatus: i.syncStatus ?? 'in-sync' }));
       });
+    });
+    // v4（第三阶段）：求职投递管理——只新增表，不改动、不删除任何旧表和旧数据
+    this.version(4).stores({
+      postings: 'id, company, city, recruitType, priority, deadline, updatedAt, *importKeys',
+      applications: 'id, postingId, status, updatedAt',
+      appEvents: 'id, applicationId, at',
+      artifacts: 'id, applicationId, createdAt',
+      attachments: 'id, postingId, applicationId, sha256, uploadedAt',
+      attachmentBlobs: 'id',
     });
   }
 }
