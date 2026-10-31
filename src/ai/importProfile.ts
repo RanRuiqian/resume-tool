@@ -11,11 +11,12 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 - 文字可能杂乱无序、混合口语，请自行归类；birth（出生年月 YYYY-MM）、gender、hometown（籍贯）、politics（政治面貌）只在原文明确写出时填写。
 - uncertain：列出你不确定的归类或字段（如日期只给了大概、无法判断是工作还是项目、学位不明），每项 {"field":"如 work[0].end","note":"原因"}；确定的不要列。
 - skills 每个技能一项，category 为分类（如 前端 / 后端 / 语言 / 工具），没有则空。只列原文明确写出会用/用过的技能，严禁根据专业、课程或岗位名称推断技能。
+- education 的 courseCompletionDate（课程结束）、expectedConferralDate（预计拿学位）、actualConferralDate（已拿学位）、availableFullTimeDate（可全职入职）分别填写，只在原文明确写出时填，不能互相推断；courses 为原文列出的课程。
 - evidence：原文提到的证明材料（论文、专利、证书、成绩单、代码仓库链接、报告、获奖证书、照片等）各一项：fileName 名称，type 取 paper/patent/certificate/transcript/code/report/photo/video/award/other，location 原文给出的链接或存放位置（没有就空），proves 它证明的具体事实，project/skill 填它关联的项目名/技能名（原文看得出才填）。没有提到就输出空数组。
 输出 JSON：
 {"lang":"zh","name":"","headline":"","summary":"","email":"","phone":"","location":"","github":"","linkedin":"","website":"",
 "birth":"","gender":"","hometown":"","politics":"","uncertain":[{"field":"","note":""}],
-"education":[{"school":"","degree":"","major":"","start":"","end":"","highlights":[""]}],
+"education":[{"school":"","degree":"","major":"","start":"","end":"","highlights":[""],"courseCompletionDate":"","expectedConferralDate":"","actualConferralDate":"","availableFullTimeDate":"","courses":[""]}],
 "work":[{"company":"","title":"","start":"","end":"","bullets":[""],"tags":[""]}],
 "projects":[{"name":"","role":"","start":"","end":"","bullets":[""],"tags":[""],"link":""}],
 "skills":[{"name":"","category":""}],
@@ -27,7 +28,7 @@ type S = string | undefined;
 export interface Uncertain { field: string; note: string }
 export interface Raw {
   lang?: Lang; name?: S; birth?: S; gender?: S; hometown?: S; politics?: S; uncertain?: { field?: S; note?: S }[]; headline?: S; summary?: S; email?: S; phone?: S; location?: S; github?: S; linkedin?: S; website?: S;
-  education?: { school?: S; degree?: S; major?: S; start?: S; end?: S; highlights?: S[] }[];
+  education?: { school?: S; degree?: S; major?: S; start?: S; end?: S; highlights?: S[]; courseCompletionDate?: S; expectedConferralDate?: S; actualConferralDate?: S; availableFullTimeDate?: S; courses?: S[] }[];
   work?: { company?: S; title?: S; start?: S; end?: S; bullets?: S[]; tags?: S[] }[];
   projects?: { name?: S; role?: S; start?: S; end?: S; bullets?: S[]; tags?: S[]; link?: S }[];
   skills?: { name?: S; category?: S }[];
@@ -50,7 +51,8 @@ export function rawToProfile(r: Raw): ProfileDoc {
   p.profile.personal = { birth: d(r.birth), gender: d(r.gender), hometown: d(r.hometown), politics: d(r.politics) };
   let n = 0;
   const id = (k: string) => `${k}-${++n}`;
-  p.education = arr(r.education).filter((e) => e.school).map((e) => { const i = id('edu'); return { id: i, enabled: true, school: L(e.school), degree: L(e.degree), major: L(e.major), start: d(e.start), end: d(e.end), highlights: strs(e.highlights).map((h, j) => ({ ...L(h), id: `${i}-h${j + 1}` })) }; });
+  p.education = arr(r.education).filter((e) => e.school).map((e) => { const i = id('edu'); return { id: i, enabled: true, school: L(e.school), degree: L(e.degree), major: L(e.major), start: d(e.start), end: d(e.end), highlights: strs(e.highlights).map((h, j) => ({ ...L(h), id: `${i}-h${j + 1}` })),
+    ...Object.fromEntries((['courseCompletionDate', 'expectedConferralDate', 'actualConferralDate', 'availableFullTimeDate'] as const).filter((k) => d(e[k])).map((k) => [k, d(e[k])])), ...(strs(e.courses).length ? { courses: strs(e.courses) } : {}) }; });
   p.work = arr(r.work).filter((e) => e.company || e.title).map((e) => { const i = id('work'); return { id: i, enabled: true, company: L(e.company), title: L(e.title), start: d(e.start), end: d(e.end), tags: strs(e.tags), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
   p.projects = arr(r.projects).filter((e) => e.name).map((e) => { const i = id('proj'); return { id: i, enabled: true, name: L(e.name), role: L(e.role), start: d(e.start), end: d(e.end), tags: strs(e.tags), link: d(e.link), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
   p.skills = arr(r.skills).filter((e) => e.name).map((e) => ({ id: id('sk'), enabled: true, name: L(e.name), category: L(e.category) }));

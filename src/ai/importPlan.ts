@@ -54,7 +54,7 @@ function matchScore(sec: PlanSection, a: AnyEntry, b: AnyEntry): number {
 const SCALARS: Partial<Record<PlanSection, [string, string][]>> = {
   work: [['title', '职位'], ['start', '开始'], ['end', '结束']],
   projects: [['role', '角色'], ['start', '开始'], ['end', '结束'], ['link', '链接']],
-  education: [['degree', '学位'], ['major', '专业'], ['start', '开始'], ['end', '结束']],
+  education: [['degree', '学位'], ['major', '专业'], ['start', '开始'], ['end', '结束'], ['courseCompletionDate', '课程完成'], ['expectedConferralDate', '预计授予学位'], ['actualConferralDate', '实际授予学位'], ['availableFullTimeDate', '可全职入职']],
   skills: [['category', '分类'], ['level', '熟练度']],
   certificates: [['issuer', '颁发机构'], ['date', '日期']],
   awards: [['issuer', '颁发机构'], ['date', '日期']],
@@ -152,8 +152,9 @@ export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportP
       b.forEach((x, j) => { if (!a.some((y) => similarity(ltk(x), ltk(y)) >= 0.75)) a.push({ ...x, id: `${hit.id}-${tag}-${j}` }); });
     }
     for (const c of it.conflicts) if (c.useNew) hit[c.field] = e[c.field];
-    for (const f of ['start', 'end', 'date', 'link', 'location', 'proves', 'fileName']) if (f in e && !val(hit[f]) && val(e[f])) hit[f] = e[f];
+    for (const f of ['start', 'end', 'date', 'link', 'location', 'proves', 'fileName', 'courseCompletionDate', 'expectedConferralDate', 'actualConferralDate', 'availableFullTimeDate']) if (f in e && !val(hit[f]) && val(e[f])) hit[f] = e[f];
     for (const f of ['degree', 'major', 'role', 'title', 'issuer', 'category']) if (f in e && !val(hit[f]) && val(e[f])) hit[f] = e[f];
+    if (Array.isArray(e.courses)) hit.courses = [...new Set([...((hit.courses as string[]) ?? []), ...(e.courses as string[])])];
     if (Array.isArray(hit.tags) && Array.isArray(e.tags)) hit.tags = [...new Set([...(hit.tags as string[]), ...(e.tags as string[])])];
     if (it.uncertain.length) hit.uncertain = [...((hit.uncertain as string[]) ?? []), ...it.uncertain];
   }
