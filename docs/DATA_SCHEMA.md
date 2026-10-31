@@ -6,8 +6,8 @@
 | 版本 | 变化 |
 |---|---|
 | v1 | `profile, jobs, resumes, exports, settings, state, templates` |
-| v2 | 资料结构升级（迁移前自动快照） |
-| v3 | 事实审查字段、`syncStatus` 等 |
+| v2 | 新增 `backups`（资料快照）；升级前自动快照旧资料，再规范化资料结构 |
+| v3 | 历史简历条目补齐 `syncStatus`；事实审查 `audit` 为可选字段 |
 | v4 | 新增 `postings, applications, appEvents, artifacts, attachments, attachmentBlobs`（只新增，不改旧表） |
 
 ## v4 新表
