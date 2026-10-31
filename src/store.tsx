@@ -1,13 +1,11 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { JobParse, ProfileDoc, ResumeDoc, Settings, TemplateConfig } from './types';
 import { db, DEFAULT_SETTINGS } from './storage/db';
-import { emptyProfile } from './storage/profileIO';
+import { emptyProfile, normalizeProfile } from './storage/profileIO';
 import { BUILTIN_TEMPLATES, ALL_TEMPLATES } from './templates';
-import { normalizeProfile } from './storage/profileIO';
-import sample from './sample/sample-profile.json';
-import { SAMPLE_JD } from './sample/sampleJd';
-import { parseJdRules } from './ai/jd';
-import { generateRules, runConsistency } from './ai/generate';
+import { snapshotProfile, type BackupRow } from './storage/db';
+import { seedDemo } from './storage/demo';
+import { IS_DEMO, uiStorage } from './storage/mode';
 
 interface AppState {
   ready: boolean;
@@ -18,6 +16,11 @@ interface AppState {
   job: JobParse | null; setJob: (j: JobParse | null) => void;
   resume: ResumeDoc | null; setResume: (r: ResumeDoc | null) => void;
   canUndo: boolean; undo: () => void;
+  /** 危险操作（整体替换/合并资料）前调用：先存快照，再写入；返回快照 id */
+  replaceProfile: (p: ProfileDoc, reason: string) => Promise<string | null>;
+  listBackups: () => Promise<BackupRow[]>;
+  restoreBackup: (id: string) => Promise<boolean>;
+  isDemo: boolean;
   template: TemplateConfig;
 }
 const Ctx = createContext<AppState | null>(null);
@@ -33,12 +36,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [job, setJobS] = useState<JobParse | null>(null);
   const [resume, setResumeS] = useState<ResumeDoc | null>(null);
   const timer = useRef<number | undefined>(undefined);
+  const latest = useRef<ProfileDoc | null>(null);
   const [history, setHistory] = useState<ResumeDoc[]>([]);
 
   useEffect(() => {
     (async () => {
       const [p, s, ts, st] = await Promise.all([db.profile.get('me'), db.settings.get('settings'), db.templates.toArray(), db.state.toArray()]);
-      if (p) setProfileS(p.doc);
+      if (p) { const doc = normalizeProfile(p.doc); setProfileS(doc); latest.current = doc; }
       if (s) setSettingsS({ ...DEFAULT_SETTINGS, ...s });
       setCustom(ts);
       const get = (k: string) => st.find((x) => x.id === k)?.value;
@@ -46,26 +50,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const jid = get('jobId') as string | undefined, rid = get('resumeId') as string | undefined;
       if (jid) setJobS((await db.jobs.get(jid)) ?? null);
       if (rid) setResumeS((await db.resumes.get(rid)) ?? null);
-      // ?demo：载入示例资料 + 示例 JD + 规则生成结果，便于无 Key 体验
-      if (new URLSearchParams(location.search).has('demo')) {
-        const sp = normalizeProfile(sample);
-        const j = parseJdRules(SAMPLE_JD);
-        const r = { ...runConsistency(generateRules(sp, j, 'zh')), templateId: BUILTIN_TEMPLATES[0].id };
-        setProfileS(sp); setJobS(j); setResumeS(r);
-        localStorage.setItem('wizardStep', '3');
-        if (!s?.setupDone) { const ns = { ...DEFAULT_SETTINGS, ...(s ?? {}), demoMode: true, setupDone: true }; setSettingsS(ns); await db.settings.put(ns); }
-        await Promise.all([db.profile.put({ id: 'me', doc: sp }), db.jobs.put(j), db.resumes.put(r), db.state.bulkPut([{ id: 'jobId', value: j.id }, { id: 'resumeId', value: r.id }])]);
-        window.history.replaceState(null, '', location.pathname + location.hash);
+      // ?demo：只读写独立的演示数据库（resume-tool-demo），真实资料库完全不碰
+      if (IS_DEMO) {
+        const d = await seedDemo(db);
+        setProfileS(d.profile); setJobS(d.job); setResumeS(d.resume); setSettingsS(d.settings);
+        uiStorage.setItem('wizardStep', '3');
       }
       setReady(true);
     })();
   }, []);
 
   const setProfile = useCallback((p: ProfileDoc) => {
-    setProfileS(p);
+    setProfileS(p); latest.current = p;
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => db.profile.put({ id: 'me', doc: p }), 400);
+    timer.current = window.setTimeout(() => { timer.current = undefined; db.profile.put({ id: 'me', doc: p }); }, 400);
   }, []);
+  // 关闭/切走页面时立刻落盘，避免 400ms 防抖窗口内的修改丢失
+  useEffect(() => {
+    const flush = () => { if (timer.current !== undefined && latest.current) { window.clearTimeout(timer.current); timer.current = undefined; db.profile.put({ id: 'me', doc: latest.current }); } };
+    window.addEventListener('pagehide', flush);
+    const vis = () => { if (document.visibilityState === 'hidden') flush(); };
+    document.addEventListener('visibilitychange', vis);
+    return () => { window.removeEventListener('pagehide', flush); document.removeEventListener('visibilitychange', vis); };
+  }, []);
+  const replaceProfile = useCallback(async (p: ProfileDoc, reason: string) => {
+    const cur = latest.current ?? (await db.profile.get('me'))?.doc;
+    const id = cur ? await snapshotProfile(db, cur, reason) : null;
+    window.clearTimeout(timer.current); timer.current = undefined;
+    latest.current = p; setProfileS(p);
+    await db.profile.put({ id: 'me', doc: p });
+    return id;
+  }, []);
+  const listBackups = useCallback(() => db.backups.orderBy('createdAt').reverse().toArray(), []);
+  const restoreBackup = useCallback(async (id: string) => {
+    const b = await db.backups.get(id); if (!b) return false;
+    await replaceProfile(normalizeProfile(b.doc), '恢复快照前的资料'); // 快照可能是旧版格式（如升级前自动快照），恢复时统一升级
+    return true;
+  }, [replaceProfile]);
   const setSettings = (s: Settings) => { setSettingsS(s); db.settings.put(s); };
   const saveTemplate = (t: TemplateConfig) => { setCustom((c) => [...c.filter((x) => x.id !== t.id), t]); db.templates.put(t); };
   const deleteTemplate = (id: string) => { setCustom((c) => c.filter((x) => x.id !== id)); db.templates.delete(id); if (templateId === id) setTemplateId(BUILTIN_TEMPLATES[0].id); };
@@ -80,5 +101,5 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const templates = [...ALL_TEMPLATES, ...custom];
   const template = templates.find((t) => t.id === templateId) ?? BUILTIN_TEMPLATES[0];
 
-  return <Ctx.Provider value={{ ready, profile, setProfile, settings, setSettings, templates, saveTemplate, deleteTemplate, templateId, setTemplateId, job, setJob, resume, setResume, template, canUndo: history.length > 0, undo }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ ready, profile, setProfile, settings, setSettings, templates, saveTemplate, deleteTemplate, templateId, setTemplateId, job, setJob, resume, setResume, template, canUndo: history.length > 0, undo, replaceProfile, listBackups, restoreBackup, isDemo: IS_DEMO }}>{children}</Ctx.Provider>;
 }

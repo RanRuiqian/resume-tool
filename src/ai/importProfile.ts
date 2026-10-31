@@ -1,6 +1,6 @@
 import type { Lang, LocalizedText, ProfileDoc, Settings } from '../types';
 import { chatJson } from './provider';
-import { emptyProfile, normalizeProfile } from '../storage/profileIO';
+import { emptyProfile, normalizeEvidence, normalizeProfile } from '../storage/profileIO';
 
 const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 JSON。规则：
 - 只整理原文中出现的信息，严禁补充、推测或美化；原文没有的字段留空字符串或空数组。
@@ -10,27 +10,32 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 - headline 只写职位名称本身（如「数据分析师」），不要带「求职意向：」等前缀；education.highlights 只写成绩/奖项等亮点，不要重复学校、专业、学位。
 - 文字可能杂乱无序、混合口语，请自行归类；birth（出生年月 YYYY-MM）、gender、hometown（籍贯）、politics（政治面貌）只在原文明确写出时填写。
 - uncertain：列出你不确定的归类或字段（如日期只给了大概、无法判断是工作还是项目、学位不明），每项 {"field":"如 work[0].end","note":"原因"}；确定的不要列。
-- skills 每个技能一项，category 为分类（如 前端 / 后端 / 语言 / 工具），没有则空。
+- skills 每个技能一项，category 为分类（如 前端 / 后端 / 语言 / 工具），没有则空。只列原文明确写出会用/用过的技能，严禁根据专业、课程或岗位名称推断技能。
+- education 的 courseCompletionDate（课程结束）、expectedConferralDate（预计拿学位）、actualConferralDate（已拿学位）、availableFullTimeDate（可全职入职）分别填写，只在原文明确写出时填，不能互相推断；courses 为原文列出的课程。
+- evidence：原文提到的证明材料（论文、专利、证书、成绩单、代码仓库链接、报告、获奖证书、照片等）各一项：fileName 名称，type 取 paper/patent/certificate/transcript/code/report/photo/video/award/other，location 原文给出的链接或存放位置（没有就空），proves 它证明的具体事实，project/skill 填它关联的项目名/技能名（原文看得出才填）。没有提到就输出空数组。
 输出 JSON：
 {"lang":"zh","name":"","headline":"","summary":"","email":"","phone":"","location":"","github":"","linkedin":"","website":"",
 "birth":"","gender":"","hometown":"","politics":"","uncertain":[{"field":"","note":""}],
-"education":[{"school":"","degree":"","major":"","start":"","end":"","highlights":[""]}],
+"education":[{"school":"","degree":"","major":"","start":"","end":"","highlights":[""],"courseCompletionDate":"","expectedConferralDate":"","actualConferralDate":"","availableFullTimeDate":"","courses":[""]}],
 "work":[{"company":"","title":"","start":"","end":"","bullets":[""],"tags":[""]}],
 "projects":[{"name":"","role":"","start":"","end":"","bullets":[""],"tags":[""],"link":""}],
 "skills":[{"name":"","category":""}],
 "certificates":[{"name":"","issuer":"","date":""}],
-"awards":[{"name":"","issuer":"","date":""}]}`;
+"awards":[{"name":"","issuer":"","date":""}],
+"evidence":[{"fileName":"","type":"other","location":"","proves":"","project":"","skill":""}]}`;
 
 type S = string | undefined;
-export interface Uncertain { field: string; note: string }
+/** entryId：分段导入时解析出的稳定条目 id（A3）；segment：来自第几段；都无法解析的进入「未分配」 */
+export interface Uncertain { field: string; note: string; entryId?: string; segment?: number }
 export interface Raw {
   lang?: Lang; name?: S; birth?: S; gender?: S; hometown?: S; politics?: S; uncertain?: { field?: S; note?: S }[]; headline?: S; summary?: S; email?: S; phone?: S; location?: S; github?: S; linkedin?: S; website?: S;
-  education?: { school?: S; degree?: S; major?: S; start?: S; end?: S; highlights?: S[] }[];
+  education?: { school?: S; degree?: S; major?: S; start?: S; end?: S; highlights?: S[]; courseCompletionDate?: S; expectedConferralDate?: S; actualConferralDate?: S; availableFullTimeDate?: S; courses?: S[] }[];
   work?: { company?: S; title?: S; start?: S; end?: S; bullets?: S[]; tags?: S[] }[];
   projects?: { name?: S; role?: S; start?: S; end?: S; bullets?: S[]; tags?: S[]; link?: S }[];
   skills?: { name?: S; category?: S }[];
   certificates?: { name?: S; issuer?: S; date?: S }[];
   awards?: { name?: S; issuer?: S; date?: S }[];
+  evidence?: { fileName?: S; type?: S; location?: S; proves?: S; project?: S; skill?: S }[];
 }
 
 /** 把 AI 输出的单语结构转为双语资料库（另一语言留空，后续补译） */
@@ -47,12 +52,18 @@ export function rawToProfile(r: Raw): ProfileDoc {
   p.profile.personal = { birth: d(r.birth), gender: d(r.gender), hometown: d(r.hometown), politics: d(r.politics) };
   let n = 0;
   const id = (k: string) => `${k}-${++n}`;
-  p.education = arr(r.education).filter((e) => e.school).map((e) => { const i = id('edu'); return { id: i, enabled: true, school: L(e.school), degree: L(e.degree), major: L(e.major), start: d(e.start), end: d(e.end), highlights: strs(e.highlights).map((h, j) => ({ ...L(h), id: `${i}-h${j + 1}` })) }; });
+  p.education = arr(r.education).filter((e) => e.school).map((e) => { const i = id('edu'); return { id: i, enabled: true, school: L(e.school), degree: L(e.degree), major: L(e.major), start: d(e.start), end: d(e.end), highlights: strs(e.highlights).map((h, j) => ({ ...L(h), id: `${i}-h${j + 1}` })),
+    ...Object.fromEntries((['courseCompletionDate', 'expectedConferralDate', 'actualConferralDate', 'availableFullTimeDate'] as const).filter((k) => d(e[k])).map((k) => [k, d(e[k])])), ...(strs(e.courses).length ? { courses: strs(e.courses) } : {}) }; });
   p.work = arr(r.work).filter((e) => e.company || e.title).map((e) => { const i = id('work'); return { id: i, enabled: true, company: L(e.company), title: L(e.title), start: d(e.start), end: d(e.end), tags: strs(e.tags), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
   p.projects = arr(r.projects).filter((e) => e.name).map((e) => { const i = id('proj'); return { id: i, enabled: true, name: L(e.name), role: L(e.role), start: d(e.start), end: d(e.end), tags: strs(e.tags), link: d(e.link), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
   p.skills = arr(r.skills).filter((e) => e.name).map((e) => ({ id: id('sk'), enabled: true, name: L(e.name), category: L(e.category) }));
   p.certificates = arr(r.certificates).filter((e) => e.name).map((e) => ({ id: id('cert'), enabled: true, name: L(e.name), issuer: L(e.issuer), date: d(e.date) }));
   p.awards = arr(r.awards).filter((e) => e.name).map((e) => ({ id: id('award'), enabled: true, name: L(e.name), issuer: L(e.issuer), date: d(e.date) }));
+  const byName = <T extends { id: string; name: LocalizedText }>(list: T[], name: S) => { const n = (name ?? '').trim().toLowerCase(); return n ? list.filter((x) => (x.name.zh || x.name.en || '').toLowerCase() === n).map((x) => x.id) : []; };
+  p.evidence = arr(r.evidence).filter((e) => e.fileName || e.location || e.proves).map((e) => normalizeEvidence({
+    id: id('ev'), fileName: d(e.fileName), type: d(e.type), location: d(e.location), proves: d(e.proves),
+    projectIds: byName(p.projects, e.project), skillIds: byName(p.skills, e.skill), confirmed: false, publicOk: false,
+  }));
   return normalizeProfile(p);
 }
 
@@ -76,9 +87,13 @@ export async function importProfileDetailed(s: Settings, text: string, onProgres
     onProgress?.(i + 1, chunks.length);
     const hint = chunks.length > 1 ? `（这是全部资料的第 ${i + 1}/${chunks.length} 段，可能只含部分信息）` : '';
     const r = await chatJson<Raw>(s, [{ role: 'system', content: '你是严谨的简历整理助手，只输出 JSON。' }, { role: 'user', content: `${PROMPT}${hint}\n\n原文：\n"""\n${chunks[i]}\n"""` }]);
-    for (const u of Array.isArray(r.uncertain) ? r.uncertain : []) if (u?.field || u?.note) uncertain.push({ field: (u.field ?? '').trim(), note: (u.note ?? '').trim() });
     const p = rawToProfile(r);
-    acc = acc ? mergeProfiles(acc, p) : p;
+    // 先在「本段」内用本段下标解析成稳定 id，再随合并映射到最终条目（A3：不依赖跨段会错位的局部下标）
+    const segU: Uncertain[] = [];
+    for (const u of Array.isArray(r.uncertain) ? r.uncertain : []) if (u?.field || u?.note) segU.push(resolveUncertain({ field: (u.field ?? '').trim(), note: (u.note ?? '').trim() }, p, i + 1));
+    const idMap = new Map<string, string>();
+    acc = acc ? mergeProfiles(acc, p, idMap) : p;
+    for (const u of segU) uncertain.push(u.entryId ? { ...u, entryId: idMap.get(u.entryId) ?? u.entryId } : u);
   }
   return { profile: acc ?? rawToProfile({}), uncertain };
 }
@@ -87,13 +102,22 @@ export async function importProfileFromText(s: Settings, text: string): Promise<
   return (await importProfileDetailed(s, text)).profile;
 }
 
+/** 把单段内 "work[0].end" 解析成该段资料里的条目 id；越界 / 无法识别时不设 entryId（留作未分配） */
+export function resolveUncertain(u: Uncertain, seg: ProfileDoc, segment: number): Uncertain {
+  const m = /^(education|work|projects?|skills?|certificates?|awards?|evidence)\s*\[(\d+)\]/i.exec(u.field);
+  if (!m) return { ...u, segment };
+  let sec = m[1].toLowerCase(); if (!sec.endsWith('s') && sec !== 'work' && sec !== 'education' && sec !== 'evidence') sec += 's';
+  const list = (seg as unknown as Record<string, { id: string }[]>)[sec] ?? [];
+  const e = list[Number(m[2])];
+  return e ? { ...u, entryId: e.id, segment } : { ...u, segment };
+}
 const nk = (...v: (string | undefined)[]) => v.map((x) => (x ?? '').toLowerCase().replace(/[\s·,，.。()（）-]/g, '')).join('|');
 const ltk = (t: LocalizedText) => t.zh || t.en || '';
 
 /** 合并（去重）：基本信息只补空白；同一段经历（公司+职位 / 学校+专业 / 项目名 / 技能名 / 证书名）合并要点，不重复追加 */
-export function mergeProfiles(base: ProfileDoc, add: ProfileDoc): ProfileDoc {
+export function mergeProfiles(base: ProfileDoc, add: ProfileDoc, idMap?: Map<string, string>): ProfileDoc {
   const isEmpty = !base.profile.name.zh && !base.profile.name.en && !base.work.length && !base.education.length && !base.projects.length && !base.skills.length;
-  if (isEmpty) return { ...add, glossary: base.glossary };
+  if (isEmpty) { for (const k of ['education', 'work', 'projects', 'skills', 'certificates', 'awards', 'evidence'] as const) for (const e of (add[k] ?? []) as { id: string }[]) idMap?.set(e.id, e.id); return { ...add, glossary: base.glossary }; }
   const out = structuredClone(base);
   const tag = `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const fill = (a: LocalizedText, b: LocalizedText) => (a.zh || a.en ? a : b);
@@ -109,7 +133,8 @@ export function mergeProfiles(base: ProfileDoc, add: ProfileDoc): ProfileDoc {
   const mergeList = <T extends WithList>(dst: T[], src: T[], key: (e: T) => string) => {
     for (const e of src) {
       const k = key(e); const hit = k.replace(/\|/g, '') ? dst.find((d) => key(d) === k) : undefined;
-      if (!hit) { dst.push(re(e)); continue; }
+      if (!hit) { const n = re(e); idMap?.set(e.id, n.id); dst.push(n); continue; }
+      idMap?.set(e.id, hit.id);
       for (const f of ['bullets', 'highlights'] as const) {
         const a = hit[f], b = e[f]; if (!a || !b) continue;
         const seen = new Set(a.map((x) => nk(ltk(x))));
@@ -126,5 +151,14 @@ export function mergeProfiles(base: ProfileDoc, add: ProfileDoc): ProfileDoc {
   mergeList(out.skills as WithList[], add.skills as WithList[], (e) => nk(ltk((e as unknown as { name: LocalizedText }).name)));
   mergeList(out.certificates as WithList[], add.certificates as WithList[], (e) => nk(ltk((e as unknown as { name: LocalizedText }).name)));
   mergeList(out.awards as WithList[], add.awards as WithList[], (e) => nk(ltk((e as unknown as { name: LocalizedText }).name)));
+  // 证据：追加，并按名称把关联的项目/技能指到合并后的条目
+  const remap = <T extends { id: string; name: LocalizedText }>(ids: string[], from: T[], to: T[]) => ids.map((pid) => { const n = from.find((x) => x.id === pid); return n ? to.find((x) => nk(ltk(x.name)) === nk(ltk(n.name)))?.id : undefined; }).filter((x): x is string => !!x);
+  out.evidence = out.evidence ?? [];
+  for (const ev of add.evidence ?? []) {
+    const dupEv = out.evidence.find((x) => nk(x.fileName, x.location) === nk(ev.fileName, ev.location));
+    if (dupEv) { idMap?.set(ev.id, dupEv.id); continue; }
+    idMap?.set(ev.id, `${tag}-${ev.id}`);
+    out.evidence.push({ ...ev, id: `${tag}-${ev.id}`, projectIds: remap(ev.projectIds, add.projects, out.projects), skillIds: remap(ev.skillIds, add.skills, out.skills) });
+  }
   return out;
 }

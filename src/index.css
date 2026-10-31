@@ -178,3 +178,21 @@ details summary { cursor: pointer; color: #2b6cb0; margin: 10px 0; }
 .smart-import .review td.num { font-weight: 700; text-align: center; width: 40px; }
 .smart-import .empty-row { color: #a0aec0; }
 .uncertain { color: #b7791f; background: #fffbeb; padding: 2px 6px; margin-top: 2px; border-radius: 4px; }
+
+/* v1.3 职业资料库：可折叠档案卡片（iOS 风格） */
+.demo-banner { margin: 0; border-radius: 0; text-align: center; } .demo-banner a { margin-left: 8px; }
+details.df { background: #f7f9fc; border: 1px solid var(--line); border-radius: 12px; padding: 4px 14px; margin-top: 10px; }
+details.df[open] { padding-bottom: 12px; }
+details.df > summary { font-weight: 500; color: #2d3748; padding: 6px 0; }
+.df-field { display: flex; flex-direction: column; gap: 4px; margin: 8px 0; font-size: 13px; color: #4a5568; }
+.df-field input, .df-field textarea, .df-field select { width: 100%; }
+.df-sub { margin: 10px 0; } .df-phase { border-left: 3px solid #cbd5e0; padding-left: 8px; margin: 6px 0; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid #cbd5e0; border-radius: 999px; padding: 3px 10px; cursor: pointer; font-size: 12px; background: #fff; }
+.chip.on { background: #2b6cb0; border-color: #2b6cb0; color: #fff; }
+.backups summary { font-weight: 500; }
+.import-plan td { vertical-align: top; } .import-plan .old { color: #9b2c2c; text-decoration: line-through; } .import-plan .new { color: #276749; }
+.import-plan tr.skip { opacity: .5; }
+.import-plan tr.undecided td { background: #fff8e6; }
+.ai-disclosure { margin: 6px 0; }
+.ai-disclosure summary { cursor: pointer; }

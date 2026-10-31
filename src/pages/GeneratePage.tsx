@@ -1,3 +1,4 @@
+import { AiDisclosure } from '../components/AiDisclosure';
 import { useState } from 'react';
 import { useApp } from '../store';
 import { useT } from '../i18n';
@@ -25,12 +26,12 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
   };
   const resync = async () => {
     if (!resume) return;
-    const ids = resume.items.filter((i) => i.syncStatus === 'pending').map((i) => i.sourceId);
+    const ids = resume.items.filter((i) => i.syncStatus !== 'in-sync').map((i) => i.sourceId);
     if (settings.demoMode) { setResume(runConsistency({ ...resume, items: resume.items.map((i) => ({ ...i, syncStatus: 'in-sync' })) })); return; }
     setBusy('重新本地化待同步条目…');
     try { setResume(await localizeAi(settings, profile, job, resume, ids)); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
-  const pending = resume?.items.filter((i) => i.syncStatus === 'pending').length ?? 0;
+  const pending = resume?.items.filter((i) => i.syncStatus !== 'in-sync').length ?? 0;
 
   return (
     <div className="page">
@@ -48,6 +49,7 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
             <button className="primary" disabled={!!busy} onClick={run}>{t('generate')}</button>
             {settings.demoMode && <span className="badge st-machine">演示模式：规则匹配，不改写</span>}
           </div>
+          <AiDisclosure />
           {busy && <div className="notice">{busy}</div>}
           {err && <div className="notice error">{err}</div>}
         </div>
