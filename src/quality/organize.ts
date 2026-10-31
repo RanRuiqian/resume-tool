@@ -4,7 +4,7 @@ import { ORGANIZE_PROMPT } from '../ai/prompts';
 import { numberTokens } from '../ai/consistency';
 import { extractTechTerms, normTerm, isUnconfirmedImport } from '../audit/techTerms';
 import { checkAgainstSource, CRITICAL } from '../ai/sourceCheck';
-import { lossReport, equivalent } from './factCheck';
+import { lossReport, equivalent, crossCheck } from './factCheck';
 import { QUALITY_VERSION } from './contentQuality';
 import { detectMeta, META_LABEL, noteOf, sentences, splitMeta, stripFirstPerson } from './contentQuality';
 
@@ -143,7 +143,7 @@ export async function planOrganize(s: Settings, src: ProfileDoc, o: OrganizeOpti
           // 另一语言原本是机翻 / 过期 / 缺失，且源语言保持 A 类：属于「英文翻译」，不是事实改写
           const isTrans = l === oL && (!u.lt[l] || u.lt.status?.[l] === 'machine' || u.lt.status?.[l] === 'stale') && equivalent(c[srcL] ?? '', c.local[srcL] ?? '', srcL);
           c[l] = next;
-          if (isTrans) { c.enTrans = true; const nb = numberTokens(c[srcL] ?? ''), na = numberTokens(next); if (nb.join() !== na.join()) c.semantic.push(`译文数字与原文不一致：${nb.join('、') || '无'} → ${na.join('、') || '无'}`); if (!c.reasons.includes('重新机翻（英文翻译，非事实改写）')) c.reasons.push('重新机翻（英文翻译，非事实改写）'); continue; }
+          if (isTrans) { c.enTrans = true; const nb = numberTokens(c[srcL] ?? ''), na = numberTokens(next); if (nb.join() !== na.join()) c.semantic.push(`译文数字与原文不一致：${nb.join('、') || '无'} → ${na.join('、') || '无'}`); const zhT = srcL === 'zh' ? c[srcL] ?? '' : next, enT = srcL === 'zh' ? next : c[srcL] ?? ''; const xc = crossCheck(zhT, enT); if (xc.length) c.semantic.push(...xc.map((y) => `${l === 'en' ? '英文' : '中文'}译文待核对：${y}`)); if (!c.reasons.includes('重新机翻（英文翻译，非事实改写）')) c.reasons.push('重新机翻（英文翻译，非事实改写）'); continue; }
           const lr = loc ? lossReport(loc, next, l) : ['原文没有这一语言的内容，AI 新写'];
           c.semantic.push(...(lr.length ? lr : ['AI 改写了措辞，无法证明与原文事实完全等价']).map((y) => `${l === 'zh' ? '中文' : '英文'}：${y}`));
           if (!c.reasons.includes('AI 语义改写')) c.reasons.push('AI 语义改写');

@@ -5,6 +5,7 @@ B=os.environ.get('E2E_BASE','http://localhost:4173/'); S=os.environ.get('SHOT_DI
 KEY='sk-FAKE-infoloss-0001'; ok=[]; reqs=[]
 def chk(n,c): ok.append(bool(c)); print(('PASS ' if c else 'FAIL ')+n, flush=True)
 BAD={'在公司使用设备测试':'使用设备测试','在医院与导师讨论耳镜设计':'讨论耳镜设计','协助维护实验台':'负责维护实验台','仅在室温条件下验证样机':'验证样机','样机尚未完成测试':'样机已完成测试','参与三人团队开发控制软件':'独立开发控制软件'}
+BADEN={'协助维护自动化生产设备':'Led the maintenance of automated production equipment','参与开发数据采集软件':'Independently developed data acquisition software','预计2027年1月授予硕士学位':"Master's degree awarded in January 2027",'在车间使用设备测试':'Tested equipment','实习期间参与设备测试':'Participated in equipment testing during full-time employment','样机调试尚未完成':'Completed prototype debugging','协助整理实验数据':'Assisted in organizing experimental data'}
 def ai_route(route):
     body=route.request.post_data or ''; reqs.append(body); u=json.loads(body)['messages'][-1]['content']
     if '已经导入的个人资料母库' not in u: return route.fulfill(status=200, content_type='application/json', body=json.dumps({'choices':[{'message':{'content':'{"items":[]}'}}]}))
@@ -13,7 +14,10 @@ def ai_route(route):
         zh=x['zh']
         for k,v in BAD.items():
             if k in zh: zh=zh.replace(k,v)
-        out.append({'key':x['key'],'category':'resume','zh':zh,'en':x['en'] or '','notes':[],'archive':[],'uncertain':[]})
+        en=x['en'] or ''
+        for k,v in BADEN.items():
+            if k in zh: en=v
+        out.append({'key':x['key'],'category':'resume','zh':zh,'en':en,'notes':[],'archive':[],'uncertain':[]})
     route.fulfill(status=200, content_type='application/json', body=json.dumps({'choices':[{'message':{'content':json.dumps({'items':out},ensure_ascii=False)}}]}))
 B1=lambda i,zh: {'id':f'b{i}','zh':zh,'status':{'zh':'manual'},'source':'zh'}
 DOC={'profile':{'name':{'zh':'测试用户十'},'email':'t10@example.com','summary':{}},'education':[{'id':'ed1','school':{'zh':'示例海事大学'},'degree':{'zh':'学士'},'major':{'zh':'轮机工程'},'start':'2019-09','end':'2023-06','highlights':[]}],
@@ -49,6 +53,20 @@ with sync_playwright() as p:
     pg.click('[data-testid=organize-recheck]'); pg.wait_for_selector('[data-testid=organize-review]', timeout=30000)
     chk(f'重新检查：不重新导入即再次送 AI，被拒绝的 B 类再次出现（{pg.locator("[data-testid=org-high]").count()} 条）', len(reqs)>n and pg.locator('[data-testid=org-high]').count()>=6)
     pg.screenshot(path=S+'p15_recheck.png'); pg.click('text=放弃（不写入）')
+    # ---- v1.9.2 英文译文交叉核对 ----
+    M=lambda i,zh: {'id':f't{i}','zh':zh,'en':'old machine text','status':{'zh':'manual','en':'machine'},'source':'zh'}
+    D2=json.loads(json.dumps(DOC)); D2['work'][0]['bullets']=[M(1,'我协助维护自动化生产设备。实际职责以本人核实为准。'),M(2,'参与开发数据采集软件。'),M(3,'在车间使用设备测试。'),M(4,'实习期间参与设备测试。'),M(5,'样机调试尚未完成。'),M(6,'预计2027年1月授予硕士学位。'),M(7,'协助整理实验数据。')]
+    pg.evaluate(SEED,[KEY,D2]); pg.goto(B+'#profile'); pg.reload(); pg.wait_for_selector('[data-testid=organize-start]')
+    pg.click('[data-testid=organize-start]'); pg.wait_for_selector('[data-testid=organize-ask]'); pg.click('[data-testid=organize-ai]'); pg.wait_for_selector('[data-testid=organize-review]', timeout=30000)
+    hi=pg.locator('[data-testid=org-high]'); ht=pg.locator('.org-group.high').inner_text()
+    chk(f'6 条错误英文译文全部待核对、默认不勾选（{hi.count()} 条）', hi.count()==6 and ht.count('译文待核对')>=6 and all(not hi.nth(i).locator('input').is_checked() for i in range(hi.count())))
+    chk('原因覆盖参与程度 / 预计授予 / 公司或车间 / 实习全职 / 未完成', all(k in ht for k in ['参与程度','预计','车间','全职','否定']))
+    chk('正确译文（协助→Assisted）为 A 类', any('Assisted in organizing experimental data' in pg.locator('[data-testid=org-safe]').nth(i).text_content() for i in range(pg.locator('[data-testid=org-safe]').count())))
+    pg.locator('.org-group.high').scroll_into_view_if_needed(); pg.screenshot(path=S+'p15_en_crosscheck.png')
+    pg.click('[data-testid=organize-accept-all]'); pg.click('[data-testid=organize-apply]'); pg.wait_for_selector('[data-testid=organize-done]')
+    bs=prof(pg)['work'][0]['bullets']; print('  after2:', [(b['zh'],b.get('en')) for b in bs])
+    chk('英文有风险时中文安全清洗照常写入', bs[0]['zh']=='协助维护自动化生产设备。')
+    chk('错误英文一条也没写入', all(b.get('en')=='old machine text' for b in bs[:6]) and bs[6]['en']=='Assisted in organizing experimental data')
     chk('API Key 不出现在页面', KEY not in pg.content()); chk(f'无页面错误 {errs[:2]}', not errs)
     c.close()
 print(f'{sum(ok)}/{len(ok)} passed')

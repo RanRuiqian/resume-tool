@@ -78,6 +78,7 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 - 每批 try/catch，失败批记入 `plan.aiErrors` 并只做本地清洗；全部失败才抛错（资料不变）。
 - `generate.ts`：`flagStale()` 把直接使用了 stale 资料译文的条目标为 needs-review；AI 主语言为 stale 时改用另一语言原文。
 - 回归：`tests/infoLoss.test.ts`（mock AI 错误输出），`tests/e2e/info_loss_e2e.py`。
+- v1.9.2：重新机翻不再只看数字。`factCheck.crossCheck(zh, en)` 用中英词表逐项比对参与程度、否定 / 未完成、进行中、仅 / 限定、室温、仿真、预计 vs 已授予、已完成、实习 / 全职 / 兼职、课程 / 商业、团队 / 独立、地点（公司、医院、实验室、车间 / 现场、学校）、导师 / 医生；任一概念只在一侧出现即 B 类「译文待核对」，不写入、不默认勾选。中文的本地安全清洗作为独立 A 类建议照常写入。
 
 ## 5. ran-application-handoff 1.0（旧导航工具）
 **重要：目前只按用户口头描述的结构实现和测试，尚未用真实导出文件验证。** 用户可以提供真实样本；拿到后请：把脱敏后的样本存为 fixture、跑 `tests/handoff10.test.ts` 同类测试、修正 `HANDOFF_MAPPING` / `HANDOFF_STATUS`。

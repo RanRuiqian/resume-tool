@@ -31,7 +31,7 @@ npm run build && npx vite preview --port 4173 &
 python3 tests/e2e/tracker_e2e.py   # 投递管理主流程（33 项）
 python3 tests/e2e/release_e2e.py   # 发布验收：导航工具导入、完整备份恢复、空库、移动端/桌面端（35 项）
 python3 tests/e2e/organize_e2e.py  # v1.9 AI 整理现有资料 + 首次导入质量（35 项，AI 全部模拟）
-python3 tests/e2e/info_loss_e2e.py # v1.9.1 AI 信息丢失回归（13 项，AI 全部模拟）
+python3 tests/e2e/info_loss_e2e.py # v1.9.1/1.9.2 AI 信息丢失 + 英文译文交叉核对回归（18 项，AI 全部模拟）
 python3 tests/e2e/api_profiles_e2e.py  # 多 API 配置管理（46 项，全部虚构 Key，AI 接口被拦截模拟）
 ```
 可选环境变量：`E2E_BASE`（默认 http://localhost:4173/），`SHOT_DIR`（截图目录）。

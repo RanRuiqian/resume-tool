@@ -183,3 +183,44 @@ describe('过期译文不静默用于生成', () => {
 
 import { numberTokens } from '../src/ai/consistency';
 it('版本号 v1 与「第1版」视为同一数字', () => { expect(numberTokens('Designed fixture v1')).toEqual(numberTokens('第1版')); });
+
+import { crossCheck } from '../src/quality/factCheck';
+// v1.9.2 英文译文交叉核对：AI 重新机翻英文时，数字一致不代表事实一致
+function trans(zh: string, oldEn: string, opt?: Parameters<typeof one>[2]) {
+  const p = one(zh, 'zh', opt); const e = (p.work[0] ?? p.projects[0] ?? p.education[0]) as unknown as { bullets?: Record<string, unknown>[]; highlights?: Record<string, unknown>[] };
+  const b = (e.bullets ?? e.highlights)![0]; b.en = oldEn; b.status = { zh: 'manual', en: 'machine' }; return p;
+}
+const enAi = (en: string) => aiWith({}, (x) => ({ key: x.key, category: 'resume', zh: x.zh, en }));
+const TRANS: [string, string, RegExp, Parameters<typeof one>[2]?][] = [
+  ['协助维护自动化生产设备', 'Led the maintenance of automated production equipment', /参与程度/],
+  ['参与开发数据采集软件', 'Independently developed data acquisition software', /参与程度|独立/],
+  ['预计2027年1月授予硕士学位', "Master's degree awarded in January 2027", /预计|已授予/, { section: 'education' }],
+  ['在公司使用设备测试', 'Tested equipment', /公司/],
+  ['在示例测控公司实习期间参与设备测试', 'Participated in equipment testing during full-time employment at the company', /实习|全职/],
+  ['项目尚未完成', 'Completed the project', /否定|未完成/, { section: 'projects', nature: '个人项目' }],
+];
+describe('英文译文交叉核对', () => {
+  for (const [zh, bad, why, opt] of TRANS) it(`译文待核对：${zh} → ${bad}`, async () => {
+    const p = trans(zh, 'old machine text', opt); enAi(bad);
+    const plan = await planOrganize(S, p, { useAi: true });
+    const ai = plan.proposals.find((x) => x.source === 'ai' && (x.after as Record<string, string>).en === bad)!;
+    expect(ai).toBeTruthy(); expect(ai.risk).toBe('high'); expect(ai.reasons.join()).toMatch(/译文待核对/); expect(ai.reasons.join()).toMatch(why);
+    const out = applyOrganize(p, plan, safe(plan)); expect(textOf(out, 'en')).toBe('old machine text'); expect(textOf(out)).toBe(zh);
+  });
+  it('正确译文仍为 A 类', async () => {
+    const p = trans('协助维护自动化生产设备', ''); enAi('Assisted in maintaining automated production equipment');
+    const plan = await planOrganize(S, p, { useAi: true });
+    expect(plan.proposals.filter((x) => x.kind !== 'field').every((x) => x.risk === 'safe')).toBe(true);
+    expect(textOf(applyOrganize(p, plan, safe(plan)), 'en')).toBe('Assisted in maintaining automated production equipment');
+    expect(crossCheck('预计2027年1月授予硕士学位', "Master's degree expected in January 2027")).toEqual([]);
+    expect(crossCheck('在公司使用设备进行第1轮测试', 'Used equipment for test round 1 at the company')).toEqual([]);
+  });
+  it('英文有风险时中文安全清洗照常写入', async () => {
+    const p = trans('我协助维护自动化生产设备。实际职责以本人核实为准。', 'old machine text'); enAi('Led the maintenance of automated production equipment');
+    const plan = await planOrganize(S, p, { useAi: true });
+    expect(plan.proposals.some((x) => x.source === 'ai' && x.risk === 'high')).toBe(true);
+    const out = applyOrganize(p, plan, safe(plan));
+    expect(textOf(out)).toBe('协助维护自动化生产设备。'); expect(textOf(out, 'en')).toBe('old machine text');
+    expect(JSON.stringify(out.work[0].notes)).toContain('以本人核实为准');
+  });
+});

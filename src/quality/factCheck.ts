@@ -85,3 +85,42 @@ export function lossReport(local: string, ai: string, lang: Lang): string[] {
   r.push(...semanticFlags(local, ai, lang));
   return r;
 }
+
+// ---- v1.9.2 中英交叉事实一致性（保守：任一概念只在一侧出现即判为待核对）----
+type Pair = [name: string, zh: RegExp, en: RegExp];
+const XPAIRS: Pair[] = [
+  ['否定 / 未完成', /尚未|未完成|未能|没有|未经|无法|不能|未/, /\bnot\b|\bno\b|n't|\byet\b|\bpending\b|\bincomplete\b|\bunfinished\b|\bwithout\b|\bunable\b|\bnever\b/i],
+  ['进行中', /正在|进行中|在研|持续/, /\bongoing\b|\bin progress\b|\bcurrently\b|\bongoing\b|\bcontinu\w*/i],
+  ['仅 / 限定', /仅|只在|只对|只有|仅限/, /\bonly\b|\bsolely\b|\bmerely\b|\blimited to\b|\bexclusively\b/i],
+  ['室温条件', /室温|常温/, /room[- ]temperature|ambient/i],
+  ['仿真 / 模拟', /仿真|模拟/, /simulat\w*|\bemulat\w*/i],
+  ['预计 / 尚未授予', /预计|预期|拟于|将于|即将/, /\bexpected\b|\banticipated\b|\bexpect\w*|\bwill\b|\bto be (?:awarded|conferred)\b|\bupcoming\b/i],
+  ['已获得 / 已授予', /已获得|已授予|已取得|(?<!(?:预计|预期|将于|拟于|即将).{0,12})(?:获得.{0,6}学位|授予(?!.{0,2}日期))/, /\bawarded\b|\bconferred\b|\bobtained\b|\breceived\b|\bearned\b|\bgranted\b/i],
+  ['已完成', /已完成|完成了|已经完成|完成/, /\bcompleted\b|\bfinished\b|\baccomplished\b|\bdelivered\b/i],
+  ['实习', /实习/, /\bintern\w*/i],
+  ['全职 / 正式', /全职|正式员工|正式工作|正式入职/, /full[- ]time|\bpermanent\b|\bemployment\b|\bemployee\b/i],
+  ['兼职', /兼职/, /part[- ]time/i],
+  ['课程 / 教学', /课程|课堂|课设|教学|作业/, /\bcourse\w*|\bclass\b|\bcoursework\b|\bacademic\b|\bassignment\b/i],
+  ['商业', /商业|商用|商业化|客户项目/, /\bcommercial\w*|\bclient\b|\bcustomer\b/i],
+  ['团队协作', /团队|小组|合作|协作|共同|[两二三四五六七八九十\d]人/, /\bteam\w*|\bgroup\b|collaborat\w*|\bjointly\b|\btogether\b|\bwith (?:colleagues|peers)\b/i],
+  ['独立 / 个人', /独立|个人完成|单独|一人/, /\bindependent\w*|single-handedly|\bsolely\b|\balone\b|\bon (?:my|his|her) own\b/i],
+  ['公司', /公司|企业/, /\bcompany\b|\bcorporate\b|\bfirm\b|\benterprise\b/i],
+  ['医院', /医院|临床/, /\bhospital\b|\bclinic\w*/i],
+  ['实验室', /实验室/, /\blab\b|\blaboratory\b/i],
+  ['工厂 / 车间 / 现场', /工厂|车间|产线|现场/, /\bfactory\b|\bplant\b|\bworkshop\b|\bproduction line\b|\bon[- ]site\b|\bfield\b|\bshop floor\b/i],
+  ['学校 / 校内', /学校|校内|校园/, /\bschool\b|\bcampus\b|\buniversity\b/i],
+  ['导师', /导师/, /\badvisor\b|\badviser\b|\bsupervisor\b|\bmentor\b/i],
+  ['医生', /医生|医师/, /\bdoctor\w*|\bphysician\w*|\bclinician\w*/i],
+];
+const XPART_EN: [RegExp, number][] = [[/\b(?:participated|participating|contributed|took part|involved)\b/i, 1], [/\b(?:assisted|assisting|supported|helped)\b/i, 2], [/\b(?:responsible|in charge)\b/i, 3], [/\b(?:led|leading|headed|directed|spearheaded|managed)\b/i, 4], [/\b(?:independently|single-handedly)\b/i, 5]];
+/** 中英两侧事实是否一致；返回不一致项（空数组 = 保守规则下未发现差异） */
+export function crossCheck(zh: string, en: string): string[] {
+  const out: string[] = [];
+  const lz = [...levels(zh, 'zh')].sort().join(), le = [...new Set(XPART_EN.filter(([re]) => re.test(en)).map(([, n]) => n))].sort().join();
+  if (lz !== le) out.push(`参与程度不一致：中文「${lz.split(',').filter(Boolean).map((n) => PART_NAME[+n]).join('/') || '未写明'}」↔ 英文「${le.split(',').filter(Boolean).map((n) => PART_NAME[+n]).join('/') || '未写明'}」`);
+  for (const [name, rz, re] of XPAIRS) {
+    const a = rz.test(zh), b = re.test(en);
+    if (a !== b) out.push(`${name}：${a ? '中文有、英文没有' : '英文有、中文没有'}`);
+  }
+  return out;
+}
