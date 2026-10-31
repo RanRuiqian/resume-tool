@@ -12,7 +12,7 @@ import type { Lang, LocalizedText, ProfileDoc, ProjectDossier } from '../types';
  * 检测按「句子 / 分句」进行：只移出元信息分句，同一句里的事实部分保留。
  * 不会因为出现「不确定 / 失败 / 局限」等字样就删除句子——项目里的失败方案、测试局限是技术事实，进入项目档案（dossier）。
  */
-export const QUALITY_VERSION = 'q1';
+export const QUALITY_VERSION = 'q2';
 
 export type MetaKind = 'verify' | 'advice' | 'evidence' | 'disclaimer' | 'selfpraise';
 export const META_LABEL: Record<MetaKind, string> = {

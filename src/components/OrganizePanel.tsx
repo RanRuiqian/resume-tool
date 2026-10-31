@@ -34,11 +34,11 @@ export function OrganizePanel() {
     const id = await snapshotProfile(db, cur, 'AI 整理现有资料前（自动快照）'); setSnap(id);
     setStage('ask');
   };
-  const run = async (useAi: boolean) => {
+  const run = async (useAi: boolean, force = false) => {
     if (!base) return;
     setStage('running'); setErr(''); setProg(useAi ? '本地规则检查…' : '本地规则检查中…');
     try {
-      const pl = await planOrganize(settings, base, { useAi, onProgress: (d, n, m) => setProg(`${m}（${d}/${n}）`) });
+      const pl = await planOrganize(settings, base, { useAi, force, onProgress: (d, n, m) => setProg(`${m}（${d}/${n}）`) });
       setPlan(pl); setAcc(new Set(pl.proposals.filter((x) => x.risk === 'safe').map((x) => x.id)));
       setAfter(rep(applyOrganize(base, pl, new Set(pl.proposals.filter((x) => x.risk === 'safe').map((x) => x.id)))));
       setStage('review');
@@ -66,6 +66,7 @@ export function OrganizePanel() {
       <label className="check"><input type="checkbox" checked={acc.has(x.id)} onChange={(e) => toggle(x.id, e.target.checked)} /> <b>{SEC[x.section]} · {x.entryTitle || x.entryId}</b>{x.kind === 'field' && <> · {FIELD[x.target] ?? x.target}</>}<span className="muted small"> （来源：{x.source === 'ai' ? 'AI 规范化' : x.source === 'local' ? '本地规则' : '原始资料复核'}）</span></label>
       <div className="org-diff"><div className="org-before"><span className="muted small">修改前</span><pre>{txt(x.before)}</pre></div><div className="org-after"><span className="muted small">修改后</span><pre>{txt(x.after)}</pre></div></div>
       <div className="small muted">原因：{x.reasons.join('；')}</div>
+      {x.risk === 'high' && x.source === 'ai' && <div className="small org-loss" data-testid="org-loss">⚠ {x.reasons.filter((r) => /找不到原文|删除了|新增了|参与程度|团队|并列|独立|数字|时间状态|商业|全职|学位/.test(r)).join('；') || 'AI 改写了措辞，无法证明与原文事实完全等价'}{plan?.proposals.some((y) => y.target === x.target && y.entryId === x.entryId && y.risk === 'safe') ? '。已在 A 类中提供只做机械清洗、保留全部事实的版本。' : ''}</div>}
       {x.notes.length > 0 && <div className="small">移入内部备注：{x.notes.join('；')}</div>}
       {x.archive.length > 0 && <div className="small">存入项目档案：{x.archive.join('；')}</div>}
     </div>
@@ -86,6 +87,7 @@ export function OrganizePanel() {
             {aiReady
               ? <button className="primary" data-testid="organize-ai" onClick={() => run(true)}>调用 AI 规范化措辞</button>
               : <span className="muted small">{settings.demoMode ? '演示模式不调用 AI。' : '尚未启用 API，只能使用本地规则。'}</span>}
+            {aiReady && <button data-testid="organize-recheck" title="规则或模型更新后，重新检查以前整理过 / 拒绝过的文字，不需要重新导入" onClick={() => run(true, true)}>重新检查已拒绝建议</button>}
             {snap && <button onClick={restore}>恢复快照</button>}
             <button onClick={() => setStage('idle')}>取消</button>
           </div>
@@ -94,13 +96,14 @@ export function OrganizePanel() {
       {stage === 'running' && <div className="notice" data-testid="organize-progress">⏳ {prog || '整理中…'}</div>}
       {stage === 'review' && plan && (
         <div data-testid="organize-review">
-          <div className="notice ok" data-testid="organize-report">整理报告：共 {plan.proposals.length} 条建议，其中安全修正 {safe.length} 条（默认已勾选，可批量接受），高风险事实 {high.length} 条（默认不勾选，需要你逐条确认）。{plan.aiCalls ? `调用 AI ${plan.aiCalls} 次、处理 ${plan.aiItems} 条。` : '未调用 AI。'}
+          <div className="notice ok" data-testid="organize-report">整理报告：共 {plan.proposals.length} 条建议，其中 A 类机械清洗 {safe.length} 条（默认已勾选，可批量接受），需要判断 {high.length} 条（AI 语义改写或事实变化，默认不勾选）。{plan.aiCalls ? `调用 AI ${plan.aiCalls} 次、处理 ${plan.aiItems} 条。` : '未调用 AI。'}
+            {plan.aiErrors?.length ? <div className="small" data-testid="organize-ai-errors">⚠ {plan.aiErrors.length} 批 AI 请求失败，这些条目只做了本地清洗：{plan.aiErrors.join('；')}</div> : null}
             <div className="small">整理前：{stat(before)}<br />接受安全修正后：{stat(after)}</div></div>
-          {high.length > 0 && <details open className="org-group high"><summary>⚠ 高风险事实（{high.length}）—— 日期、学位、单位、职位、工具、成果数字，不会自动修改</summary>{high.map(row)}</details>}
-          <details open={high.length === 0} className="org-group"><summary>✓ 安全的表达修正（{safe.length}）—— 移除套话、整理语序、备注归类 <button className="link" data-testid="organize-accept-all" onClick={(e) => { e.preventDefault(); setAcc((s) => new Set([...s, ...safe.map((x) => x.id)])); }}>全部接受</button> <button className="link" onClick={(e) => { e.preventDefault(); setAcc((s) => new Set([...s].filter((id) => !safe.some((x) => x.id === id)))); }}>全部取消</button></summary>{safe.map(row)}</details>
+          {high.length > 0 && <details open className="org-group high"><summary>⚠ B 类 · 需要你判断（{high.length}）—— AI 语义改写、可能丢失 / 改变事实（地点、对象、参与程度、条件、状态、日期、学位等），默认不写入</summary>{high.map(row)}</details>}
+          <details open={high.length === 0} className="org-group"><summary>✓ A 类 · 机械清洗（{safe.length}）—— 去掉「我」主语、说明句移入备注、失败方案归档，事实原样保留 <button className="link" data-testid="organize-accept-all" onClick={(e) => { e.preventDefault(); setAcc((s) => new Set([...s, ...safe.map((x) => x.id)])); }}>全部接受</button> <button className="link" onClick={(e) => { e.preventDefault(); setAcc((s) => new Set([...s].filter((id) => !safe.some((x) => x.id === id)))); }}>全部取消</button></summary>{safe.map(row)}</details>
           <div className="row end"><button onClick={() => { setStage('idle'); setPlan(null); }}>放弃（不写入）</button><button className="primary" data-testid="organize-apply" disabled={!acc.size} onClick={write}>写入资料库（{acc.size} 条）</button></div>
         </div>)}
-      {stage === 'done' && <div className="notice ok" data-testid="organize-done">已写入。现在：{stat(after)}。英文机翻不阻塞生成，可在下方「待处理汇总」里批量查看。{snap && <button className="link" data-testid="organize-restore" onClick={restore}>恢复到整理前</button>}</div>}
+      {stage === 'done' && <div className="notice ok" data-testid="organize-done">已写入。现在：{stat(after)}。英文机翻不阻塞生成，可在下方「资料状态」里批量查看。{snap && <button className="link" data-testid="organize-restore" onClick={restore}>恢复到整理前</button>}</div>}
     </div>
   );
 }
@@ -118,7 +121,8 @@ export function ReviewSummary() {
   const machine: { t: { zh?: string; en?: string; status?: Partial<Record<'zh' | 'en', string>> }; l: 'zh' | 'en'; path: string }[] = [];
   forEachText(profile, (t, path) => (['zh', 'en'] as const).forEach((l) => { if (t.status?.[l] === 'machine') machine.push({ t, l, path }); }));
   const crit = unc.filter((x) => x.critical);
-  if (!unc.length && !machine.length) return null;
+  const q = rep(profile); const stale = q.stale;
+  if (!unc.length && !machine.length && !q.polluted && !q.firstPerson && !stale) return null;
   const confirmSel = () => {
     if (!sel.size) return;
     const n = structuredClone(profile); let i = 0;
@@ -127,7 +131,12 @@ export function ReviewSummary() {
   };
   return (
     <div className="card review-summary" data-testid="review-summary">
-      <b>📋 待处理汇总</b> <span className="muted small">需要核实的事实 {unc.length} 条（其中重要 {crit.length} 条）· 机翻待校对 {machine.length} 个字段（不阻塞生成）</span>
+      <b>📋 资料状态</b>
+      <div className="status3" data-testid="status3">
+        <span data-testid="st-clean">🧹 内容清洗：{q.polluted + q.firstPerson ? `${q.polluted} 处说明句、${q.firstPerson} 处「我」主语待清洗` : '已清洗'}</span>
+        <span data-testid="st-fact">🔎 事实核对：{unc.length ? `${unc.length} 条待核实（重要 ${crit.length}）` : '无待核实'}</span>
+        <span data-testid="st-trans">🌐 英文翻译：{machine.length} 条机翻（可直接用于求职，生成时会再核对）{stale ? ` · ${stale} 条待更新（中文已改）` : ''}</span>
+      </div>
       {crit.length > 0 && <div className="notice warn" data-testid="review-critical">{crit.map((x, i) => <div key={i} className="small">⚠ {SEC[x.sec]} · {x.title}：{x.text.replace('【严重】', '')}</div>)}</div>}
       {unc.length > crit.length && <details><summary className="small">其他待核实（{unc.length - crit.length}）</summary>{unc.filter((x) => !x.critical).map((x, i) => <div key={i} className="small">· {SEC[x.sec]} · {x.title}：{x.text}<span className="muted">（来源：导入时与原文比对）</span></div>)}</details>}
       {machine.length > 0 && <details open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)} data-testid="review-machine"><summary className="small">机翻待校对（{machine.length}）—— 可批量查看，勾选确认无误的译文</summary>

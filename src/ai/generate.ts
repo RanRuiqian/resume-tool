@@ -84,7 +84,8 @@ export function runConsistency(r: ResumeDoc): ResumeDoc {
 
 /** AI 生成主版本（F5.6 第一步） */
 async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number): Promise<ResumeDoc> {
-  const T = (t: LocalizedText) => lt(t, primary);
+  // v1.9.1：主语言译文已过期（另一语言改过）时，改用最新的另一语言原文交给 AI 重写，不静默使用过期译文
+  const T = (t: LocalizedText) => (t?.status?.[primary] === 'stale' ? lt(t, other(primary)) : lt(t, primary));
   // 不发送照片、出生年月、性别、籍贯等敏感信息（PRD 8）
   const lib = {
     summary: T(p.profile.summary), headline: T(p.profile.headline),
@@ -194,7 +195,23 @@ export async function localizeAi(s: Settings, p: ProfileDoc, job: JobParse | nul
   return runConsistency(next);
 }
 
+/** v1.9.1：简历条目若直接用了资料库里「已过期」的译文（另一语言修改后未重新翻译），标为需核对，不静默当作同步 */
+export function flagStale(p: ProfileDoc, r: ResumeDoc): ResumeDoc {
+  const idx = textIndex(p);
+  const items = r.items.map((i): GenItem => {
+    const t = idx.get(i.sourceId)?.t; if (!t) return i;
+    const st = (['zh', 'en'] as Lang[]).filter((l) => t.status?.[l] === 'stale' && i[l].trim() && i[l].trim() === (t[l] ?? '').trim());
+    if (!st.length) return i;
+    const msg = st.map((l) => `资料库${l === 'zh' ? '中文' : '英文'}已过期（另一语言修改后尚未重新翻译），请重新补译或核对`);
+    return { ...i, syncStatus: 'needs-review', translation: { source: 'profile', ...(i.translation ?? {}), factIssues: [...new Set([...(i.translation?.factIssues ?? []), ...msg])], checkedAt: new Date().toISOString() } };
+  });
+  return { ...r, items };
+}
+
 export async function generateResume(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void): Promise<ResumeDoc> {
+  return flagStale(p, await generateResumeInner(s, p, job, primary, targetPages, onStep));
+}
+async function generateResumeInner(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void): Promise<ResumeDoc> {
   if (s.demoMode) {
     onStep?.('演示模式：规则匹配中…');
     const r = generateRules(p, job, primary);

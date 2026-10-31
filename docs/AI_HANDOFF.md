@@ -70,6 +70,15 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 - 生成：`generate.ts` 用 `isResumeSafe` 过滤要点（最后一道防线，资料库原文不改）。
 - AI 调用方式不变（`chatJson` + 平铺 settings 字段），分批 20 条，失败 / 超时抛错，资料不变。
 
+### 4d-1. v1.9.1 信息丢失防护（A/B 分级）
+- **A 类（可默认勾选）**：AI 输出经 `splitMeta` + `stripFirstPerson` 后与本地机械清洗结果 `equivalent()`（去标点和「进行/的/了/地/着」后相同；英文比较小写词序列）。此时采用本地版本。
+- **B 类（永不默认勾选）**：其余 AI 改写。`factCheck.lossReport()` 给出「改写后找不到原文片段」（LCS 覆盖）和语义标记（地点/场景、工作对象、否定/限定、时间状态、因果/结论、职责范围、商业/正式性质、参与程度 参与<协助<负责<主导<独立完成、团队→个人、并列项减少）。同时总是生成 source=`local` 的安全版本。
+- 另一语言为 machine/stale/空 且源语言与本地等价 → 视为重新机翻（只做数字核对），写入后标 machine。
+- 指纹带盐 `saltOf(settings)=QUALITY_VERSION|model`；`planOrganize(..., {force:true})` = 「重新检查已拒绝建议」。
+- 每批 try/catch，失败批记入 `plan.aiErrors` 并只做本地清洗；全部失败才抛错（资料不变）。
+- `generate.ts`：`flagStale()` 把直接使用了 stale 资料译文的条目标为 needs-review；AI 主语言为 stale 时改用另一语言原文。
+- 回归：`tests/infoLoss.test.ts`（mock AI 错误输出），`tests/e2e/info_loss_e2e.py`。
+
 ## 5. ran-application-handoff 1.0（旧导航工具）
 **重要：目前只按用户口头描述的结构实现和测试，尚未用真实导出文件验证。** 用户可以提供真实样本；拿到后请：把脱敏后的样本存为 fixture、跑 `tests/handoff10.test.ts` 同类测试、修正 `HANDOFF_MAPPING` / `HANDOFF_STATUS`。
 描述的结构与映射规则见 `docs/DATA_SCHEMA.md`「导入格式」。实现：`src/tracker/importers.ts` 中 `handoff10()`、`HANDOFF_MAPPING`、`HANDOFF_STATUS`。

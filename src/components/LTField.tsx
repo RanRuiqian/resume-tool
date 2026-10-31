@@ -3,7 +3,7 @@ import { editText } from '../locale/text';
 
 const STATUS: Record<string, { label: string; cls: string }> = {
   manual: { label: '人工', cls: 'st-manual' }, machine: { label: '机翻待校对', cls: 'st-machine' },
-  confirmed: { label: '已确认', cls: 'st-confirmed' }, stale: { label: '原文已改·过期', cls: 'st-stale' },
+  confirmed: { label: '已确认', cls: 'st-confirmed' }, stale: { label: '待更新（原文已改）', cls: 'st-stale' },
 };
 
 /** 双语字段编辑器：中 / 英两栏 + 翻译状态徽标 + 确认按钮（F5.1–F5.3） */

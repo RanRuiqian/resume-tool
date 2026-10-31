@@ -89,7 +89,7 @@ describe('content quality (v1.9)', () => {
     mock.mockRejectedValue(new Error('请求超时'));
     await expect(planOrganize(S, p, { useAi: true })).rejects.toThrow('请求超时');
     mock.mockResolvedValue({ items: [] });
-    await expect(planOrganize(S, p, { useAi: true })).rejects.toThrow(/资料未改动/);
+    await expect(planOrganize(S, p, { useAi: true })).rejects.toThrow(/资料没有任何改动/);
     expect(JSON.stringify(p)).toBe(before);
   });
   it('user-confirmed text is never auto-rewritten; userConfirmedAt never set', async () => {

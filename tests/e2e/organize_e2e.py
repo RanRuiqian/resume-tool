@@ -42,7 +42,7 @@ with sync_playwright() as p:
     orig=prof(pg); orig_s=json.dumps(orig,sort_keys=True)
     chk('前置：旧版污染资料 2/7/14/29/2/5', [len(orig[k]) for k in ['education','work','projects','skills','certificates','awards']]==[2,7,14,29,2,5])
     rs=pg.locator('[data-testid=review-summary]').inner_text()
-    chk(f'机翻改为非阻塞汇总：{rs.splitlines()[0][:60]}', '不阻塞生成' in rs and '逐条确认' not in pg.locator('main').inner_text())
+    chk(f'机翻改为非阻塞汇总：{rs.splitlines()[0][:60]}', '可直接用于求职' in rs and '逐条确认' not in pg.locator('main').inner_text())
     pg.screenshot(path=S+'p14_profile_before.png')
     # ---- 点击 → 快照 + 本地检查 + AI 提示，尚未调用 AI ----
     pg.click('[data-testid=organize-start]'); pg.wait_for_selector('[data-testid=organize-ask]')
