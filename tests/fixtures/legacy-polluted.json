@@ -1,0 +1,1499 @@
+{
+ "version": "1.3",
+ "primaryLanguage": "zh",
+ "glossary": [],
+ "profile": {
+  "name": {
+   "zh": "测试用户七",
+   "en": "Test User Seven",
+   "status": {
+    "zh": "manual",
+    "en": "machine"
+   }
+  },
+  "headline": {},
+  "summary": {
+   "zh": "我熟悉机械设计与测试流程。以上信息仅供参考。",
+   "en": "I am familiar with mechanical design. For reference only.",
+   "status": {
+    "zh": "manual",
+    "en": "machine"
+   }
+  },
+  "contacts": {
+   "location": {}
+  },
+  "personal": {}
+ },
+ "education": [
+  {
+   "id": "edu0",
+   "enabled": true,
+   "school": {
+    "zh": "示例大学0",
+    "en": "Example University 0",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "degree": {
+    "zh": "学士",
+    "en": "Bachelor",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "major": {
+    "zh": "机械工程",
+    "en": "Mechanical Engineering",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "start": "2020-09",
+   "end": "2024-06",
+   "actualConferralDate": "2024-06",
+   "highlights": [
+    {
+     "zh": "主修课程覆盖力学与控制0。实际职责以本人核实为准。",
+     "en": "Core courses in mechanics 0.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "edu0-h1"
+    }
+   ]
+  },
+  {
+   "id": "edu1",
+   "enabled": true,
+   "school": {
+    "zh": "示例大学1",
+    "en": "Example University 1",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "degree": {
+    "zh": "硕士",
+    "en": "Master",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "major": {
+    "zh": "机械工程",
+    "en": "Mechanical Engineering",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "start": "2024-09",
+   "end": "2027-01",
+   "expectedConferralDate": "2027-01",
+   "highlights": [
+    {
+     "zh": "主修课程覆盖力学与控制1。具体情况请自行确认。",
+     "en": "Core courses in mechanics 1.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "edu1-h1"
+    }
+   ]
+  }
+ ],
+ "work": [
+  {
+   "id": "w0",
+   "enabled": true,
+   "company": {
+    "zh": "示例公司0",
+    "en": "Example Co 0",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "title": {
+    "zh": "测试实习生",
+    "en": "Test Intern",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "internship",
+   "start": "2023-07",
+   "end": "2023-09",
+   "bullets": [
+    {
+     "zh": "我在公司使用设备进行第1轮测试。实际职责以本人核实为准。",
+     "en": "I used equipment for test round 1.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w0-b1"
+    },
+    {
+     "zh": "整理测试数据 3 份。",
+     "en": "Compiled 3 test reports.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w0-b2"
+    }
+   ]
+  },
+  {
+   "id": "w1",
+   "enabled": true,
+   "company": {
+    "zh": "示例公司1",
+    "en": "Example Co 1",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "title": {
+    "zh": "测试实习生",
+    "en": "Test Intern",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "internship",
+   "start": "2023-07",
+   "end": "2023-09",
+   "bullets": [
+    {
+     "zh": "我在公司使用设备进行第2轮测试。具体情况请自行确认。",
+     "en": "I used equipment for test round 2.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w1-b1"
+    },
+    {
+     "zh": "整理测试数据 4 份。",
+     "en": "Compiled 4 test reports.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w1-b2"
+    }
+   ]
+  },
+  {
+   "id": "w2",
+   "enabled": true,
+   "company": {
+    "zh": "示例公司2",
+    "en": "Example Co 2",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "title": {
+    "zh": "测试实习生",
+    "en": "Test Intern",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "internship",
+   "start": "2023-07",
+   "end": "2023-09",
+   "bullets": [
+    {
+     "zh": "我在公司使用设备进行第3轮测试。该经历可能适用于某些岗位。",
+     "en": "I used equipment for test round 3.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w2-b1"
+    },
+    {
+     "zh": "整理测试数据 5 份。",
+     "en": "Compiled 5 test reports.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w2-b2"
+    }
+   ]
+  },
+  {
+   "id": "w3",
+   "enabled": true,
+   "company": {
+    "zh": "示例公司3",
+    "en": "Example Co 3",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "title": {
+    "zh": "测试实习生",
+    "en": "Test Intern",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "internship",
+   "start": "2023-07",
+   "end": "2023-09",
+   "bullets": [
+    {
+     "zh": "我在公司使用设备进行第4轮测试。这可以作为求职材料。",
+     "en": "I used equipment for test round 4.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w3-b1"
+    },
+    {
+     "zh": "整理测试数据 6 份。",
+     "en": "Compiled 6 test reports.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w3-b2"
+    }
+   ]
+  },
+  {
+   "id": "w4",
+   "enabled": true,
+   "company": {
+    "zh": "示例公司4",
+    "en": "Example Co 4",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "title": {
+    "zh": "测试实习生",
+    "en": "Test Intern",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "internship",
+   "start": "2023-07",
+   "end": "2023-09",
+   "bullets": [
+    {
+     "zh": "我在公司使用设备进行第5轮测试。建议在简历中强调动手能力。",
+     "en": "I used equipment for test round 5.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w4-b1"
+    },
+    {
+     "zh": "整理测试数据 7 份。",
+     "en": "Compiled 7 test reports.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w4-b2"
+    }
+   ]
+  },
+  {
+   "id": "w5",
+   "enabled": true,
+   "company": {
+    "zh": "示例公司5",
+    "en": "Example Co 5",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "title": {
+    "zh": "测试实习生",
+    "en": "Test Intern",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "internship",
+   "start": "2023-07",
+   "end": "2023-09",
+   "bullets": [
+    {
+     "zh": "我在公司使用设备进行第6轮测试。尚需补充相关证据。",
+     "en": "I used equipment for test round 6.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w5-b1"
+    },
+    {
+     "zh": "整理测试数据 8 份。",
+     "en": "Compiled 8 test reports.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w5-b2"
+    }
+   ]
+  },
+  {
+   "id": "w6",
+   "enabled": true,
+   "company": {
+    "zh": "示例公司6",
+    "en": "Example Co 6",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "title": {
+    "zh": "测试实习生",
+    "en": "Test Intern",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "internship",
+   "start": "2023-07",
+   "end": "2023-09",
+   "bullets": [
+    {
+     "zh": "我在公司使用设备进行第7轮测试。本人实际掌握程度有待确认。",
+     "en": "I used equipment for test round 7.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w6-b1"
+    },
+    {
+     "zh": "整理测试数据 9 份。",
+     "en": "Compiled 9 test reports.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "w6-b2"
+    }
+   ]
+  }
+ ],
+ "projects": [
+  {
+   "id": "p0",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验1",
+    "en": "Course Lab 1",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第1版。这可以作为求职材料。",
+     "en": "Designed fixture v1.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p0-b1"
+    },
+    {
+     "zh": "第一版方案因刚度不足失败，后改为加强筋结构。",
+     "en": "",
+     "status": {
+      "zh": "manual"
+     },
+     "id": "p0-b2"
+    }
+   ]
+  },
+  {
+   "id": "p1",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验2",
+    "en": "Course Lab 2",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第2版。建议在简历中强调动手能力。",
+     "en": "Designed fixture v2.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p1-b1"
+    }
+   ]
+  },
+  {
+   "id": "p2",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验3",
+    "en": "Course Lab 3",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第3版。尚需补充相关证据。",
+     "en": "Designed fixture v3.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p2-b1"
+    }
+   ]
+  },
+  {
+   "id": "p3",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验4",
+    "en": "Course Lab 4",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第4版。本人实际掌握程度有待确认。",
+     "en": "Designed fixture v4.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p3-b1"
+    },
+    {
+     "zh": "第一版方案因刚度不足失败，后改为加强筋结构。",
+     "en": "",
+     "status": {
+      "zh": "manual"
+     },
+     "id": "p3-b2"
+    }
+   ]
+  },
+  {
+   "id": "p4",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验5",
+    "en": "Course Lab 5",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第5版。以上信息仅供参考。",
+     "en": "Designed fixture v5.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p4-b1"
+    }
+   ]
+  },
+  {
+   "id": "p5",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验6",
+    "en": "Course Lab 6",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第6版。实际职责以本人核实为准。",
+     "en": "Designed fixture v6.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p5-b1"
+    }
+   ]
+  },
+  {
+   "id": "p6",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验7",
+    "en": "Course Lab 7",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第7版。具体情况请自行确认。",
+     "en": "Designed fixture v7.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p6-b1"
+    },
+    {
+     "zh": "第一版方案因刚度不足失败，后改为加强筋结构。",
+     "en": "",
+     "status": {
+      "zh": "manual"
+     },
+     "id": "p6-b2"
+    }
+   ]
+  },
+  {
+   "id": "p7",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验8",
+    "en": "Course Lab 8",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第8版。该经历可能适用于某些岗位。",
+     "en": "Designed fixture v8.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p7-b1"
+    }
+   ]
+  },
+  {
+   "id": "p8",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验9",
+    "en": "Course Lab 9",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第9版。这可以作为求职材料。",
+     "en": "Designed fixture v9.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p8-b1"
+    }
+   ]
+  },
+  {
+   "id": "p9",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验10",
+    "en": "Course Lab 10",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第10版。建议在简历中强调动手能力。",
+     "en": "Designed fixture v10.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p9-b1"
+    },
+    {
+     "zh": "第一版方案因刚度不足失败，后改为加强筋结构。",
+     "en": "",
+     "status": {
+      "zh": "manual"
+     },
+     "id": "p9-b2"
+    }
+   ]
+  },
+  {
+   "id": "p10",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验11",
+    "en": "Course Lab 11",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第11版。尚需补充相关证据。",
+     "en": "Designed fixture v11.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p10-b1"
+    }
+   ]
+  },
+  {
+   "id": "p11",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验12",
+    "en": "Course Lab 12",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第12版。本人实际掌握程度有待确认。",
+     "en": "Designed fixture v12.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p11-b1"
+    }
+   ]
+  },
+  {
+   "id": "p12",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验13",
+    "en": "Course Lab 13",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第13版。以上信息仅供参考。",
+     "en": "Designed fixture v13.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p12-b1"
+    },
+    {
+     "zh": "第一版方案因刚度不足失败，后改为加强筋结构。",
+     "en": "",
+     "status": {
+      "zh": "manual"
+     },
+     "id": "p12-b2"
+    }
+   ]
+  },
+  {
+   "id": "p13",
+   "enabled": true,
+   "name": {
+    "zh": "课程实验14",
+    "en": "Course Lab 14",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "role": {
+    "zh": "组员",
+    "en": "Member",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "kind": "auxiliary",
+   "nature": "课程实验",
+   "start": "2022-03",
+   "end": "2022-06",
+   "tags": [],
+   "bullets": [
+    {
+     "zh": "完成夹具设计与装配第14版。实际职责以本人核实为准。",
+     "en": "Designed fixture v14.",
+     "status": {
+      "zh": "manual",
+      "en": "machine"
+     },
+     "id": "p13-b1"
+    }
+   ]
+  }
+ ],
+ "skills": [
+  {
+   "id": "s0",
+   "enabled": true,
+   "name": {
+    "zh": "技能0（本人实际掌握程度有待确认）",
+    "en": "Skill 0",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s1",
+   "enabled": true,
+   "name": {
+    "zh": "技能1",
+    "en": "Skill 1",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s2",
+   "enabled": true,
+   "name": {
+    "zh": "技能2",
+    "en": "Skill 2",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s3",
+   "enabled": true,
+   "name": {
+    "zh": "技能3",
+    "en": "Skill 3",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s4",
+   "enabled": true,
+   "name": {
+    "zh": "技能4",
+    "en": "Skill 4",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s5",
+   "enabled": true,
+   "name": {
+    "zh": "技能5",
+    "en": "Skill 5",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s6",
+   "enabled": true,
+   "name": {
+    "zh": "技能6",
+    "en": "Skill 6",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s7",
+   "enabled": true,
+   "name": {
+    "zh": "技能7",
+    "en": "Skill 7",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s8",
+   "enabled": true,
+   "name": {
+    "zh": "技能8",
+    "en": "Skill 8",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s9",
+   "enabled": true,
+   "name": {
+    "zh": "技能9",
+    "en": "Skill 9",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s10",
+   "enabled": true,
+   "name": {
+    "zh": "技能10（本人实际掌握程度有待确认）",
+    "en": "Skill 10",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s11",
+   "enabled": true,
+   "name": {
+    "zh": "技能11",
+    "en": "Skill 11",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s12",
+   "enabled": true,
+   "name": {
+    "zh": "技能12",
+    "en": "Skill 12",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s13",
+   "enabled": true,
+   "name": {
+    "zh": "技能13",
+    "en": "Skill 13",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s14",
+   "enabled": true,
+   "name": {
+    "zh": "技能14",
+    "en": "Skill 14",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s15",
+   "enabled": true,
+   "name": {
+    "zh": "技能15",
+    "en": "Skill 15",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s16",
+   "enabled": true,
+   "name": {
+    "zh": "技能16",
+    "en": "Skill 16",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s17",
+   "enabled": true,
+   "name": {
+    "zh": "技能17",
+    "en": "Skill 17",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s18",
+   "enabled": true,
+   "name": {
+    "zh": "技能18",
+    "en": "Skill 18",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s19",
+   "enabled": true,
+   "name": {
+    "zh": "技能19",
+    "en": "Skill 19",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s20",
+   "enabled": true,
+   "name": {
+    "zh": "技能20（本人实际掌握程度有待确认）",
+    "en": "Skill 20",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s21",
+   "enabled": true,
+   "name": {
+    "zh": "技能21",
+    "en": "Skill 21",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s22",
+   "enabled": true,
+   "name": {
+    "zh": "技能22",
+    "en": "Skill 22",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s23",
+   "enabled": true,
+   "name": {
+    "zh": "技能23",
+    "en": "Skill 23",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s24",
+   "enabled": true,
+   "name": {
+    "zh": "技能24",
+    "en": "Skill 24",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s25",
+   "enabled": true,
+   "name": {
+    "zh": "技能25",
+    "en": "Skill 25",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s26",
+   "enabled": true,
+   "name": {
+    "zh": "技能26",
+    "en": "Skill 26",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s27",
+   "enabled": true,
+   "name": {
+    "zh": "技能27",
+    "en": "Skill 27",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  },
+  {
+   "id": "s28",
+   "enabled": true,
+   "name": {
+    "zh": "技能28",
+    "en": "Skill 28",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "level": ""
+  }
+ ],
+ "certificates": [
+  {
+   "id": "c0",
+   "enabled": true,
+   "name": {
+    "zh": "示例证书0",
+    "en": "Cert 0",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "issuer": {
+    "zh": "示例协会",
+    "en": "Example Assoc",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "date": "2023-01"
+  },
+  {
+   "id": "c1",
+   "enabled": true,
+   "name": {
+    "zh": "示例证书1",
+    "en": "Cert 1",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "issuer": {
+    "zh": "示例协会",
+    "en": "Example Assoc",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "date": "2023-01"
+  }
+ ],
+ "awards": [
+  {
+   "id": "a0",
+   "enabled": true,
+   "name": {
+    "zh": "示例奖项0",
+    "en": "Award 0",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "issuer": {
+    "zh": "示例学院",
+    "en": "Example College",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "date": "2022-12",
+   "highlights": []
+  },
+  {
+   "id": "a1",
+   "enabled": true,
+   "name": {
+    "zh": "示例奖项1",
+    "en": "Award 1",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "issuer": {
+    "zh": "示例学院",
+    "en": "Example College",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "date": "2022-12",
+   "highlights": []
+  },
+  {
+   "id": "a2",
+   "enabled": true,
+   "name": {
+    "zh": "示例奖项2",
+    "en": "Award 2",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "issuer": {
+    "zh": "示例学院",
+    "en": "Example College",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "date": "2022-12",
+   "highlights": []
+  },
+  {
+   "id": "a3",
+   "enabled": true,
+   "name": {
+    "zh": "示例奖项3",
+    "en": "Award 3",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "issuer": {
+    "zh": "示例学院",
+    "en": "Example College",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "date": "2022-12",
+   "highlights": []
+  },
+  {
+   "id": "a4",
+   "enabled": true,
+   "name": {
+    "zh": "示例奖项4",
+    "en": "Award 4",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "issuer": {
+    "zh": "示例学院",
+    "en": "Example College",
+    "status": {
+     "zh": "manual",
+     "en": "machine"
+    }
+   },
+   "date": "2022-12",
+   "highlights": []
+  }
+ ],
+ "evidence": []
+}

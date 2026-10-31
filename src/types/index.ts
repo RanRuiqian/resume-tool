@@ -11,6 +11,8 @@ export interface LocalizedText {
   status?: Partial<Record<Lang, TransStatus>>;
   /** 生成译文时的原文快照，用于检测"过期" */
   srcSnapshot?: string;
+  /** v1.9：「AI 整理现有资料」处理过这段文字时的指纹；文字未变时不再重复送 AI 改写（防持续改写） */
+  organized?: string;
 }
 
 export interface GlossaryEntry { zh: string; en: string }
@@ -41,6 +43,8 @@ export interface BaseEntry {
   aliases?: string[];
   /** 原文中的备注 / 待核实 / 证据说明：只作内部素材，不进入简历正文（v1.6） */
   notes?: string[];
+  /** v1.9 factual_content：被规范化改写 / 移出要点之前的原句存档，只作追溯，不打印 */
+  factualContent?: string[];
   mergeHistory?: { at: string; importTag: string; incomingId: string; incomingTitle: string; fieldsOverwritten: { field: string; old: string; new: string }[]; pointsAdded: string[]; incomingSnapshot: string }[];
 }
 
@@ -144,6 +148,8 @@ export interface ProfileDoc {
     photoAspect?: number;
     contacts: Contacts;
     personal: PersonalInfo;
+    /** v1.9：从简介 / 标题中移出的内部说明 */
+    notes?: string[];
   };
   education: EducationEntry[];
   work: WorkEntry[];

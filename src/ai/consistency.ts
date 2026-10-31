@@ -12,7 +12,7 @@ function normMonths(s: string): string {
 }
 export function numberTokens(s: string): string[] {
   const norm = normMonths(s).replace(/[\uff10-\uff19]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/(\d),(?=\d{3}\b)/g, '$1');
-  const re = /(?<![A-Za-z\d.])(\d+(?:\.\d+)?)(?:\s*(万|亿|thousand|million|billion|mn|bn|[kKmMbB])(?![A-Za-z]))?/g;
+  const re = /(?<![A-Za-z\d.])(?:[vV](?=\d))?(\d+(?:\.\d+)?)(?:\s*(万|亿|thousand|million|billion|mn|bn|[kKmMbB])(?![A-Za-z]))?/g;
   const out: string[] = [];
   for (const m of norm.matchAll(re)) {
     let v = parseFloat(m[1]);
