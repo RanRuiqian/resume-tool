@@ -83,3 +83,40 @@ describe('persistence & backups', () => {
     expect(await snapshotProfile(d, normalizeProfile({}), 'empty')).toBeNull();
   });
 });
+
+describe('career profile v1.3 fields', () => {
+  it('keeps education dates separate, skill dossier, project dossier and evidence through JSON round-trip', () => {
+    const p = normalizeProfile({
+      education: [{ id: 'e1', school: { zh: '模拟大学' }, degree: {}, major: { zh: '机械电子工程' }, start: '2023-09', end: '2026-06', highlights: [],
+        courseCompletionDate: '2026-01', expectedConferralDate: '2026-06', actualConferralDate: '', availableFullTimeDate: '2026-03', degreeProofStatus: 'pending', courses: ['机器视觉', '运动控制'] }],
+      projects: [{ id: 'p1', name: { zh: '焊缝检测' }, role: {}, bullets: [], tags: [], start: '', end: '', evidenceIds: ['ev1', 'ghost'],
+        dossier: { background: '产线人工目检', tools: ['Halcon'], failedAttempts: [{ approach: '阈值分割', reason: '反光' }], phases: [{ name: '验证' }] } }],
+      skills: [{ id: 's1', name: { zh: 'Halcon' }, proficiency: 'proficient', usedIn: ['p1', 'deleted'], lastUsed: '2026-05', evidenceIds: ['ev1'] },
+        { id: 's2', name: { zh: 'PLC' } }, { id: 's3', name: { zh: 'X' }, proficiency: 'guru' }],
+      evidence: [{ id: 'ev1', fileName: '论文.pdf', type: 'paper', location: 'D:/论文/论文.pdf', projectIds: ['p1'], skillIds: ['s1'], proves: '第一作者', confirmed: true }],
+    });
+    const e = p.education[0];
+    expect([e.courseCompletionDate, e.expectedConferralDate, e.availableFullTimeDate, e.end]).toEqual(['2026-01', '2026-06', '2026-03', '2026-06']);
+    expect(e.degreeProofStatus).toBe('pending');
+    expect(p.projects[0].evidenceIds).toEqual(['ev1']);
+    expect(p.projects[0].dossier!.failedAttempts![0].id).toBeTruthy();
+    expect(p.skills[0].usedIn).toEqual(['p1']);
+    // 没填掌握程度的技能保持“未填写”，不自动推断；非法值归零
+    expect(p.skills[1].proficiency).toBe('');
+    expect(p.skills[2].proficiency).toBe('');
+    // 本地路径只是位置说明
+    expect(p.evidence[0].locationKind).toBe('note');
+    expect(p.evidence[0].publicOk).toBe(false);
+    expect(normalizeProfile({ evidence: [{ location: 'https://arxiv.org/abs/1' }] }).evidence[0].locationKind).toBe('url');
+    expect(normalizeProfile(JSON.parse(exportProfileJson(p)))).toEqual(p);
+    expect(p.version).toBe('1.3');
+  });
+  it('old v1.2 JSON backups (no new fields) still import', () => {
+    const old = { version: '1.2', primaryLanguage: 'zh', glossary: [], profile: { name: { zh: '旧备份' }, headline: {}, summary: {}, contacts: { location: {} }, personal: {} },
+      education: [{ id: 'e1', enabled: true, school: { zh: 'A 大学' }, degree: {}, major: {}, start: '2019', end: '2023', highlights: [] }], work: [], projects: [], skills: [], certificates: [], awards: [] };
+    const p = normalizeProfile(old);
+    expect(p.evidence).toEqual([]);
+    expect(p.education[0].end).toBe('2023');
+    expect(p.education[0].expectedConferralDate).toBeUndefined();
+  });
+});

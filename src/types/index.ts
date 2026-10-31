@@ -26,11 +26,65 @@ export interface Contacts {
 
 export interface PersonalInfo { birth?: string; gender?: string; hometown?: string; politics?: string }
 
-export interface BaseEntry { id: string; enabled: boolean }
+export interface BaseEntry {
+  id: string; enabled: boolean;
+  /** 智能导入时 AI 不确定的地方，需人工核对（v1.3） */
+  uncertain?: string[];
+}
+
+/** 学位证明状态 */
+export type DegreeProofStatus = '' | 'not-yet' | 'pending' | 'issued' | 'n/a';
+/** 实际掌握程度：用户自填，绝不根据专业名称推断；'' = 未填写 */
+export type Proficiency = '' | 'aware' | 'used' | 'proficient' | 'expert';
+
+/** 项目阶段（v1.3） */
+export interface ProjectPhase { id: string; name: string; start?: string; end?: string; work?: string; outcome?: string }
+/** 失败方案与原因 */
+export interface FailedAttempt { id: string; approach: string; reason: string }
+/** 项目详细档案：原始素材，只用于积累与追溯，不直接打印到简历（v1.3） */
+export interface ProjectDossier {
+  background?: string; need?: string; responsibility?: string; technicalWork?: string;
+  /** 软件 / 硬件 / 工具 */
+  tools?: string[];
+  problems?: string; failedAttempts?: FailedAttempt[]; solution?: string; methods?: string;
+  quantResults?: string; finalOutcome?: string; keywords?: string[]; publications?: string;
+  phases?: ProjectPhase[];
+}
+
+export type EvidenceType = 'paper' | 'patent' | 'certificate' | 'transcript' | 'code' | 'report' | 'photo' | 'video' | 'award' | 'other';
+/** 证据：只记录"在哪里、证明什么"。本地路径仅作位置说明，程序不会读取或上传该文件（v1.3） */
+export interface Evidence {
+  id: string;
+  fileName: string;
+  type: EvidenceType;
+  /** 网址，或本地位置说明（如 "D:/证书/xx.pdf"、"导师邮箱里"） */
+  location: string;
+  /** 'url' 可点击打开；'note' 只是文字说明 */
+  locationKind: 'url' | 'note';
+  projectIds: string[];
+  skillIds: string[];
+  /** 这份证据证明了什么具体事实 */
+  proves: string;
+  /** 用户已人工核对 */
+  confirmed: boolean;
+  /** 可以对外展示（如附在作品集里） */
+  publicOk: boolean;
+  note?: string;
+}
 
 export interface EducationEntry extends BaseEntry {
   school: LocalizedText; degree: LocalizedText; major: LocalizedText;
   start: string; end: string; highlights: LocalizedText[];
+  /** 以下日期分别保存，不能合并为"毕业日期"（v1.3，YYYY-MM 或 YYYY-MM-DD） */
+  courseCompletionDate?: string;
+  expectedConferralDate?: string;
+  actualConferralDate?: string;
+  availableFullTimeDate?: string;
+  degreeProofStatus?: DegreeProofStatus;
+  /** 相关课程（每门一项） */
+  courses?: string[];
+  /** 通过学习获得的专业能力（自填，仅作素材） */
+  abilities?: string;
 }
 export interface WorkEntry extends BaseEntry {
   company: LocalizedText; title: LocalizedText; start: string; end: string;
@@ -39,8 +93,21 @@ export interface WorkEntry extends BaseEntry {
 export interface ProjectEntry extends BaseEntry {
   name: LocalizedText; role: LocalizedText; start: string; end: string;
   bullets: LocalizedText[]; tags: string[]; link?: string;
+  /** 详细档案；简历用的表述仍是 bullets（v1.3） */
+  dossier?: ProjectDossier;
+  evidenceIds?: string[];
 }
-export interface SkillEntry extends BaseEntry { name: LocalizedText; level?: string; category?: LocalizedText }
+export interface SkillEntry extends BaseEntry {
+  name: LocalizedText; level?: string; category?: LocalizedText;
+  /** v1.3 技能档案 */
+  proficiency?: Proficiency;
+  /** 用过这项技能的项目 / 工作条目 id */
+  usedIn?: string[];
+  scenarios?: string;
+  evidenceIds?: string[];
+  /** 最近使用时间 YYYY-MM */
+  lastUsed?: string;
+}
 export interface SimpleEntry extends BaseEntry { name: LocalizedText; issuer: LocalizedText; date: string }
 
 export interface ProfileDoc {
@@ -61,6 +128,8 @@ export interface ProfileDoc {
   skills: SkillEntry[];
   certificates: SimpleEntry[];
   awards: SimpleEntry[];
+  /** v1.3 证据库 */
+  evidence: Evidence[];
 }
 
 export type ModuleKey = 'summary' | 'work' | 'projects' | 'education' | 'skills' | 'certificates' | 'awards';
