@@ -1,3 +1,4 @@
+import { OrganizePanel, ReviewSummary } from '../components/OrganizePanel';
 import { isUnconfirmedImport } from '../audit/techTerms';
 import { useRef, useState } from 'react';
 import { SmartImport } from '../components/SmartImport';
@@ -49,8 +50,8 @@ export function ProfilePage() {
   const fileRef = useRef<HTMLInputElement>(null);
   const upd = (fn: (p: ProfileDoc) => void) => { const n = structuredClone(profile); fn(n); setProfile(n); };
 
-  let pending: Record<Lang, number> = { zh: 0, en: 0 }, machine = 0;
-  forEachText(profile, (x) => { (['zh', 'en'] as Lang[]).forEach((l) => { if (needsTranslation(x, l)) pending = { ...pending, [l]: pending[l] + 1 }; if (x.status?.[l] === 'machine') machine++; }); });
+  let pending: Record<Lang, number> = { zh: 0, en: 0 };
+  forEachText(profile, (x) => { (['zh', 'en'] as Lang[]).forEach((l) => { if (needsTranslation(x, l)) pending = { ...pending, [l]: pending[l] + 1 }; }); });
 
   const doTranslate = async (to: Lang) => {
     setBusy('翻译中…'); setMsg('');
@@ -131,7 +132,8 @@ export function ProfilePage() {
       <SmartImport />
       <BackupPanel list={listBackups} restore={async (id) => { if (!confirm('恢复这份快照会替换当前资料（当前资料也会先存一份快照）。确定吗？')) return; if (await restoreBackup(id)) setMsg('已恢复快照。'); }} />
       {(busy || msg) && <div className="notice">{busy || msg}</div>}
-      {machine > 0 && <div className="notice warn">有 {machine} 个字段为「机翻待校对」，导出前建议逐条确认。</div>}
+      <OrganizePanel />
+      <ReviewSummary />
       <div className="tabs">{TABS.map((x) => <button key={x.key} className={tab === x.key ? 'active' : ''} onClick={() => setTab(x.key)}>{x.label}{x.key !== 'basic' && x.key !== 'glossary' ? `（${profile[x.key].length}）` : ''}{x.key !== 'basic' && x.key !== 'glossary' && x.key !== 'evidence' && profile[x.key].some((e) => e.uncertain?.length) ? ' ⚠' : ''}</button>)}</div>
       {tab === 'basic' && (
         <div className="card">

@@ -39,6 +39,13 @@
 
 四种学历日期互不推断。
 
+## 内容质量字段（v1.9，可选，不升级 Dexie，仍为 version 4）
+- `LocalizedText.organized?: string`：AI 整理时的文字指纹（防重复改写）。
+- `BaseEntry.factualContent?: string[]`：被移出要点的原句（事实原文，保留备查）。
+- `profile.profile.notes?: string[]`：从简介 / 求职意向移出的内部说明。
+- 四类内容映射：factual_content = `factualContent`；resume_ready_content = `bullets` / `highlights`；internal_notes = `notes`；uncertain_facts = `uncertain`。
+- 旧 JSON 导入 / 导出兼容：字段全部可选，缺省即旧行为。
+
 ## 状态（10 种）
 `screening` 待筛选 · `saved` 已收藏 · `preparing` 准备材料 · `applied` 已投递 · `assessment` 在线测评/笔试 · `interviewing` 面试中 · `offer` Offer · `rejected` 已拒绝/未通过 · `withdrawn` 已撤回 · `closed` 已结束
 

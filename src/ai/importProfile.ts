@@ -2,6 +2,8 @@ import type { Lang, LocalizedText, ProfileDoc, ProjectKind, Settings, WorkKind }
 const WORK_KINDS: WorkKind[] = ['fulltime', 'internship', 'parttime', 'club', 'volunteer', 'other'];
 import { chatJson } from './provider';
 import { checkAgainstSource } from './sourceCheck';
+import { MASTER_WRITING_RULES } from './prompts';
+import { cleanProfile } from '../quality/contentQuality';
 import { emptyProfile, normalizeEvidence, normalizeProfile } from '../storage/profileIO';
 
 const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 JSON。规则：
@@ -20,13 +22,16 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 - projects.kind：core（毕业设计、学位论文、核心研究或主要项目）/ auxiliary（课程实验、教学实训、个人小工具等辅助项目）；nature 写原文给出的性质（如「本科毕业设计」「课程实验」），没写就留空。
 - 课程：courses 必须完整列出原文中的全部课程（成绩单可能有几十门，一门都不能省略），每门一项，原文有学分 / 成绩就原样附在课程名后，如「高等数学 A（5 学分，88）」；coursesInText 填原文这一段里出现的课程总数。
 - 日期：四种日期严格区分——courseCompletionDate 课程结束、expectedConferralDate 预计毕业 / 预计授予、actualConferralDate 已实际授予、availableFullTimeDate 可全职入职。原文写「预计 / 在读 / expected」的日期只能填 expectedConferralDate，绝不能填 actualConferralDate，也不要填进 end；只有原文明确写「已授予 / 已获得学位」才填 actualConferralDate；未知的日期、分数、单位名称、证书编号一律留空，严禁补全或推测。
+- 第一人称（「我负责…」）、第三人称档案（「该生 / 他负责…」）、旧简历要点都整理成以本人为主体的客观要点，不保留「我 / 本人 / 该生」主语。
+- projects.archive：失败方案、测试局限、背景说明、过细的技术参数等真实技术事实，原样放进 archive（项目档案），bullets 只保留简洁的简历要点；不得因为句子里有「不确定 / 失败」就丢弃。
 - notes：原文里的备注、待核实说明、证据说明（如「需补充证明」「待核实」「证书在邮箱里」）放进对应条目的 notes 数组，不要写进 bullets / highlights / summary。
+${MASTER_WRITING_RULES}
 输出 JSON：
 {"lang":"zh","name":"","headline":"","summary":"","email":"","phone":"","location":"","github":"","linkedin":"","website":"",
 "birth":"","gender":"","hometown":"","politics":"","uncertain":[{"field":"","note":""}],
 "education":[{"school":"","schoolOther":"","degree":"","degreeOther":"","major":"","majorOther":"","start":"","end":"","highlights":[""],"courseCompletionDate":"","expectedConferralDate":"","actualConferralDate":"","availableFullTimeDate":"","courses":[""],"coursesInText":0,"notes":[""]}],
 "work":[{"company":"","companyOther":"","title":"","titleOther":"","kind":"","start":"","end":"","bullets":[""],"tags":[""],"notes":[""]}],
-"projects":[{"name":"","nameOther":"","aliases":[""],"kind":"","nature":"","role":"","start":"","end":"","bullets":[""],"tags":[""],"link":"","notes":[""]}],
+"projects":[{"name":"","nameOther":"","aliases":[""],"kind":"","nature":"","role":"","start":"","end":"","bullets":[""],"tags":[""],"link":"","archive":[""],"notes":[""]}],
 "skills":[{"name":"","category":""}],
 "certificates":[{"name":"","issuer":"","date":""}],
 "awards":[{"name":"","issuer":"","date":""}],
@@ -39,7 +44,7 @@ export interface Raw {
   lang?: Lang; name?: S; birth?: S; gender?: S; hometown?: S; politics?: S; uncertain?: { field?: S; note?: S }[]; headline?: S; summary?: S; email?: S; phone?: S; location?: S; github?: S; linkedin?: S; website?: S;
   education?: { school?: S; schoolOther?: S; degree?: S; degreeOther?: S; major?: S; majorOther?: S; start?: S; end?: S; highlights?: S[]; courseCompletionDate?: S; expectedConferralDate?: S; actualConferralDate?: S; availableFullTimeDate?: S; courses?: S[]; coursesInText?: number; notes?: S[] }[];
   work?: { company?: S; companyOther?: S; title?: S; titleOther?: S; kind?: S; start?: S; end?: S; bullets?: S[]; tags?: S[]; notes?: S[] }[];
-  projects?: { name?: S; nameOther?: S; aliases?: S[]; kind?: S; nature?: S; role?: S; start?: S; end?: S; bullets?: S[]; tags?: S[]; link?: S; notes?: S[] }[];
+  projects?: { name?: S; nameOther?: S; aliases?: S[]; kind?: S; nature?: S; role?: S; start?: S; end?: S; bullets?: S[]; tags?: S[]; link?: S; notes?: S[]; archive?: S[] }[];
   skills?: { name?: S; category?: S }[];
   certificates?: { name?: S; issuer?: S; date?: S }[];
   awards?: { name?: S; issuer?: S; date?: S }[];
@@ -75,7 +80,7 @@ export function rawToProfile(r: Raw): ProfileDoc {
   p.education = arr(r.education).filter((e) => e.school).map((e) => { const i = id('edu'); return { id: i, enabled: true, school: L2(e.school, e.schoolOther), degree: L2(e.degree, e.degreeOther), major: L2(e.major, e.majorOther), start: d(e.start), end: d(e.end), ...extra(e), ...(Number(e.coursesInText) > 0 ? { coursesInText: Number(e.coursesInText) } : {}), highlights: strs(e.highlights).map((h, j) => ({ ...L(h), id: `${i}-h${j + 1}` })),
     ...Object.fromEntries((['courseCompletionDate', 'expectedConferralDate', 'actualConferralDate', 'availableFullTimeDate'] as const).filter((k) => d(e[k])).map((k) => [k, d(e[k])])), ...(strs(e.courses).length ? { courses: strs(e.courses) } : {}) }; });
   p.work = arr(r.work).filter((e) => e.company || e.title).map((e) => { const i = id('work'); return { id: i, enabled: true, company: L2(e.company, e.companyOther), title: L2(e.title, e.titleOther), ...(WORK_KINDS.includes(d(e.kind) as WorkKind) ? { kind: d(e.kind) as WorkKind } : /实习|intern/i.test(`${e.title ?? ''} ${e.titleOther ?? ''}`) ? { kind: 'internship' as WorkKind } : {}), ...extra(e), start: d(e.start), end: d(e.end), tags: strs(e.tags), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
-  p.projects = arr(r.projects).filter((e) => e.name).map((e) => { const i = id('proj'); return { id: i, enabled: true, name: L2(e.name, e.nameOther), role: L(e.role), ...(d(e.kind) === 'core' || d(e.kind) === 'auxiliary' ? { kind: d(e.kind) as ProjectKind } : {}), ...(d(e.nature) ? { nature: d(e.nature) } : {}), ...extra(e), start: d(e.start), end: d(e.end), tags: strs(e.tags), link: d(e.link), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
+  p.projects = arr(r.projects).filter((e) => e.name).map((e) => { const i = id('proj'); return { id: i, enabled: true, name: L2(e.name, e.nameOther), role: L(e.role), ...(d(e.kind) === 'core' || d(e.kind) === 'auxiliary' ? { kind: d(e.kind) as ProjectKind } : {}), ...(d(e.nature) ? { nature: d(e.nature) } : {}), ...extra(e), start: d(e.start), end: d(e.end), tags: strs(e.tags), link: d(e.link), ...(strs(e.archive).length ? { dossier: archiveToDossier(strs(e.archive)) } : {}), bullets: strs(e.bullets).map((h, j) => ({ ...L(h), id: `${i}-b${j + 1}` })) }; });
   p.skills = arr(r.skills).filter((e) => e.name).map((e) => ({ id: id('sk'), enabled: true, name: L(e.name), category: L(e.category) }));
   p.certificates = arr(r.certificates).filter((e) => e.name).map((e) => ({ id: id('cert'), enabled: true, name: L(e.name), issuer: L(e.issuer), date: d(e.date) }));
   p.awards = arr(r.awards).filter((e) => e.name).map((e) => ({ id: id('award'), enabled: true, name: L(e.name), issuer: L(e.issuer), date: d(e.date) }));
@@ -85,6 +90,14 @@ export function rawToProfile(r: Raw): ProfileDoc {
     projectIds: byName(p.projects, e.project), skillIds: byName(p.skills, e.skill), confirmed: false, publicOk: false,
   }));
   return normalizeProfile(p);
+}
+
+/** AI 给出的项目档案句子 → 项目详细档案：失败方案进 failedAttempts，局限进 problems，其余进 technicalWork */
+function archiveToDossier(xs: string[]) {
+  const failed = xs.filter((x) => /失败|未能|未成功|放弃|不可行|failed|abandoned|did not work/i.test(x));
+  const limit = xs.filter((x) => !failed.includes(x) && /局限|不足|误差|仅在|limitation|only tested/i.test(x));
+  const rest = xs.filter((x) => !failed.includes(x) && !limit.includes(x));
+  return { ...(failed.length ? { failedAttempts: failed.map((a, i) => ({ id: `fa${i + 1}`, approach: a, reason: '' })) } : {}), ...(limit.length ? { problems: limit.join('\n') } : {}), ...(rest.length ? { technicalWork: rest.join('\n') } : {}) };
 }
 
 const CHUNK = 6000;
@@ -108,7 +121,8 @@ export async function importProfileDetailed(s: Settings, text: string, onProgres
     const hint = chunks.length > 1 ? `（这是全部资料的第 ${i + 1}/${chunks.length} 段，可能只含部分信息）` : '';
     const r = await chatJson<Raw>(s, [{ role: 'system', content: '你是严谨的简历整理助手，只输出 JSON。' }, { role: 'user', content: `${PROMPT}${hint}\n\n原文：\n"""\n${chunks[i]}\n"""` }], { maxTokens: 8000, timeoutMs: 240_000 });
     // 本地证据检查：日期 / 任职性质 / 证书信息必须能在本段原文中找到依据（v1.6.1）
-    const p = checkAgainstSource(rawToProfile(r), chunks[i]);
+    // v1.9：AI 输出后独立的元信息污染检测与规范化（首次导入即执行，不依赖后续「整理」按钮）
+    const p = cleanProfile(checkAgainstSource(rawToProfile(r), chunks[i])).profile;
     // 先在「本段」内用本段下标解析成稳定 id，再随合并映射到最终条目（A3：不依赖跨段会错位的局部下标）
     const segU: Uncertain[] = [];
     for (const u of Array.isArray(r.uncertain) ? r.uncertain : []) if (u?.field || u?.note) segU.push(resolveUncertain({ field: (u.field ?? '').trim(), note: (u.note ?? '').trim() }, p, i + 1));

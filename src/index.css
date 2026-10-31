@@ -333,3 +333,10 @@ select.imp-action { width: auto; min-width: 9.5em; max-width: 100%; white-space:
 .preset-meta .tag.cur { background: #1a202c; color: #fff; }
 @media (max-width: 1100px) { .preset-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 520px) { .preset-cards { grid-template-columns: minmax(0, 1fr); } .preset-thumb { height: 120px; } }
+/* v1.9 AI 整理现有资料 */
+.organize .org-group { margin-top: 8px; } .organize .org-group summary { cursor: pointer; font-weight: 600; padding: 4px 0; }
+.organize .org-group.high > summary { color: #c05621; }
+.org-row { border-top: 1px solid var(--line); padding: 8px 0; } .org-row.high { background: #fffaf0; }
+.org-diff { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; } .org-diff pre { white-space: pre-wrap; margin: 2px 0; font: inherit; font-size: 13px; padding: 4px 6px; border-radius: 4px; }
+.org-before pre { background: #fff5f5; } .org-after pre { background: #f0fff4; }
+@media (max-width: 640px) { .org-diff { grid-template-columns: 1fr; } }

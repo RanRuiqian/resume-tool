@@ -61,6 +61,15 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 - **原文证据检查**（`src/ai/sourceCheck.ts`）：日期必须能在本段原文找到（支持 2027.01 / 2027-01 / 2027年1月 / Jan 2027），否则清空并写入条目 `uncertain`；`actualConferralDate` 必须有「已于 / 已获得 / 实际授予 / conferred」等措辞，只有「预计 / expected / 在读 / 尚未」时清空并改为 `expectedConferralDate`；`end` 只来自「预计」措辞时同样移出；任职性质 fulltime / internship / parttime 需在单位名附近有对应字样；证书 / 奖项的颁发机构找不到原文就清空。以 `【严重】` 开头的说明在审核页列为「需要你决定 / 重要问题」。
 - **主语言纠正**：`rawToProfile` 中主字段文字的语言与文档语言不同（中文资料里英文题目）时，放到对应语言位置，避免中英文混放导致去重失效。
 
+## 4d. 内容质量与「AI 整理现有资料」（v1.9，2026-10-31）
+- 代码：`src/quality/contentQuality.ts`（本地规则：元信息/说明句识别 `detectMeta`/`splitMeta`、去机械第一人称 `stripFirstPerson`、`cleanProfile`、`qualityReport`、`isResumeSafe`、`contentView` 四类视图）；`src/quality/organize.ts`（`planOrganize` 生成预览计划 → `applyOrganize` 按用户勾选写入）；UI `src/components/OrganizePanel.tsx`（`OrganizePanel` + `ReviewSummary`）。
+- 规则：核验说明 / 写作建议 / 证据提醒 / 免责声明 / 自评套话 → 移入 `notes`（前缀【核验】【建议】【证据】【说明】【自评】），绝不删除；原句保存在 `factualContent`。含「不确定」的技术事实不删。项目失败方案 → `dossier.failedAttempts`，局限 → `dossier.problems`。
+- 风险：日期 / 学位 / 单位 / 职位 / 工具 / 数字变化、课程实验→商业、实习→全职、预计→已授予，由 `factGuard` 判为 high，必须单独勾选；用户确认过的文字只作为 high 建议；AI 版本为 high 时另给一条只用本地规则的 safe 版本。永不设置 `userConfirmedAt`。
+- 防重复改写：AI 处理过的文字写入 `LocalizedText.organized` 指纹，文字未变不再送 AI；被拒绝的 AI 建议不会每次重复弹出。
+- 首次导入：`importProfileDetailed` 在 `checkAgainstSource` 后执行 `cleanProfile`；SmartImport 机翻后再执行一次；导入 PROMPT 已追加 `MASTER_WRITING_RULES` 与 `projects[].archive`。
+- 生成：`generate.ts` 用 `isResumeSafe` 过滤要点（最后一道防线，资料库原文不改）。
+- AI 调用方式不变（`chatJson` + 平铺 settings 字段），分批 20 条，失败 / 超时抛错，资料不变。
+
 ## 5. ran-application-handoff 1.0（旧导航工具）
 **重要：目前只按用户口头描述的结构实现和测试，尚未用真实导出文件验证。** 用户可以提供真实样本；拿到后请：把脱敏后的样本存为 fixture、跑 `tests/handoff10.test.ts` 同类测试、修正 `HANDOFF_MAPPING` / `HANDOFF_STATUS`。
 描述的结构与映射规则见 `docs/DATA_SCHEMA.md`「导入格式」。实现：`src/tracker/importers.ts` 中 `handoff10()`、`HANDOFF_MAPPING`、`HANDOFF_STATUS`。

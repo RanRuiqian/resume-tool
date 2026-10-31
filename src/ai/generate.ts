@@ -4,6 +4,9 @@ import { GENERATE_PROMPT, LOCALIZE_PROMPT, SYS_FACTS } from './prompts';
 import { checkConsistency, compareFacts, numberTokens } from './consistency';
 import { lt, other, uid } from '../locale/text';
 import { mockTranslate } from './translate';
+import { isResumeSafe } from '../quality/contentQuality';
+/** v1.9 最后一道防线：核验说明 / 写作建议等元信息要点不进入简历（资料库原文不改） */
+const safeB = (bs: LocalizedText[]) => bs.filter((b) => isResumeSafe(b.zh || b.en || ''));
 
 type Sel = ResumeDoc['selection'];
 const NAME: Record<Lang, string> = { zh: '中文', en: '英文' };
@@ -31,7 +34,7 @@ export function generateRules(p: ProfileDoc, job: JobParse, primary: Lang, maxBu
   const push = (id: string, t: LocalizedText) => items.push({ sourceId: id, zh: lt(t, 'zh', false), en: lt(t, 'en', false), syncStatus: 'in-sync' });
   if (lt(p.profile.summary, primary)) push('summary', p.profile.summary);
   const pickBullets = (bs: LocalizedText[], tags: string[]) => {
-    const ranked = bs.map((b, i) => ({ b, i, s: score(lt(b, 'zh') + ' ' + lt(b, 'en') + ' ' + tags.join(' ')) })).sort((a, b) => b.s - a.s || a.i - b.i);
+    const ranked = safeB(bs).map((b, i) => ({ b, i, s: score(lt(b, 'zh') + ' ' + lt(b, 'en') + ' ' + tags.join(' ')) })).sort((a, b) => b.s - a.s || a.i - b.i);
     return ranked.slice(0, maxBullets).sort((a, b) => a.i - b.i).map((x) => x.b);
   };
   const work = en(p.work);
@@ -40,7 +43,7 @@ export function generateRules(p: ProfileDoc, job: JobParse, primary: Lang, maxBu
   const projects = projScored.filter((x, i) => x.s > 0 || i < 2).map((x) => x.x);
   projects.forEach((pr) => pickBullets(pr.bullets, pr.tags).forEach((b) => b.id && push(b.id, b)));
   const edu = en(p.education);
-  edu.forEach((e) => e.highlights.forEach((b) => b.id && push(b.id, b)));
+  edu.forEach((e) => safeB(e.highlights).forEach((b) => b.id && push(b.id, b)));
   const skills = en(p.skills).map((x) => ({ x, s: score(lt(x.name, 'zh') + ' ' + lt(x.name, 'en')) })).sort((a, b) => b.s - a.s).map((x) => x.x);
   const all = entryText(p);
   const reqs = job.mustHave.length ? job.mustHave : job.keywords;
@@ -85,9 +88,9 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   // 不发送照片、出生年月、性别、籍贯等敏感信息（PRD 8）
   const lib = {
     summary: T(p.profile.summary), headline: T(p.profile.headline),
-    work: p.work.filter((x) => x.enabled).map((w) => ({ id: w.id, company: T(w.company), title: T(w.title), start: w.start, end: w.end, tags: w.tags, bullets: w.bullets.map((b) => ({ sourceId: b.id, text: T(b) })) })),
-    projects: p.projects.filter((x) => x.enabled).map((w) => ({ id: w.id, name: T(w.name), role: T(w.role), tags: w.tags, bullets: w.bullets.map((b) => ({ sourceId: b.id, text: T(b) })) })),
-    education: p.education.filter((x) => x.enabled).map((e) => ({ id: e.id, school: T(e.school), major: T(e.major), degree: T(e.degree), highlights: e.highlights.map((b) => ({ sourceId: b.id, text: T(b) })) })),
+    work: p.work.filter((x) => x.enabled).map((w) => ({ id: w.id, company: T(w.company), title: T(w.title), start: w.start, end: w.end, tags: w.tags, bullets: safeB(w.bullets).map((b) => ({ sourceId: b.id, text: T(b) })) })),
+    projects: p.projects.filter((x) => x.enabled).map((w) => ({ id: w.id, name: T(w.name), role: T(w.role), tags: w.tags, bullets: safeB(w.bullets).map((b) => ({ sourceId: b.id, text: T(b) })) })),
+    education: p.education.filter((x) => x.enabled).map((e) => ({ id: e.id, school: T(e.school), major: T(e.major), degree: T(e.degree), highlights: safeB(e.highlights).map((b) => ({ sourceId: b.id, text: T(b) })) })),
     skills: p.skills.filter((x) => x.enabled).map((k) => ({ id: k.id, name: T(k.name) })),
     certificates: p.certificates.filter((x) => x.enabled).map((k) => ({ id: k.id, name: T(k.name) })),
     awards: p.awards.filter((x) => x.enabled).map((k) => ({ id: k.id, name: T(k.name) })),

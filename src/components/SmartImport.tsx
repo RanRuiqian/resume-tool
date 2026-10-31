@@ -1,3 +1,4 @@
+import { cleanProfile } from '../quality/contentQuality';
 import { useMemo, useState } from 'react';
 import { useApp } from '../store';
 import { useL } from '../i18n';
@@ -104,6 +105,7 @@ export function SmartImport() {
       setProg({ m: L('生成另一种语言（机翻待校对）…', 'Translating (marked machine-translated)…') });
       let p = r.profile;
       try { p = (await translateProfile(settings, p, p.primaryLanguage === 'zh' ? 'en' : 'zh')).profile; } catch { /* 翻译失败不影响识别结果 */ }
+      p = cleanProfile(p).profile; // 机翻后的另一语言也过一遍元信息检测
       const src: SourceText = { id: `src-${Date.now().toString(36)}`, at: new Date().toISOString(), files: files.filter((f) => f.status !== 'error').map((f) => f.name), text: aiText };
       setRes({ p, u: r.uncertain, src }); setPlan(buildImportPlan(profile, p, r.uncertain)); setUndo(null); setOpen({});
       setMode(hasExisting && sampleResidue(profile, SAMPLE).length ? 'replace' : 'merge');
