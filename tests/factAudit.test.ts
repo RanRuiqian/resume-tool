@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import 'fake-indexeddb/auto';
-import { applyDecision, auditResume, auditText, diffTokens, makeContext, summarize } from '../src/audit/factAudit';
+import { applyDecision, auditResume, confirmImportedEntries, auditText, diffTokens, makeContext, summarize } from '../src/audit/factAudit';
 import { buildAllowlist, extractTechTerms, normTerm } from '../src/audit/techTerms';
 import { buildSourceIndex } from '../src/audit/sourceIndex';
 import { rawToProfile } from '../src/ai/importProfile';
@@ -97,7 +97,9 @@ describe('PART C 场景', () => {
     const p = mockProfile(); const { w0 } = ids(p);
     const r0 = resume([gi(w0, '基于 TensorFlow 开发工业视觉检测程序，使用 OpenCV 预处理图像')]);
     const before = auditResume(p, r0).summary;
-    const r1 = applyDecision(p, r0, w0, 'zh', 'accepted');
+    // 红色风险：单纯「接受」不算处理，需二次确认（riskAck）
+    expect(summarize(auditResume(p, applyDecision(p, r0, w0, 'zh', 'accepted')).items, r0, ['zh']).reviewed).toBe(0);
+    const r1 = applyDecision(p, r0, w0, 'zh', 'accepted', undefined, { riskAck: { statement: '我确认', evidenceIds: [] } });
     expect(r1.audit!.decisions[w0].zh!.decision).toBe('accepted');
     expect(r1.items[0].zh).toBe(r0.items[0].zh);
     const after = summarize(auditResume(p, r1).items, r1, ['zh']);
@@ -162,7 +164,10 @@ describe('PART C 场景', () => {
     expect(idx.get(nb.id!)!.originalText.zh).toBe('用 SQL 统计日活，报表效率提升 20%');
     expect(idx.get(ids(base).w0)!.originalText.zh).toBe(base.work[0].bullets[0].zh);
     const a = auditText(makeContext(out), nb.id!, 'zh', '使用 SQL 统计日活，报表效率提升 20%');
-    expect(a.level).toBe('green');
+    // AI 导入的新条目尚未确认：原文标为「未确认来源」（黄色，可人工处理）；确认后为绿色
+    expect(a.level).toBe('yellow');
+    expect(a.findings.map((f) => f.code)).toContain('source-unconfirmed');
+    expect(auditText(makeContext(confirmImportedEntries(out, [out.work[1].id])), nb.id!, 'zh', '使用 SQL 统计日活，报表效率提升 20%').level).toBe('green');
   });
 });
 

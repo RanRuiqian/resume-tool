@@ -50,23 +50,40 @@ export function extractTechTerms(text: string): string[] {
   return [...out.values()];
 }
 
-export interface Allowlist { terms: Map<string, string[]> }
+/** AI 智能导入新增或合并、且用户还没有在资料库中确认的条目：其标签 / 工具 / 要点不能作为可靠证据 */
+export function isUnconfirmedImport(e: { importedFrom?: { at: string }; mergeHistory?: { at: string }[]; userConfirmedAt?: string }): boolean {
+  const last = [e.importedFrom?.at, ...(e.mergeHistory ?? []).map((m) => m.at)].filter((x): x is string => !!x).sort().pop();
+  if (!last) return false;
+  return !e.userConfirmedAt || e.userConfirmedAt < last;
+}
+export interface UnconfirmedRef { why: string; entryId: string }
+export interface Allowlist {
+  /** 可靠来源：用户填写或已确认的资料 */
+  terms: Map<string, string[]>;
+  /** 未确认来源：只出现在 AI 导入、尚未确认的资料里（展示用，不作为可靠证据） */
+  unconfirmed: Map<string, UnconfirmedRef[]>;
+}
 /** 构建许可清单；每个词记录来源说明，便于在界面上解释 */
 export function buildAllowlist(p: ProfileDoc): Allowlist {
   const terms = new Map<string, string[]>();
-  const add = (t: string, why: string) => { const n = normTerm(t); if (!n) return; terms.set(n, [...new Set([...(terms.get(n) ?? []), why])]); };
+  const unconfirmed = new Map<string, UnconfirmedRef[]>();
+  const add = (t: string, why: string, e?: { id: string } & Parameters<typeof isUnconfirmedImport>[0]) => {
+    const n = normTerm(t); if (!n) return;
+    if (e && isUnconfirmedImport(e)) { const a = unconfirmed.get(n) ?? []; if (!a.some((x) => x.entryId === e.id && x.why === why)) a.push({ why, entryId: e.id }); unconfirmed.set(n, a); return; }
+    terms.set(n, [...new Set([...(terms.get(n) ?? []), why])]);
+  };
   const both = (x: { zh?: string; en?: string }) => [x.zh, x.en].filter((v): v is string => !!v);
-  for (const k of p.skills) for (const n of both(k.name)) add(n, '技能');
-  for (const w of p.work) { w.tags.forEach((t) => add(t, `工作「${lt(w.company, 'zh')}」标签`)); for (const b of w.bullets) for (const s of both(b)) extractTechTerms(s).forEach((t) => add(t, `工作「${lt(w.company, 'zh')}」要点`)); }
+  for (const k of p.skills) for (const n of both(k.name)) add(n, '技能', k);
+  for (const w of p.work) { w.tags.forEach((t) => add(t, `工作「${lt(w.company, 'zh')}」标签`, w)); for (const b of w.bullets) for (const s of both(b)) extractTechTerms(s).forEach((t) => add(t, `工作「${lt(w.company, 'zh')}」要点`, w)); }
   for (const pr of p.projects) {
-    pr.tags.forEach((t) => add(t, `项目「${lt(pr.name, 'zh')}」标签`));
-    for (const b of pr.bullets) for (const s of both(b)) extractTechTerms(s).forEach((t) => add(t, `项目「${lt(pr.name, 'zh')}」要点`));
-    (pr.dossier?.tools ?? []).forEach((t) => add(t, `项目「${lt(pr.name, 'zh')}」档案工具`));
-    (pr.dossier?.keywords ?? []).forEach((t) => add(t, `项目「${lt(pr.name, 'zh')}」档案关键词`));
+    pr.tags.forEach((t) => add(t, `项目「${lt(pr.name, 'zh')}」标签`, pr));
+    for (const b of pr.bullets) for (const s of both(b)) extractTechTerms(s).forEach((t) => add(t, `项目「${lt(pr.name, 'zh')}」要点`, pr));
+    (pr.dossier?.tools ?? []).forEach((t) => add(t, `项目「${lt(pr.name, 'zh')}」档案工具`, pr));
+    (pr.dossier?.keywords ?? []).forEach((t) => add(t, `项目「${lt(pr.name, 'zh')}」档案关键词`, pr));
   }
   for (const g of p.glossary ?? []) { if (g.zh) add(g.zh, '术语表'); if (g.en) add(g.en, '术语表'); }
   // 注意：不使用 education.major / courses / abilities，也不使用岗位 JD
-  return { terms };
+  return { terms, unconfirmed };
 }
 
 /** 改写中出现、但原文和许可清单里都没有的技术词 */

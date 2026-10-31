@@ -35,6 +35,8 @@ export interface BaseEntry {
   /** 智能导入新增时的来源记录（v1.4） */
   importedFrom?: { importTag: string; incomingId: string; at: string };
   /** 智能导入合并记录：被合并内容快照、覆盖字段、追加要点 id（v1.4） */
+  /** 用户在资料库中确认「这条 AI 导入 / 合并的内容属实」的时间；早于最近一次导入则视为未确认（v1.5） */
+  userConfirmedAt?: string;
   mergeHistory?: { at: string; importTag: string; incomingId: string; incomingTitle: string; fieldsOverwritten: { field: string; old: string; new: string }[]; pointsAdded: string[]; incomingSnapshot: string }[];
 }
 
@@ -221,7 +223,7 @@ export interface ResumeDoc {
   /** 求职信 / 自我介绍 / 面试准备（可选功能） */
   extras?: { coverLetter?: Bi; selfIntro?: Bi; prep?: PrepDirection[] };
   /** 事实审查记录（v1.4，第二阶段）：逐条逐语言的接受 / 恢复 / 编辑；不影响资料库 */
-  audit?: { decisions: Record<string, Partial<Record<Lang, { decision: 'pending' | 'accepted' | 'restored' | 'edited'; at: string; aiText: string; editedText?: string; recheck?: boolean; recheckReason?: string }>>>; updatedAt: string };
+  audit?: { decisions: Record<string, Partial<Record<Lang, { decision: 'pending' | 'accepted' | 'restored' | 'edited'; at: string; aiText: string; editedText?: string; recheck?: boolean; recheckReason?: string; riskAck?: { at: string; statement: string; evidenceIds: string[]; note?: string } }>>>; updatedAt: string };
 }
 
 export interface ExportRecord {

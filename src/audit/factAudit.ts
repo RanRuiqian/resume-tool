@@ -1,14 +1,14 @@
 import type { GenItem, Lang, ProfileDoc, ResumeDoc } from '../types';
 import { compareFacts, factTokens } from '../ai/consistency';
 import { buildSourceIndex, originalOf, type FactSource } from './sourceIndex';
-import { borrowedTerms, buildAllowlist, extractTechTerms, normTerm, unknownTerms, type Allowlist } from './techTerms';
+import { borrowedTerms, buildAllowlist, extractTechTerms, isUnconfirmedImport, normTerm, unknownTerms, type Allowlist } from './techTerms';
 import { lt } from '../locale/text';
 
 /** 风险等级（B5）：green 事实一致 / yellow 需要关注 / red 高风险 / gray 无法判断 */
 export type RiskLevel = 'green' | 'yellow' | 'red' | 'gray';
 export const LEVEL_ORDER: Record<RiskLevel, number> = { red: 0, yellow: 1, gray: 2, green: 3 };
 export const LEVEL_LABEL: Record<RiskLevel, string> = { red: '高风险', yellow: '需要关注', gray: '无法判断', green: '事实一致' };
-export interface Finding { level: RiskLevel; code: string; reason: string; /** 引用的原文片段 */ quote?: string; terms?: string[] }
+export interface Finding { level: RiskLevel; code: string; reason: string; /** 引用的原文片段 */ quote?: string; terms?: string[]; /** 未确认来源对应的资料条目 id（可在审查里一键确认） */ entryIds?: string[] }
 export interface LangAudit {
   lang: Lang; sourceId: string; original: string; originalLang: Lang; rewrite: string;
   level: RiskLevel; findings: Finding[]; newTerms: string[]; numberDiff: string[];
@@ -16,7 +16,9 @@ export interface LangAudit {
 }
 export type Decision = 'pending' | 'accepted' | 'restored' | 'edited';
 /** 持久化在 ResumeDoc.audit 中；不修改资料库 */
-export interface AuditDecision { decision: Decision; at: string; /** 做决定时 AI 改写的文本（便于追溯） */ aiText: string; editedText?: string; /** 另一语言被修改，需要重新检查 */ recheck?: boolean; recheckReason?: string }
+export interface AuditDecision { decision: Decision; at: string; /** 做决定时 AI 改写的文本（便于追溯） */ aiText: string; editedText?: string; /** 红色风险的二次确认：用户声明 + 关联证据 */ riskAck?: RiskAck; /** 另一语言被修改，需要重新检查 */ recheck?: boolean; recheckReason?: string }
+/** 红色高风险改写的二次确认记录（可追溯） */
+export interface RiskAck { at: string; statement: string; evidenceIds: string[]; note?: string }
 export interface AuditState { decisions: Record<string, Partial<Record<Lang, AuditDecision>>>; updatedAt: string }
 
 const has = (s: string, re: RegExp) => re.test(s);
@@ -47,7 +49,7 @@ function parentContext(ctx: AuditContext, s?: FactSource): string {
   if (!s?.parentId) return '';
   const p = ctx.profile;
   const e = [...p.work, ...p.projects].find((x) => x.id === s.parentId);
-  if (!e) return '';
+  if (!e || isUnconfirmedImport(e)) return '';
   const d = 'dossier' in e ? e.dossier : undefined;
   return [...e.bullets.map((b) => `${b.zh ?? ''} ${b.en ?? ''}`), e.tags.join(' '), (d?.tools ?? []).join(' '), (d?.keywords ?? []).join(' ')].join('\n');
 }
@@ -61,6 +63,8 @@ export function auditText(ctx: AuditContext, sourceId: string, lang: Lang, rewri
   if (!s) { F.push({ level: 'gray', code: 'no-source', reason: `找不到来源 ${sourceId}，无法追溯到你的资料库` }); return finish(base); }
   if (!original.trim()) { F.push({ level: 'gray', code: 'empty-source', reason: '资料库中这一条没有原文（AI 根据其它资料撰写），来源不足，需要你人工确认', quote: s.sourcePath }); return finish(base); }
   if (!rewrite.trim()) { F.push({ level: 'gray', code: 'empty-rewrite', reason: '这一语言的内容为空' }); return finish(base); }
+  { const owner = [...ctx.profile.work, ...ctx.profile.projects, ...ctx.profile.education, ...ctx.profile.skills].find((e) => e.id === (s.parentId ?? s.sourceId));
+    if (owner && isUnconfirmedImport(owner)) F.push({ level: 'yellow', code: 'source-unconfirmed', reason: '这一条的原文来自 AI 智能导入，尚未在资料库中确认（未确认来源）。请核对原文是否属实', quote: s.sourcePath, entryIds: [owner.id] }); }
   if (originalLang !== lang) F.push({ level: 'green', code: 'cross-lang', reason: `（说明）资料库没有${lang === 'zh' ? '中文' : '英文'}原文，以下按${originalLang === 'zh' ? '中文' : '英文'}原文核对`, quote: original });
 
   // 数字 / 日期 / 百分比 / 金额
@@ -80,7 +84,15 @@ export function auditText(ctx: AuditContext, sourceId: string, lang: Lang, rewri
   // 技术词（B4）
   const ctxText = `${original}\n${parentContext(ctx, s)}`;
   const unk = unknownTerms(rewrite, ctxText, ctx.allow);
-  if (unk.length) { base.newTerms = unk; F.push({ level: 'red', code: 'new-tech', reason: `以下技术尚未在你的资料库中找到对应使用记录，请确认是否真实使用过：${unk.join('、')}`, terms: unk, quote: original }); }
+  if (unk.length) {
+    base.newTerms = unk;
+    const unc = unk.filter((t) => ctx.allow.unconfirmed.has(normTerm(t))), none = unk.filter((t) => !unc.includes(t));
+    if (none.length) F.push({ level: 'red', code: 'new-tech', reason: `以下技术尚未在你的资料库中找到对应使用记录，请确认是否真实使用过：${none.join('、')}`, terms: none, quote: original });
+    if (unc.length) {
+      const refs = unc.flatMap((t) => ctx.allow.unconfirmed.get(normTerm(t)) ?? []);
+      F.push({ level: 'red', code: 'unconfirmed-source', reason: `以下技术只出现在 AI 智能导入、尚未经你确认的资料中（未确认来源，不能作为可靠证据）：${unc.join('、')}（出处：${[...new Set(refs.map((x) => x.why))].join('；')}）`, terms: unc, quote: original, entryIds: [...new Set(refs.map((x) => x.entryId))] });
+    }
+  }
   const borrowed = borrowedTerms(rewrite, ctxText, ctx.allow);
   if (borrowed.length) F.push({ level: 'yellow', code: 'borrowed-tech', reason: `这些技术在你的资料库其它经历中出现过，但不在这一条的原文里：${borrowed.join('、')}（来源：${borrowed.map((t) => ctx.allow.terms.get(normTerm(t))?.[0]).join('；')}）`, terms: borrowed, quote: original });
   const origTerms = extractTechTerms(original).map(normTerm), newTermsAll = extractTechTerms(rewrite).map(normTerm);
@@ -146,15 +158,18 @@ export function auditResume(p: ProfileDoc, r: ResumeDoc, ctx = makeContext(p)): 
   return { items, summary: summarize(items, r) };
 }
 
-export function isDecided(r: ResumeDoc, id: string, l: Lang): boolean {
+/** 是否已由用户处理。红色风险：只有「恢复原文」或带二次确认（riskAck）的接受 / 编辑才算处理完毕 */
+export function isDecided(r: ResumeDoc, id: string, l: Lang, level?: RiskLevel): boolean {
   const d = r.audit?.decisions[id]?.[l];
-  return !!d && d.decision !== 'pending' && !d.recheck;
+  if (!d || d.decision === 'pending' || d.recheck) return false;
+  if (level === 'red' && d.decision !== 'restored' && !d.riskAck) return false;
+  return true;
 }
 export function summarize(items: ItemAudit[], r: ResumeDoc, langs: Lang[] = ['zh', 'en']): AuditSummary {
   const s: AuditSummary = { total: 0, reviewed: 0, green: 0, yellow: 0, red: 0, gray: 0, unconfirmed: 0, unconfirmedRed: 0 };
   for (const it of items) for (const l of langs) {
     const a = it[l]; s.total++; s[a.level]++;
-    const done = isDecided(r, it.sourceId, l);
+    const done = isDecided(r, it.sourceId, l, a.level);
     if (done) s.reviewed++;
     else if (a.level !== 'green') { s.unconfirmed++; if (a.level === 'red') s.unconfirmedRed++; }
   }
@@ -162,7 +177,7 @@ export function summarize(items: ItemAudit[], r: ResumeDoc, langs: Lang[] = ['zh
 }
 
 /** 审查操作（B3）：只改 ResumeDoc 的条目文本与审查记录，绝不修改资料库 */
-export function applyDecision(p: ProfileDoc, r: ResumeDoc, sourceId: string, lang: Lang, decision: Exclude<Decision, 'pending'>, editedText?: string): ResumeDoc {
+export function applyDecision(p: ProfileDoc, r: ResumeDoc, sourceId: string, lang: Lang, decision: Exclude<Decision, 'pending'>, editedText?: string, opts?: { riskAck?: Omit<RiskAck, 'at'> }): ResumeDoc {
   const it = r.items.find((x) => x.sourceId === sourceId); if (!it) return r;
   const src = buildSourceIndex(p).get(sourceId);
   const aiText = r.audit?.decisions[sourceId]?.[lang]?.aiText ?? it[lang];
@@ -179,7 +194,7 @@ export function applyDecision(p: ProfileDoc, r: ResumeDoc, sourceId: string, lan
     return next;
   });
   const prevDec = r.audit?.decisions ?? {};
-  const mine: AuditDecision = { decision, at: new Date().toISOString(), aiText, ...(decision === 'edited' ? { editedText: text } : {}) };
+  const mine: AuditDecision = { decision, at: new Date().toISOString(), aiText, ...(decision === 'edited' ? { editedText: text } : {}), ...(opts?.riskAck && decision !== 'restored' ? { riskAck: { ...opts.riskAck, at: new Date().toISOString() } } : {}) };
   const otherDec = prevDec[sourceId]?.[oth];
   const factsMoved = changed && compareFacts(it[lang], text).length > 0;
   const nextOther = factsMoved ? { ...(otherDec ?? { decision: 'pending' as Decision, at: new Date().toISOString(), aiText: it[oth] }), recheck: true, recheckReason: `${lang === 'zh' ? '中文' : '英文'}版的数字或事实已修改` } : otherDec;
@@ -201,4 +216,11 @@ export function diffTokens(a: string, b: string): ['same' | 'add' | 'del', strin
   while (i < A.length) push('del', A[i++]);
   while (j < B.length) push('add', B[j++]);
   return out;
+}
+
+/** 用户在审查中确认「AI 导入的资料属实」：只标记确认时间，不改动任何内容（可在资料库取消） */
+export function confirmImportedEntries(p: ProfileDoc, ids: string[]): ProfileDoc {
+  const at = new Date().toISOString();
+  const mark = <T extends { id: string; userConfirmedAt?: string }>(a: T[]) => a.map((e) => (ids.includes(e.id) ? { ...e, userConfirmedAt: at } : e));
+  return { ...p, work: mark(p.work), projects: mark(p.projects), education: mark(p.education), skills: mark(p.skills) };
 }

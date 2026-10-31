@@ -1,3 +1,4 @@
+import { isUnconfirmedImport } from '../audit/techTerms';
 import { useRef, useState } from 'react';
 import { SmartImport } from '../components/SmartImport';
 import { useApp } from '../store';
@@ -73,6 +74,7 @@ export function ProfilePage() {
             <div className="entry-head">
               <label className="check"><input type="checkbox" checked={!!e.enabled} onChange={(ev) => upd((p) => { (p[k][i] as { enabled: boolean }).enabled = ev.target.checked; })} /> 启用（生成时入池）</label>
               <span className="muted small">{e.id as string}</span>
+              {isUnconfirmedImport(e as Parameters<typeof isUnconfirmedImport>[0]) && <span className="badge st-stale" data-testid="import-unconfirmed">AI 导入 · 未确认（不作为可靠证据）<button className="link" onClick={() => upd((p) => { (p[k][i] as { userConfirmedAt?: string }).userConfirmedAt = new Date().toISOString(); })}>确认属实</button></span>}
               <span className="spacer" />
               <button disabled={i === 0} onClick={() => upd((p) => { const a = p[k] as unknown[]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; })}>↑</button>
               <button disabled={i === arr.length - 1} onClick={() => upd((p) => { const a = p[k] as unknown[]; [a[i + 1], a[i]] = [a[i], a[i + 1]]; })}>↓</button>
