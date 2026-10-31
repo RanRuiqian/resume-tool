@@ -84,7 +84,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const listBackups = useCallback(() => db.backups.orderBy('createdAt').reverse().toArray(), []);
   const restoreBackup = useCallback(async (id: string) => {
     const b = await db.backups.get(id); if (!b) return false;
-    await replaceProfile(b.doc, '恢复快照前的资料');
+    await replaceProfile(normalizeProfile(b.doc), '恢复快照前的资料'); // 快照可能是旧版格式（如升级前自动快照），恢复时统一升级
     return true;
   }, [replaceProfile]);
   const setSettings = (s: Settings) => { setSettingsS(s); db.settings.put(s); };

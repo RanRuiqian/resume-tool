@@ -61,7 +61,12 @@ describe('migration v1 → v2', () => {
     expect(doc.projects[0].bullets[0].zh).toBe('漏检率降低 40%');
     expect(doc.skills[0].level).toBe('熟练');
     expect(await db.jobs.count()).toBe(1);
-    expect(await db.backups.count()).toBe(0);
+    // 升级前自动快照：旧版原始资料原样保存，恢复时再统一升级
+    const bk = await db.backups.toArray();
+    expect(bk.length).toBe(1);
+    expect(bk[0].reason).toContain('升级前自动快照');
+    expect((bk[0].doc as unknown as { profile: { name: string } }).profile.name).toBe('测试用户乙');
+    expect(normalizeProfile(bk[0].doc)).toEqual(doc);
     db.close();
   });
 });

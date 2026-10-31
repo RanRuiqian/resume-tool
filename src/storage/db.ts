@@ -25,6 +25,9 @@ export class ResumeDB extends Dexie {
     });
     // v2：新增 backups 表；资料文档升级到 1.3（教育日期 / 项目档案 / 技能档案 / 证据），旧字段原样保留
     this.version(2).stores({ backups: 'id, createdAt' }).upgrade(async (tx) => {
+      // 升级前自动快照：先把旧版原始资料（未做任何转换）原样存入 backups，可在「资料快照」中一键恢复
+      const rows = (await tx.table('profile').toArray()) as ProfileRow[];
+      for (const row of rows) if (row?.doc) await tx.table('backups').put({ id: `bk-premigrate-v1-${row.id}`, createdAt: new Date().toISOString(), reason: '升级前自动快照（旧版原始资料，v1 → v2）', doc: structuredClone(row.doc) });
       await tx.table('profile').toCollection().modify((row: ProfileRow) => {
         const before = row.doc;
         row.doc = normalizeProfile(before);
