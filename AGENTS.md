@@ -1,26 +1,40 @@
 # AGENTS.md — 给 AI 编程助手（Codex / Cursor / Claude 等）的说明
 
-先读 `docs/AI_HANDOFF.md`，再读 `docs/DATA_SCHEMA.md`。
+不需要任何聊天记录即可接手。阅读顺序：本文件 → `docs/AI_HANDOFF.md` → `docs/DATA_SCHEMA.md` → `docs/PROJECT_STATUS.md`。
 
-## 必须遵守
-- **不得提交或打印任何 API Key**。Key 只存在用户浏览器 IndexedDB 的 `settings` 表；备份、日志、fixture、截图都不能包含它。
-- **只用虚构数据**写测试和示例（公司名用「模拟/虚构/示例」，链接用 `example.com`）。
-- **数据库只做增量迁移**：在 `src/storage/db.ts` 新增 `this.version(N+1)`，不得删表、不得清库、不得改已有版本定义。
-- 不要实现自动投递、自动发邮件或伪造投递状态 / 个人经历。
-- 界面文案默认中文；英文通过 `src/i18n` 与 `L()` 提供。
-- 不要改动 DeepSeek 调用方式（`src/ai`）。
-- 申请记录里的简历快照（`artifacts`）一经创建不可修改内容。
+## 项目一句话
+纯前端（React + TypeScript + Vite + Dexie/IndexedDB）的「双语简历生成器 + 求职投递管理」，部署在 GitHub Pages：https://ranruiqian.github.io/resume-tool/ 。没有后端，用户数据只在用户自己的浏览器里。
 
-## 常用命令
+## 绝对规则
+1. **不得提交、打印或导出 API Key。** Key 只存在浏览器 IndexedDB `settings` 表。备份 ZIP / JSON、日志、fixture、截图都不能出现它（`src/tracker/backup.ts` 的 `scrubSecrets` 与测试会检查）。
+2. **只用虚构数据**：公司名带「模拟 / 虚构 / 示例」，网址用 `example.com`，人名用「测试用户X」。不得提交真实简历、联系方式、附件。
+3. **数据库只做增量迁移**：在 `src/storage/db.ts` 追加 `this.version(N+1)`；不删表、不清库、不修改已有版本。当前版本 **4**。
+4. **不得伪造事实**：不自动投递、不自动发邮件、不把未知状态猜成「已投递」、不编造投递时间或个人经历。
+5. 申请里的简历快照（`artifacts`）创建后内容不可修改。
+6. 正常模式（库 `resume-tool`）与 `?demo` 演示模式（库 `resume-tool-demo`）严格隔离。
+7. 界面文案默认中文；英文通过 `src/i18n` 与页面内 `L(zh, en)`。
+8. 不要改动 DeepSeek / AI 调用方式（`src/ai`）。
+9. 不要强推（force push），不要直接合并到 `main`；`main` 推送即自动部署。
+
+## 命令
 ```bash
 npm ci
-npm test            # vitest（fake-indexeddb）
-npx tsc -b          # 类型检查
-npm run lint        # oxlint
-npm run build
-npm run verify:export   # 中英文 PDF/Word 导出回归（不调用 AI）
+npm test               # vitest（fake-indexeddb）——单元 / 集成测试
+npx tsc -b             # 类型检查
+npm run lint           # oxlint
+npm run build          # 生产构建（含 tsc）
+npm run verify:export  # 中英文 PDF/Word 导出回归（不调用 AI）
 ```
-浏览器 e2e：`npm run build && npx vite preview --port 4173`，然后 `python3 tests/e2e/tracker_e2e.py`（需要 Playwright + Chrome）。
+浏览器 e2e（需要 Python Playwright 与 Chrome/Chromium）：
+```bash
+npm run build && npx vite preview --port 4173 &
+python3 tests/e2e/tracker_e2e.py   # 投递管理主流程（33 项）
+python3 tests/e2e/release_e2e.py   # 发布验收：导航工具导入、完整备份恢复、空库、移动端/桌面端（35 项）
+```
+可选环境变量：`E2E_BASE`（默认 http://localhost:4173/），`SHOT_DIR`（截图目录）。
 
-## 提交前检查
-测试、类型、lint、构建全部通过；`git diff` 中没有 Key、真实姓名、手机号、邮箱或真实简历。
+## 提交前检查清单
+- 上面所有命令通过；
+- `git diff` 中没有 Key、真实姓名、手机号、邮箱、真实简历；
+- 改了数据结构 → 同步更新 `docs/DATA_SCHEMA.md`、`tests/dataSafety.test.ts`、`backup.ts` 的 `SECTIONS`；
+- 改了导入格式 → 同步更新 `docs/DATA_SCHEMA.md` 的「导入格式」并补 fixture 测试。
