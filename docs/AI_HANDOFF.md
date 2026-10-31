@@ -80,6 +80,15 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 - 回归：`tests/infoLoss.test.ts`（mock AI 错误输出），`tests/e2e/info_loss_e2e.py`。
 - v1.9.2：重新机翻不再只看数字。`factCheck.crossCheck(zh, en)` 用中英词表逐项比对参与程度、否定 / 未完成、进行中、仅 / 限定、室温、仿真、预计 vs 已授予、已完成、实习 / 全职 / 兼职、课程 / 商业、团队 / 独立、地点（公司、医院、实验室、车间 / 现场、学校）、导师 / 医生；任一概念只在一侧出现即 B 类「译文待核对」，不写入、不默认勾选。中文的本地安全清洗作为独立 A 类建议照常写入。
 
+- v1.9.3（整理可用性）：**母库是完整事实记录，整理不缩短、不删真实成果、不降信息密度；压缩只在按 JD 生成时进行。**
+  - 预筛选：只把有真实问题的条目（说明 / 免责句、第一人称、格式问题、重复片段）或缺 / 过期英文（mode=translate，只补译、源语言不动）送 AI；干净条目不发送，计入「无需修改」。已有机翻英文不再重复发送。
+  - Prompt「优先不修改」；只删「曾 / 了 / 进行 / 的」或冠词的改写（`factCheck.trivialOnly`）及低价值改写（`lowValue`）直接丢弃，不产生 B 类。
+  - 每条 AI 输出做事实完整性检查（lossReport + factGuard + 中英 crossCheck，新增「估算 / 适用范围」「讨论 / 设想（未实现）」「实现 / 完成」「并列成果」）；不完整时带上具体丢失事实（`lostFacts`，`ORGANIZE_RETRY`）重试 1 次（`OrganizeOptions.retries`），仍不完整 → 保持原文（只做本地清洗），计入「AI 建议因事实不完整被拒绝」（`plan.rejectedItems`），**不**生成 B 类。B 类只留给无法证明等价、但不丢事实的改写。
+  - 限定句（约 / 估算 / 不代表 / 非官方 / 尚未）是事实，不会移入备注；失败方案 / 局限只复制到档案，不再从要点中删除。
+  - 英文分句：句号后接空格 + 大写字母才分句（不拆 v1.2 / 3.5），修复「英文说明句连同前一句事实一起被移入备注」。
+  - 报告分开显示：清理的不适合求职说明 / 实际改善表达 / 无需修改 / AI 建议因事实不完整被拒绝 / 需要用户审核（`plan.stats`，仅内存，不入库）。`QUALITY_VERSION` → q3。
+  - 虚构 65 条数据集 + 坏习惯 mock（`tests/helpers/realRunLike.ts`）：v1.9.2 4 次调用 / 65 条发送 / 28 A / 16 B，全选会丢 11 项关键事实；v1.9.3 3 次调用 / 35 条发送 / 33 A / 0 B / 4 拒绝 / 32 无需修改，关键事实 0 丢失（`artifacts/p17/compare_*.json`）。
+
 ## 5. ran-application-handoff 1.0（旧导航工具）
 **重要：目前只按用户口头描述的结构实现和测试，尚未用真实导出文件验证。** 用户可以提供真实样本；拿到后请：把脱敏后的样本存为 fixture、跑 `tests/handoff10.test.ts` 同类测试、修正 `HANDOFF_MAPPING` / `HANDOFF_STATUS`。
 描述的结构与映射规则见 `docs/DATA_SCHEMA.md`「导入格式」。实现：`src/tracker/importers.ts` 中 `handoff10()`、`HANDOFF_MAPPING`、`HANDOFF_STATUS`。

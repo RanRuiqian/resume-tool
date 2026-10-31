@@ -96,10 +96,18 @@ export function OrganizePanel() {
       {stage === 'running' && <div className="notice" data-testid="organize-progress">⏳ {prog || '整理中…'}</div>}
       {stage === 'review' && plan && (
         <div data-testid="organize-review">
-          <div className="notice ok" data-testid="organize-report">整理报告：共 {plan.proposals.length} 条建议，其中 A 类机械清洗 {safe.length} 条（默认已勾选，可批量接受），需要判断 {high.length} 条（AI 语义改写或事实变化，默认不勾选）。{plan.aiCalls ? `调用 AI ${plan.aiCalls} 次、处理 ${plan.aiItems} 条。` : '未调用 AI。'}
+          <div className="notice ok" data-testid="organize-report">整理报告：共 {plan.stats?.total ?? plan.proposals.length} 条文字，生成 {plan.proposals.length} 条建议（A 类 {safe.length} 条默认勾选；需要你审核 {high.length} 条，默认不写入）。{plan.aiCalls ? `调用 AI ${plan.aiCalls} 次，只发送了 ${plan.aiItems} 条有问题的内容${plan.stats ? `（${plan.stats.aiSkipped} 条干净内容未发送）` : ''}。` : '未调用 AI。'}
             {plan.aiErrors?.length ? <div className="small" data-testid="organize-ai-errors">⚠ {plan.aiErrors.length} 批 AI 请求失败，这些条目只做了本地清洗：{plan.aiErrors.join('；')}</div> : null}
             <div className="small">整理前：{stat(before)}<br />接受安全修正后：{stat(after)}</div></div>
-          {high.length > 0 && <details open className="org-group high"><summary>⚠ B 类 · 需要你判断（{high.length}）—— AI 语义改写、可能丢失 / 改变事实（地点、对象、参与程度、条件、状态、日期、学位等），默认不写入</summary>{high.map(row)}</details>}
+          {plan.stats && <ul className="small org-stats" data-testid="organize-stats">
+            <li data-testid="stat-meta">清理的不适合求职说明：{plan.stats.metaCleaned} 条</li>
+            <li data-testid="stat-improved">实际改善表达（去第一人称 / 格式 / 补译）：{plan.stats.improved} 条</li>
+            <li data-testid="stat-unchanged">无需修改：{plan.stats.unchanged} 条</li>
+            <li data-testid="stat-rejected">AI 建议因事实不完整被拒绝（已保持原文，只做本地清洗）：{plan.stats.rejected} 条</li>
+            <li data-testid="stat-review">需要你审核：{plan.stats.review} 条{plan.stats.review ? '（不是成功修改，默认不写入）' : ''}</li>
+          </ul>}
+          {!!plan.rejectedItems?.length && <details className="org-group" data-testid="organize-rejected"><summary>AI 建议因事实不完整被拒绝，已保持原文（{plan.rejectedItems.length}）</summary>{plan.rejectedItems.map((r, k) => <div key={k} className="small org-rejected"><b>{r.entryTitle}</b>：{r.text}<div className="muted">{r.reasons.slice(0, 3).join('；')}</div></div>)}</details>}
+          {high.length > 0 && <details open className="org-group high"><summary>⚠ B 类 · 需要你审核（{high.length}）—— AI 语义改写、可能丢失 / 改变事实（地点、对象、参与程度、条件、状态、日期、学位等），默认不写入</summary>{high.map(row)}</details>}
           <details open={high.length === 0} className="org-group"><summary>✓ A 类 · 机械清洗（{safe.length}）—— 去掉「我」主语、说明句移入备注、失败方案归档、中英交叉核对通过的译文，事实原样保留 <button className="link" data-testid="organize-accept-all" onClick={(e) => { e.preventDefault(); setAcc((s) => new Set([...s, ...safe.map((x) => x.id)])); }}>全部接受</button> <button className="link" onClick={(e) => { e.preventDefault(); setAcc((s) => new Set([...s].filter((id) => !safe.some((x) => x.id === id)))); }}>全部取消</button></summary>{safe.map(row)}</details>
           <div className="row end"><button onClick={() => { setStage('idle'); setPlan(null); }}>放弃（不写入）</button><button className="primary" data-testid="organize-apply" disabled={!acc.size} onClick={write}>写入资料库（{acc.size} 条）</button></div>
         </div>)}

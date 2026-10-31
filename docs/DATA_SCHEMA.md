@@ -96,3 +96,7 @@
 | 其他 | 不建立申请，预览中标红提示 | 不猜测 |
 
 导入的申请**不填写投递时间**（原数据没有投递日期）。`portals` 是招聘网站，不导入为岗位，只在预览中列出供参考。
+
+
+## AI 整理计划（v1.9.3，仅内存）
+`OrganizePlan.stats`（total / metaCleaned / improved / unchanged / rejected / review / aiSkipped）与 `OrganizePlan.rejectedItems`（entryTitle / text / reasons）只存在于整理预览的内存中，**不写入 IndexedDB**；Dexie 仍为 version 4，资料结构没有变化。
