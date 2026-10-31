@@ -5,9 +5,12 @@ import type { Application, AppStatus, ApplicationEvent, Attachment, AttachmentKi
 
 export const nowIso = () => new Date().toISOString();
 /** 稳定唯一 ID：前缀 + 时间 + 随机；导入 / 恢复时保持原 ID 不变 */
+let uidSeq = 0;
+/** 生成 ID：时间 + 本次会话递增序号 + 随机串。同一毫秒内生成的 ID 也按创建顺序排序（状态历史排序依赖它） */
 export function uid(prefix: string): string {
+  uidSeq = (uidSeq + 1) % 1679616;
   const r = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID().replace(/-/g, '').slice(0, 12) : Math.random().toString(36).slice(2, 14);
-  return `${prefix}-${Date.now().toString(36)}-${r}`;
+  return `${prefix}-${Date.now().toString(36)}-${uidSeq.toString(36).padStart(4, '0')}${r}`;
 }
 
 const norm = (s?: string) => (s ?? '').toLowerCase().replace(/[\s·・,，.。()（）\-_/|]+/g, '').replace(/(有限公司|股份有限公司|集团|公司|co\.?ltd|inc|ltd|limited)$/g, '');
@@ -97,7 +100,9 @@ export async function changeStatus(d: ResumeDB, appId: string, to: AppStatus, no
     await d.applications.put(n); return n;
   });
 }
-export const listEvents = (d: ResumeDB, appId: string) => d.appEvents.where('applicationId').equals(appId).sortBy('at');
+/** 状态历史：按时间排序；同一时间按创建顺序（ID）排序 */
+export const listEvents = async (d: ResumeDB, appId: string) =>
+  (await d.appEvents.where('applicationId').equals(appId).toArray()).sort((a, b) => a.at.localeCompare(b.at) || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
 export async function saveApplication(d: ResumeDB, a: Application) { const n = { ...a, updatedAt: nowIso() }; await d.applications.put(n); return n; }
 
 /** 把当前简历冻结成快照关联到申请（深拷贝；之后改资料 / 重新生成都不影响） */

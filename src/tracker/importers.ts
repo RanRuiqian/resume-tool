@@ -6,7 +6,17 @@ import { STATUS_LABEL } from './types';
 
 export type RawRecord = Record<string, unknown>;
 export type SourceKind = 'csv' | 'json' | 'ran-application-handoff';
-export interface ParsedSource { kind: SourceKind; fileName: string; records: RawRecord[]; keys: string[]; warnings: string[]; meta?: Record<string, unknown> }
+export interface ParsedSource {
+  kind: SourceKind; fileName: string; records: RawRecord[]; keys: string[]; warnings: string[]; meta?: Record<string, unknown>;
+  /** 专用适配器：'handoff-1.0' = ran-application-handoff 1.0 的 jobs / internships / portals 结构 */
+  adapter?: 'handoff-1.0';
+  /** 适配器给出的固定字段映射（界面上仍可修改） */
+  presetMapping?: FieldMapping;
+  /** 招聘网站列表（portals）：不是岗位，不导入为岗位，只在预览中列出 */
+  portals?: RawRecord[];
+  /** 原始数据里出现、但没有对应字段的键（在预览中提示） */
+  unmapped?: string[];
+}
 
 /* ---------- CSV ---------- */
 /** RFC 4180 风格的 CSV 解析：支持引号、转义引号、字段内换行、BOM、逗号 / 制表符 / 分号分隔 */
@@ -62,6 +72,7 @@ export function jsonToSource(text: string, fileName: string): ParsedSource {
   const warnings: string[] = [];
   if (o.format === 'resume-tool-archive') throw new Error('这是「完整求职档案」备份，请在「备份与恢复」里导入');
   if (isHandoff && String(o.schemaVersion) !== '1.0') warnings.push(`导航工具数据版本为 ${String(o.schemaVersion)}，本工具按 1.0 适配，请仔细核对字段映射`);
+  if (isHandoff && (Array.isArray(o.jobs) || Array.isArray(o.internships))) return handoff10(o, fileName, warnings);
   const arr = findRecordArray(doc);
   if (!arr) throw new Error('没有在 JSON 里找到岗位 / 申请记录列表');
   const records = arr.map((r) => flatten(r));
@@ -69,6 +80,34 @@ export function jsonToSource(text: string, fileName: string): ParsedSource {
   if (isHandoff) warnings.push('「2027 求职投递导航」格式：字段结构尚未有实际样本确认，已按字段名自动猜测映射，请在下方逐项核对');
   return { kind: isHandoff ? 'ran-application-handoff' : 'json', fileName, records, keys, warnings, meta: isHandoff ? { format: o.format, schemaVersion: o.schemaVersion, exportedAt: o.exportedAt ?? o.generatedAt } : undefined };
 }
+/* ---------- ran-application-handoff 1.0 专用适配器 ----------
+ * 依据：用户描述的导航工具导出结构（尚无真实样本，拿到样本后需复核）
+ *   { format, schemaVersion: "1.0", exportedAt, jobs: [], internships: [], portals: [] }
+ *   岗位记录字段：id, kind, priority, type, company, city, title, description, url, source, elig, deadline, evidence, notes, status
+ * 映射规则见 docs/DATA_SCHEMA.md「导航工具导入」。 */
+export const HANDOFF_FIELDS = ['id', 'kind', 'priority', 'type', 'company', 'city', 'title', 'description', 'url', 'source', 'elig', 'deadline', 'evidence', 'notes', 'status'] as const;
+export const HANDOFF_MAPPING: FieldMapping = { company: 'company', title: 'title', city: 'city', status: 'status', applyUrl: 'url', sourcePlatform: 'source', deadline: 'deadline', priority: 'priority', jdText: 'description', notes: 'notes', category: 'type' };
+const HANDOFF_SECTION = '_section';
+function handoff10(o: RawRecord, fileName: string, warnings: string[]): ParsedSource {
+  const sec = (k: 'jobs' | 'internships') => (Array.isArray(o[k]) ? (o[k] as unknown[]) : []).filter((x): x is RawRecord => !!x && typeof x === 'object' && !Array.isArray(x)).map((r) => ({ ...flatten(r), [HANDOFF_SECTION]: k }));
+  const jobs = sec('jobs'); const interns = sec('internships');
+  const portals = (Array.isArray(o.portals) ? o.portals : []) as RawRecord[];
+  const records = [...jobs, ...interns];
+  const keys = [...new Set(records.flatMap((r) => Object.keys(r)))].filter((k) => k !== HANDOFF_SECTION);
+  const known = new Set<string>(HANDOFF_FIELDS);
+  const unmapped = keys.filter((k) => !known.has(k));
+  warnings.push(`已按「2027 求职投递导航」1.0 结构识别：jobs ${jobs.length} 条（校招）、internships ${interns.length} 条（实习）作为岗位导入；portals ${portals.length} 个招聘网站不是岗位，不会导入为岗位。`);
+  warnings.push('兼容性只按已描述的字段结构验证，尚未用真实导出文件核对；请逐项检查下方映射与预览。');
+  warnings.push('状态转换：「未投」只导入岗位、不建立申请（不会变成已投递）；「已投递」→已投递；「等待反馈」→已投递（备注「等待反馈」）；「笔试/面试」→在线测评 / 笔试（原文保留在备注和历史里，可手动改为面试中）；「已结束」→已结束。');
+  if (unmapped.length) warnings.push(`以下字段没有对应项，不会导入为独立字段（原始数据仍保存在岗位来源信息中）：${unmapped.join('、')}`);
+  return { kind: 'ran-application-handoff', adapter: 'handoff-1.0', fileName, records, keys, warnings, portals, unmapped, presetMapping: { ...HANDOFF_MAPPING },
+    meta: { format: o.format, schemaVersion: o.schemaVersion, exportedAt: o.exportedAt, jobs: jobs.length, internships: interns.length, portals: portals.length } };
+}
+/** 导航工具的状态 → 本工具状态。null = 不建立申请（只导入岗位） */
+export const HANDOFF_STATUS: Record<string, { status: AppStatus | null; note?: string }> = {
+  '未投': { status: null }, '已投递': { status: 'applied' }, '等待反馈': { status: 'applied', note: '等待反馈' },
+  '笔试/面试': { status: 'assessment', note: '原状态「笔试/面试」' }, '已结束': { status: 'closed' },
+};
 export function parseImportFile(text: string, fileName: string): ParsedSource {
   return /\.json$/i.test(fileName) || /^\s*[[{]/.test(text) ? jsonToSource(text, fileName) : csvToSource(text, fileName);
 }
@@ -157,10 +196,14 @@ const str = (v: unknown) => (v === undefined || v === null ? '' : String(v).trim
 export function buildCandidates(src: ParsedSource, mapping: FieldMapping, importedAt = nowIso()): Candidate[] {
   return src.records.map((r, index) => {
     const g = (f: TargetField) => (mapping[f] ? str(r[mapping[f]!]) : '');
-    const statusRaw = g('status'); const status = mapStatus(statusRaw);
+    const ho = src.adapter === 'handoff-1.0';
+    const statusRaw = g('status');
+    const hs = ho ? HANDOFF_STATUS[statusRaw.replace(/\s+/g, '')] : undefined;
+    const status = hs ? hs.status : mapStatus(statusRaw);
     const problems: string[] = [];
+    if (ho && statusRaw && !hs) problems.push(`导航工具状态「${statusRaw}」不在已知列表中`);
     if (!g('company')) problems.push('缺少企业'); if (!g('title')) problems.push('缺少岗位');
-    if (statusRaw && !status) problems.push(`无法识别状态「${statusRaw}」，只导入岗位，不创建申请状态`);
+    if (statusRaw && !status && !hs) problems.push(`无法识别状态「${statusRaw}」，只导入岗位，不创建申请状态`);
     const p = {
       company: g('company'), title: g('title'), city: g('city'), category: g('category') || undefined,
       applyUrl: g('applyUrl') || undefined, officialUrl: g('officialUrl') || undefined, recruitType: mapRecruit(g('recruitType') || g('category')),
@@ -169,8 +212,24 @@ export function buildCandidates(src: ParsedSource, mapping: FieldMapping, import
       salary: g('salary') || undefined, jdText: g('jdText') || undefined,
       notes: [g('notes'), statusRaw && !status ? `原始状态：${statusRaw}` : ''].filter(Boolean).join('\n') || undefined,
     };
-    const rowKey = `${src.kind}:${stableHash([p.company, p.title, p.city, p.applyUrl ?? ''].map((x) => x.toLowerCase().replace(/\s+/g, '')).join('|'))}`;
-    const source: SourceInfo = { kind: src.kind, fileName: src.fileName, importedAt, rowKey, raw: r };
+    let externalId: string | undefined;
+    if (ho) {
+      const section = String(r[HANDOFF_SECTION]);
+      p.recruitType = section === 'internships' ? 'intern' : (mapRecruit(str(r.type)) ?? 'campus');
+      if (mapRecruit(p.category)) p.category = undefined; // type 只是招聘类型时不重复存为类别
+      const pr = str(r.priority);
+      const extra = [
+        hs?.note,
+        str(r.elig) && `报名条件：${str(r.elig)}`, str(r.evidence) && `依据：${str(r.evidence)}`,
+        pr && `原优先级：${pr}`, str(r.deadline) && !p.deadline && `原截止日期：${str(r.deadline)}`,
+        statusRaw && `导航工具状态：${statusRaw}`, str(r.id) && `导航工具 ID：${str(r.id)}`,
+      ].filter(Boolean);
+      p.notes = [g('notes'), ...extra].filter(Boolean).join('\n') || undefined;
+      externalId = str(r.id) || undefined;
+    }
+    const rowKey = ho && externalId ? `ran-application-handoff:id:${externalId}`
+      : `${src.kind}:${stableHash([p.company, p.title, p.city, p.applyUrl ?? ''].map((x) => x.toLowerCase().replace(/\s+/g, '')).join('|'))}`;
+    const source: SourceInfo = { kind: src.kind, fileName: src.fileName, importedAt, rowKey, raw: r, ...(externalId ? { externalId } : {}) };
     return { index, rowKey, posting: { ...p, source, importKeys: [rowKey] } as Candidate['posting'], status, statusRaw, appliedAt: toDate(g('appliedAt')), problems };
   });
 }
@@ -209,7 +268,7 @@ export async function applyImport(d: ResumeDB, plan: PlanRow[], actions: Record<
       if (act === 'new' || !row.match) {
         const p = { ...newPosting(c.posting, at), source: c.posting.source, importKeys: [c.rowKey] };
         await d.postings.add(p); res.created++;
-        if (c.status) { await createApplication(d, p.id, c.status, importNote(c), c.appliedAt ? `${c.appliedAt}T00:00:00.000Z` : at, c.posting.source); res.applications++; res.events++; }
+        if (c.status) { const a = await createApplication(d, p.id, c.status, importNote(c), c.appliedAt ? `${c.appliedAt}T00:00:00.000Z` : at, c.posting.source); if (!c.appliedAt && a.appliedAt) await d.applications.update(a.id, { appliedAt: undefined }); res.applications++; res.events++; }
         continue;
       }
       // merge：只补空字段，不覆盖已有内容；状态变化追加历史
@@ -225,14 +284,14 @@ export async function applyImport(d: ResumeDB, plan: PlanRow[], actions: Record<
       if (c.status) {
         const apps = await d.applications.where('postingId').equals(m.id).toArray();
         const cur = apps.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-        if (!cur) { await createApplication(d, m.id, c.status, importNote(c), at, c.posting.source); res.applications++; res.events++; }
+        if (!cur) { const a = await createApplication(d, m.id, c.status, importNote(c), at, c.posting.source); if (!c.appliedAt && a.appliedAt) await d.applications.update(a.id, { appliedAt: undefined }); res.applications++; res.events++; }
         else if (cur.status !== c.status) {
           await d.appEvents.add({ id: uid('evt'), applicationId: cur.id, from: cur.status, to: c.status, at, note: importNote(c), by: 'import' });
-          await d.applications.put({ ...cur, status: c.status, updatedAt: nowIso(), ...(c.status === 'applied' && !cur.appliedAt ? { appliedAt: c.appliedAt ? `${c.appliedAt}T00:00:00.000Z` : at } : {}) }); res.events++;
+          await d.applications.put({ ...cur, status: c.status, updatedAt: nowIso(), ...(c.status === 'applied' && !cur.appliedAt && c.appliedAt ? { appliedAt: `${c.appliedAt}T00:00:00.000Z` } : {}) }); res.events++;
         }
       }
     }
   });
   return res;
 }
-const importNote = (c: Candidate) => `导入自 ${c.posting.source.fileName ?? c.posting.source.kind}（第 ${c.index + 1} 行${c.statusRaw ? `，原始状态「${c.statusRaw}」` : ''}）`;
+const importNote = (c: Candidate) => `导入自 ${c.posting.source.fileName ?? c.posting.source.kind}（第 ${c.index + 1} 条${c.posting.source.externalId ? `，原 ID ${c.posting.source.externalId}` : ''}${c.statusRaw ? `，原始状态「${c.statusRaw}」` : ''}${c.appliedAt ? '' : '；原数据没有投递日期，未填写投递时间'}）`;

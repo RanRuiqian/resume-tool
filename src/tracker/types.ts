@@ -21,7 +21,7 @@ export const STATUS_LABEL_EN: Record<AppStatus, string> = {
 };
 
 /** 来源信息：导入时保留原始来源与时间，便于追溯与幂等去重 */
-export interface SourceInfo { kind: 'manual' | 'csv' | 'json' | 'ran-application-handoff' | 'archive'; fileName?: string; importedAt?: string; rowKey?: string; raw?: Record<string, unknown> }
+export interface SourceInfo { kind: 'manual' | 'csv' | 'json' | 'ran-application-handoff' | 'archive'; fileName?: string; importedAt?: string; rowKey?: string; raw?: Record<string, unknown>; /** 来源系统中的原始 ID（如导航工具记录 id） */ externalId?: string }
 
 /** 一个招聘岗位（只是岗位，不代表已申请） */
 export interface JobPosting {
