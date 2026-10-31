@@ -55,7 +55,7 @@ describe('migration v1 → v2', () => {
     old.close();
     const db = new ResumeDB('mig-test');
     await db.open();
-    expect(db.verno).toBe(3);
+    expect(db.verno).toBe(4);
     const r = (await db.resumes.get('r-old'))!;
     expect(r.items[0]).toMatchObject({ sourceId: 'p1-b1', zh: '漏检率降低 40%', syncStatus: 'in-sync' });
     expect(r.audit).toBeUndefined();

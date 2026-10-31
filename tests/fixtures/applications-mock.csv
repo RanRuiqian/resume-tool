@@ -1,0 +1,8 @@
+类别,企业,城市,岗位,状态,投递链接,备注
+机器视觉,模拟视觉科技有限公司,上海,视觉算法工程师（校招）,已投递,https://example.com/jobs/101?utm_source=x,虚构数据
+机器人,虚构机器人股份有限公司,杭州,机器人软件工程师,笔试,https://example.com/jobs/102,
+智能制造,示例智造集团,苏州,工艺工程师,收藏,https://example.com/jobs/103,"含逗号, 和换行
+第二行"
+工业AI实习,Mock Industrial AI Sdn Bhd,Kuala Lumpur,AI Intern,面试中,https://example.com/jobs/104,
+自动化,模拟自动化公司,无锡,测试工程师,神秘状态,https://example.com/jobs/105,
+,缺岗位公司,上海,,,,
