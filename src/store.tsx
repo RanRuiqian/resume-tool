@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { JobParse, ProfileDoc, ResumeDoc, Settings, TemplateConfig } from './types';
 import { db, DEFAULT_SETTINGS } from './storage/db';
+import { migrateSettings } from './storage/defaults';
 import { emptyProfile, normalizeProfile } from './storage/profileIO';
 import { BUILTIN_TEMPLATES, ALL_TEMPLATES } from './templates';
 import { snapshotProfile, type BackupRow } from './storage/db';
@@ -43,7 +44,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (async () => {
       const [p, s, ts, st] = await Promise.all([db.profile.get('me'), db.settings.get('settings'), db.templates.toArray(), db.state.toArray()]);
       if (p) { const doc = normalizeProfile(p.doc); setProfileS(doc); latest.current = doc; }
-      if (s) setSettingsS({ ...DEFAULT_SETTINGS, ...s });
+      if (s) {
+        const m = migrateSettings({ ...DEFAULT_SETTINGS, ...s });
+        setSettingsS(m.settings);
+        if (m.changed) await db.settings.put(m.settings); // 旧默认模型名 deepseek-chat → deepseek-flash
+      }
       setCustom(ts);
       const get = (k: string) => st.find((x) => x.id === k)?.value;
       if (get('templateId')) setTemplateIdS(get('templateId') as string);

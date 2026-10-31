@@ -39,7 +39,7 @@ export function SetupCard({ onDone, compact }: { onDone?: () => void; compact?: 
       </div>
       {state === 'ok' && <div className="notice ok">连接成功 ✓</div>}
       {state && state !== 'ok' && state !== 'testing' && <div className="notice error">连接失败：{state}。请检查 Key 是否正确、账户是否有余额。</div>}
-      {s.provider === 'deepseek' && <div className="muted small">DeepSeek 不能直接看图片：岗位截图会在你的浏览器里本地识别文字（首次需下载约 20 MB 识别模型），无需额外设置。</div>}
+      {s.provider === 'deepseek' && <div className="muted small">岗位截图默认在你的浏览器里本地识别文字（首次需下载约 20 MB 识别模型），截图不会发给 AI，无需额外设置。（DeepSeek 新模型已支持图片输入，本工具暂未使用。）</div>}
     </div>
   );
 }

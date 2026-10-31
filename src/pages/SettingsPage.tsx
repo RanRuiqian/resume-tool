@@ -20,11 +20,11 @@ export function SettingsPage() {
         {f('baseUrl', 'Base URL', 'text', 'https://api.openai.com/v1 / https://api.deepseek.com/v1 / https://dashscope.aliyuncs.com/compatible-mode/v1')}
         {f('apiKey', 'API Key（仅保存在本浏览器）', 'password', 'sk-...')}
         <div className="grid2">
-          {f('model', '生成模型', 'text', 'gpt-4o-mini / deepseek-chat / qwen-plus')}
+          {f('model', '生成模型', 'text', 'deepseek-flash / gpt-4o-mini / qwen-plus')}
           {f('visionModel', '截图识别（多模态）模型', 'text', 'gpt-4o-mini / qwen-vl-plus')}
           {f('translateModel', '翻译模型（留空同生成模型）')}
         </div>
-        <label>岗位截图识别方式<select value={settings.ocrMode} onChange={(e) => setSettings({ ...settings, ocrMode: e.target.value as Settings['ocrMode'] })}><option value="local">浏览器本地识别（免费，适用于 DeepSeek 等不支持图片的模型）</option><option value="vision">AI 多模态模型识别（需填写多模态模型）</option></select></label>
+        <label>岗位截图识别方式<select value={settings.ocrMode} onChange={(e) => setSettings({ ...settings, ocrMode: e.target.value as Settings['ocrMode'] })}><option value="local">浏览器本地识别（免费，默认；不把截图发给 AI）</option><option value="vision">AI 多模态模型识别（需填写多模态模型）</option></select></label>
         </details>
         <label>界面语言<select value={settings.uiLang} onChange={(e) => setSettings({ ...settings, uiLang: e.target.value as 'zh' | 'en' })}><option value="zh">中文</option><option value="en">English（部分）</option></select></label>
         <div className="notice">{t('privacy')}</div>

@@ -1,4 +1,5 @@
 import type { Settings } from '../types';
+import { isOfficialDeepSeek } from '../storage/defaults';
 
 export class AiError extends Error {}
 
@@ -14,6 +15,9 @@ export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: str
   try {
     const body: Record<string, unknown> = { model: opts.model || s.model, messages, temperature: 0.2 };
     if (opts.json) body.response_format = { type: 'json_object' };
+    // DeepSeek 官方接口默认开启思考模式；简历整理 / 生成 / JSON 等普通任务显式关闭，减少延迟与费用（https://api-docs.deepseek.com/guides/thinking_mode ）。
+    // 只对 DeepSeek 官方地址发送该参数，其他服务商不受影响。
+    if (isOfficialDeepSeek(s)) body.thinking = { type: 'disabled' };
     const res = await fetch(url, { method: 'POST', signal: ctrl.signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.apiKey}` }, body: JSON.stringify(body) });
     if (!res.ok) {
       const txt = await res.text().catch(() => '');
