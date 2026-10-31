@@ -78,7 +78,7 @@ export function parseJson<T>(s: string): T {
   catch { throw new AiError('AI 输出不是合法 JSON'); }
 }
 
-export async function chatJson<T>(s: Settings, messages: ChatMsg[], opts: { model?: string } = {}): Promise<T> {
+export async function chatJson<T>(s: Settings, messages: ChatMsg[], opts: { model?: string; maxTokens?: number; timeoutMs?: number } = {}): Promise<T> {
   try { return parseJson<T>(await chat(s, messages, { ...opts, json: true })); }
   catch (e) {
     // 部分服务不支持 response_format，降级重试一次

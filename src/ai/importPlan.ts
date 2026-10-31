@@ -1,12 +1,17 @@
 import type { Evidence, LocalizedText, ProfileDoc } from '../types';
 import type { Uncertain } from './importProfile';
+import type { SourceText } from '../types';
+import { dupMatch, findIncomingDuplicates, mergeEntries, normName, similarity, type DupMatch } from './dedupe';
+import { emptyProfile } from '../storage/profileIO';
 
 /** 智能导入的「导入计划」：先对照、再由用户逐条选择，最后纯函数应用（出错不改原资料） */
 
 export type PlanSection = 'education' | 'work' | 'projects' | 'skills' | 'certificates' | 'awards' | 'evidence';
-export type PlanStatus = 'new' | 'duplicate' | 'maybe' | 'conflict';
+/** internal：与本次识别结果中的另一条重复（如同一段经历的中文 / 英文写法各识别成一条） */
+export type PlanStatus = 'new' | 'duplicate' | 'maybe' | 'conflict' | 'internal';
 /** undecided：可能重复 / 有冲突时的默认值，必须由用户明确选择后才能导入（A1） */
-export type PlanAction = 'add' | 'merge' | 'skip' | 'undecided';
+/** replace：用识别结果替换已有条目（保留条目 id 与合并记录） */
+export type PlanAction = 'add' | 'merge' | 'replace' | 'skip' | 'undecided';
 export interface FieldConflict { field: string; label: string; old: string; new: string; useNew: boolean; /** 旧值已被用户确认过：覆盖前必须二次确认 */ oldConfirmed?: boolean }
 export interface PlanItem {
   key: string; section: PlanSection; incomingId: string; title: string;
@@ -14,6 +19,12 @@ export interface PlanItem {
   conflicts: FieldConflict[]; newPoints: string[]; samePoints: number; uncertain: string[]; action: PlanAction;
   /** 相关但独立的条目（同公司其它职位 / 同项目其它阶段），只做关联，不合并 */
   relatedId?: string; relatedNote?: string;
+  /** status = internal 时：要并入的同批主记录 */
+  intoIncomingId?: string; intoTitle?: string;
+  /** 判定依据（日期相同、名称一致……） */
+  reasons?: string[];
+  /** 已有条目被用户确认过：替换前必须勾选 overrideConfirmed */
+  matchConfirmed?: boolean; overrideConfirmed?: boolean;
 }
 export interface BasicChange { path: string; label: string; old: string; new: string; useNew: boolean }
 export interface ImportPlan { items: PlanItem[]; basics: BasicChange[]; otherUncertain: Uncertain[] }
@@ -22,25 +33,10 @@ export interface MergeRecord { at: string; importTag: string; incomingId: string
 export function undecidedCount(plan: ImportPlan): number { return plan.items.filter((i) => i.action === 'undecided').length; }
 
 const ltk = (t?: LocalizedText) => (t ? t.zh || t.en || '' : '');
-const STRIP = /(股份有限公司|有限责任公司|有限公司|集团|公司|科技|技术|\(中国\)|（中国）|co\.?,?\s*ltd\.?|inc\.?|ltd\.?|corp\.?|corporation|limited|company)/gi;
-export function normName(s: string): string {
-  return s.toLowerCase().replace(STRIP, '').replace(/[\s·,，.。()（）\-_/、:：'"“”]/g, '');
-}
-/** 字符二元组 Dice 相似度（0–1），对中英文都可用 */
-export function similarity(a: string, b: string): number {
-  const x = normName(a), y = normName(b);
-  if (!x || !y) return 0;
-  if (x === y) return 1;
-  if (x.length >= 2 && y.length >= 2 && (x.includes(y) || y.includes(x))) return 0.9;
-  const grams = (s: string) => { const m = new Map<string, number>(); for (let i = 0; i < s.length - 1; i++) { const g = s.slice(i, i + 2); m.set(g, (m.get(g) ?? 0) + 1); } return m; };
-  const A = grams(x), B = grams(y); let inter = 0;
-  for (const [g, n] of A) inter += Math.min(n, B.get(g) ?? 0);
-  const tot = Math.max(1, x.length - 1) + Math.max(1, y.length - 1);
-  return (2 * inter) / tot;
-}
+export { normName, similarity };
 
 type AnyEntry = Record<string, unknown> & { id: string };
-const SEC_LABEL: Record<PlanSection, string> = { education: '教育', work: '工作', projects: '项目', skills: '技能', certificates: '证书', awards: '获奖', evidence: '证据' };
+const SEC_LABEL: Record<PlanSection, string> = { education: '教育', work: '工作及社会经历', projects: '项目', skills: '技能', certificates: '证书', awards: '获奖', evidence: '证据' };
 export const sectionLabel = (s: PlanSection) => SEC_LABEL[s];
 
 function titleOf(sec: PlanSection, e: AnyEntry): string {
@@ -128,17 +124,27 @@ function overlap(a: AnyEntry, b: AnyEntry): boolean {
 export function buildImportPlan(base: ProfileDoc, inc: ProfileDoc, uncertain: Uncertain[] = []): ImportPlan {
   const { map: um, other } = uncertainIndex(uncertain, inc);
   const items: PlanItem[] = [];
+  const internal = new Map(findIncomingDuplicates(inc).map((d) => [`${d.section}:${d.id}`, d]));
   for (const sec of ['education', 'work', 'projects', 'skills', 'certificates', 'awards', 'evidence'] as PlanSection[]) {
     const olds = base[sec] as unknown as AnyEntry[]; const news = (inc[sec] ?? []) as unknown as AnyEntry[];
     news.forEach((e) => {
-      let best: AnyEntry | undefined, bs = 0;
-      for (const o of olds) { const s = matchScore(sec, e, o); if (s > bs) { bs = s; best = o; } }
+      const dup = internal.get(`${sec}:${e.id}`);
+      if (dup) {
+        const into = news.find((x) => x.id === dup.intoId)!;
+        items.push({ key: `${sec}:${e.id}`, section: sec, incomingId: e.id, title: titleOf(sec, e) || '（未命名）', status: 'internal', similarity: dup.match.score,
+          conflicts: [], newPoints: pointsOf(e).map(ltk).filter(Boolean), samePoints: 0, uncertain: um.get(e.id) ?? [], action: dup.match.strong ? 'merge' : 'undecided',
+          intoIncomingId: into.id, intoTitle: titleOf(sec, into), reasons: dup.match.reasons });
+        return;
+      }
+      let best: AnyEntry | undefined, bs = 0, bm: DupMatch | undefined;
+      for (const o of olds) { const m = dupMatch(sec, e, o); const s = Math.max(matchScore(sec, e, o), m.strong ? m.score : 0); if (s > bs) { bs = s; best = o; bm = m; } }
       const it: PlanItem = { key: `${sec}:${e.id}`, section: sec, incomingId: e.id, title: titleOf(sec, e) || '（未命名）', status: 'new', similarity: Math.round(bs * 100) / 100,
         conflicts: [], newPoints: pointsOf(e).map(ltk).filter(Boolean), samePoints: 0, uncertain: um.get(e.id) ?? [], action: 'add' };
       const rel = best && bs >= MAYBE ? relatedButDistinct(sec, e, best) : '';
       if (rel && best) { it.relatedId = best.id; it.relatedNote = `${rel}（相关：「${titleOf(sec, best)}」）`; it.matchTitle = titleOf(sec, best); }
       else if (best && bs >= MAYBE) {
-        it.matchId = best.id; it.matchTitle = titleOf(sec, best);
+        it.matchId = best.id; it.matchTitle = titleOf(sec, best); it.reasons = bm?.reasons;
+        it.matchConfirmed = !!best.userConfirmedAt || best.confirmed === true || Object.values(best).some(isConfirmed);
         const oldPts = pointsOf(best).map(ltk).filter(Boolean);
         it.newPoints = pointsOf(e).map(ltk).filter(Boolean).filter((p) => !oldPts.some((q) => similarity(p, q) >= 0.75));
         it.samePoints = pointsOf(e).length - it.newPoints.length;
@@ -173,14 +179,27 @@ export function buildImportPlan(base: ProfileDoc, inc: ProfileDoc, uncertain: Un
 }
 
 /** 按计划合并。纯函数：不修改 base / inc，任何异常由调用方捕获，原资料保持不变 */
-export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportPlan): ProfileDoc {
+export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportPlan, source?: SourceText): ProfileDoc {
   const pending = plan.items.filter((i) => i.action === 'undecided');
   if (pending.length) throw new Error(`还有 ${pending.length} 条可能重复 / 有冲突的条目未选择处理方式：${pending.map((i) => i.title).join('、')}`);
+  for (const it of plan.items) if (it.action === 'replace' && it.matchConfirmed && !it.overrideConfirmed) throw new Error(`「${it.matchTitle ?? it.title}」已被你确认过，替换前需要再次确认`);
   for (const it of plan.items) for (const c of it.conflicts) if (c.useNew && c.oldConfirmed && !(c as FieldConflict & { overrideConfirmed?: boolean }).overrideConfirmed)
     throw new Error(`「${it.title}」的${c.label}已确认过，覆盖前需要再次确认`);
   const out = structuredClone(base); const src = structuredClone(inc);
   const tag = `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const idMap = new Map<string, string>();
+  // 第一步：本次识别结果内部的重复，先并入同批主记录（不丢弃差异：别名、差异提示、合并记录都保留）
+  const internalTo = new Map<string, string>();
+  for (const it of plan.items) {
+    if (it.status !== 'internal' || it.action !== 'merge' || !it.intoIncomingId) continue;
+    const list = src[it.section] as unknown as AnyEntry[];
+    const ri = list.findIndex((x) => x.id === it.intoIncomingId), di = list.findIndex((x) => x.id === it.incomingId);
+    if (ri < 0 || di < 0) continue;
+    list[ri] = mergeEntries(it.section, list[ri], list[di], tag);
+    if (it.uncertain.length) list[ri].uncertain = [...new Set([...((list[ri].uncertain as string[]) ?? []), ...it.uncertain])];
+    list.splice(di, 1); internalTo.set(it.incomingId, it.intoIncomingId);
+  }
+  if (internalTo.size) for (const ev of src.evidence) { ev.projectIds = [...new Set(ev.projectIds.map((x) => internalTo.get(x) ?? x))]; ev.skillIds = [...new Set(ev.skillIds.map((x) => internalTo.get(x) ?? x))]; }
   // 基本信息
   for (const b of plan.basics) {
     if (!b.useNew) continue;
@@ -192,8 +211,19 @@ export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportP
   }
   for (const it of plan.items) {
     const dst = out[it.section] as unknown as AnyEntry[];
+    if (it.status === 'internal' && it.action === 'merge') continue;
     const e = (src[it.section] as unknown as AnyEntry[]).find((x) => x.id === it.incomingId);
     if (!e || it.action === 'skip') continue;
+    if (it.action === 'replace' && it.matchId) {
+      const i = dst.findIndex((x) => x.id === it.matchId);
+      if (i >= 0) {
+        const old = dst[i];
+        const rec: MergeRecord = { at: new Date().toISOString(), importTag: tag, incomingId: e.id, incomingTitle: it.title, fieldsOverwritten: [{ field: '*', old: JSON.stringify(old), new: '' }], pointsAdded: [], incomingSnapshot: JSON.stringify(e) };
+        const fresh = JSON.parse(JSON.stringify(e).replace(/"id":"([^"]+)"/g, `"id":"${tag}-$1"`)) as AnyEntry;
+        dst[i] = { ...fresh, id: old.id, enabled: old.enabled, ...(it.uncertain.length ? { uncertain: it.uncertain } : {}), mergeHistory: [...((old.mergeHistory as MergeRecord[]) ?? []), rec] };
+        idMap.set(e.id, old.id); continue;
+      }
+    }
     const hit = it.action === 'merge' && it.matchId ? dst.find((x) => x.id === it.matchId) : undefined;
     if (it.section === 'evidence') {
       // 证据在最后处理：此时项目/技能的最终 id 已确定
@@ -218,6 +248,8 @@ export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportP
     for (const c of it.conflicts) if (c.useNew) { rec.fieldsOverwritten.push({ field: c.field, old: c.old, new: c.new }); hit[c.field] = e[c.field]; }
     for (const f of ['start', 'end', 'date', 'link', 'location', 'proves', 'fileName', 'courseCompletionDate', 'expectedConferralDate', 'actualConferralDate', 'availableFullTimeDate']) if (f in e && !val(hit[f]) && val(e[f])) hit[f] = e[f];
     for (const f of ['degree', 'major', 'role', 'title', 'issuer', 'category']) if (f in e && !val(hit[f]) && val(e[f])) hit[f] = e[f];
+    for (const f of ['aliases', 'notes']) if (Array.isArray(e[f])) hit[f] = [...new Set([...((hit[f] as string[]) ?? []), ...(e[f] as string[])])];
+    if (e.kind && !hit.kind) hit.kind = e.kind;
     if (Array.isArray(e.courses)) hit.courses = [...new Set([...((hit.courses as string[]) ?? []), ...(e.courses as string[])])];
     if (Array.isArray(hit.tags) && Array.isArray(e.tags)) hit.tags = [...new Set([...(hit.tags as string[]), ...(e.tags as string[])])];
     if (Array.isArray(e.evidenceIds)) hit.evidenceIds = [...new Set([...((hit.evidenceIds as string[]) ?? []), ...(e.evidenceIds as string[]).map((x) => idMap.get(x) ?? x)])];
@@ -231,5 +263,67 @@ export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportP
     for (const pid of ev.projectIds) { const p = out.projects.find((x) => x.id === pid); if (p) p.evidenceIds = [...new Set([...(p.evidenceIds ?? []), ev.id])]; }
     for (const sid of ev.skillIds) { const k = out.skills.find((x) => x.id === sid); if (k) k.evidenceIds = [...new Set([...(k.evidenceIds ?? []), ev.id])]; }
   }
+  if (source?.text.trim()) out.sourceTexts = [...(out.sourceTexts ?? []), source];
   return out;
 }
+
+/**
+ * 「替换现有资料」：清空现有条目后按计划写入识别结果（本批内部的合并 / 跳过选择仍然生效）。
+ * 保留照片、术语表与以往保存的原始资料；调用方负责在写入前创建快照。
+ */
+export function applyReplace(base: ProfileDoc, inc: ProfileDoc, plan: ImportPlan, source?: SourceText): ProfileDoc {
+  const empty = emptyProfile();
+  empty.glossary = base.glossary; empty.primaryLanguage = inc.primaryLanguage;
+  empty.profile.photo = base.profile.photo; empty.profile.photoAspect = base.profile.photoAspect;
+  if (base.sourceTexts?.length) empty.sourceTexts = base.sourceTexts;
+  const p2: ImportPlan = {
+    otherUncertain: plan.otherUncertain,
+    basics: [],
+    items: plan.items.map((it) => (it.status === 'internal' || it.action === 'skip' ? it : { ...it, action: 'add', matchId: undefined, conflicts: [], newPoints: it.newPoints })),
+  };
+  const out = applyImportPlan(empty, inc, p2, source);
+  out.profile = { ...structuredClone(inc.profile), photo: base.profile.photo, photoAspect: base.profile.photoAspect };
+  return out;
+}
+
+export type ImportMode = 'merge' | 'replace';
+export interface PlanSummary { add: number; merge: number; skip: number; overwrite: number; pending: number; removed: number }
+/** 提交前汇总：新增 / 合并 / 跳过 / 覆盖 / 待决定 */
+export function planSummary(plan: ImportPlan, mode: ImportMode, base?: ProfileDoc): PlanSummary {
+  const s: PlanSummary = { add: 0, merge: 0, skip: 0, overwrite: 0, pending: 0, removed: 0 };
+  for (const it of plan.items) {
+    if (it.action === 'undecided' && (mode === 'merge' || it.status === 'internal')) s.pending++;
+    else if (mode === 'replace' && it.status !== 'internal' && it.action !== 'skip') s.add++;
+    else if (it.action === 'skip') s.skip++;
+    else if (it.action === 'merge' && (it.status === 'internal' || mode === 'merge')) s.merge++;
+    else if (it.action === 'replace' && mode === 'merge') s.overwrite++;
+    else s.add++;
+    if (mode === 'merge' && it.action === 'merge') s.overwrite += it.conflicts.filter((c) => c.useNew).length;
+  }
+  if (mode === 'merge') s.overwrite += plan.basics.filter((b) => b.useNew && b.old.trim()).length;
+  if (mode === 'replace' && base) s.removed = (['education', 'work', 'projects', 'skills', 'certificates', 'awards', 'evidence'] as const).reduce((n, k) => n + (base[k]?.length ?? 0), 0);
+  return s;
+}
+
+/** 合并预览：返回合并前两条记录与合并后的结果（不修改任何输入） */
+export function mergePreview(base: ProfileDoc, inc: ProfileDoc, it: PlanItem): { before: AnyEntry[]; after: AnyEntry } | null {
+  const news = inc[it.section] as unknown as AnyEntry[];
+  const e = news.find((x) => x.id === it.incomingId); if (!e) return null;
+  const target = it.status === 'internal' ? news.find((x) => x.id === it.intoIncomingId) : (base[it.section] as unknown as AnyEntry[]).find((x) => x.id === it.matchId);
+  if (!target) return null;
+  return { before: [target, e], after: mergeEntries(it.section, target, e, 'preview') };
+}
+
+/** 现有资料里残留的内置示例数据条数（示例资料的条目 id 以 sample 内容为准，由调用方传入） */
+export function sampleResidue(base: ProfileDoc, sample: ProfileDoc): string[] {
+  const hits: string[] = [];
+  for (const k of ['education', 'work', 'projects', 'skills', 'certificates', 'awards'] as const) {
+    for (const e of base[k] as unknown as AnyEntry[]) {
+      const sm = (sample[k] as unknown as AnyEntry[]).find((x) => x.id === e.id);
+      if (sm && titleOf(k, sm) === titleOf(k, e)) hits.push(titleOf(k, e));
+    }
+  }
+  const sn = sample.profile.headline; if ((sn.en && base.profile.headline.en === sn.en) || (sn.zh && base.profile.headline.zh === sn.zh)) hits.unshift(ltk(base.profile.headline) || sn.en || '');
+  return hits;
+}
+export { titleOf };
