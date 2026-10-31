@@ -244,3 +244,28 @@ button.danger, .link.danger { color: #c53030; }
   .tracker-list td, .tracker-list th { padding: 6px 4px; }
   .row { flex-wrap: wrap; }
 }
+
+/* AI API 管理 */
+.api-manager h3 { margin: 0 0 6px; }
+.api-list { list-style: none; padding: 0; margin: 10px 0; display: flex; flex-direction: column; gap: 8px; }
+.api-item { display: flex; align-items: center; gap: 10px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px 12px; background: #fff; }
+.api-item.on { border: 2px solid var(--c); background: #f5f9ff; }
+.api-main { flex: 1; min-width: 0; }
+.api-title { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.api-title b { overflow-wrap: anywhere; }
+.api-meta { overflow-wrap: anywhere; }
+.api-meta code { font-size: 12px; }
+.st-ok { background: #c6f6d5; color: #276749; font-weight: 600; }
+.api-test.ok { color: #276749; } .api-test.fail { color: #c53030; } .api-test.testing { color: #975a16; }
+.api-actions { display: flex; gap: 6px; align-items: center; flex-shrink: 0; }
+.api-actions button { min-height: 34px; }
+.api-on { color: #276749; font-weight: 600; }
+.api-del { width: 34px; padding: 0; font-size: 18px; color: #c53030; margin-left: 6px; }
+.api-add { width: 100%; padding: 10px; border: 1px dashed var(--c); color: var(--c); background: #fff; border-radius: 10px; font-weight: 600; }
+.api-form { border: 1px solid #e2e8f0; margin-top: 8px; }
+@media (max-width: 640px) {
+  .api-item { flex-direction: column; align-items: stretch; }
+  .api-actions { flex-wrap: nowrap; }
+  .api-actions button { flex: 1 1 0; min-width: 0; min-height: 40px; padding-left: 4px; padding-right: 4px; white-space: nowrap; }
+  .api-del { flex: 0 0 44px !important; margin-left: 12px; }
+}

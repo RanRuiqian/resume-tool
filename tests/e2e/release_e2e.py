@@ -14,7 +14,7 @@ DUMP="""n=>new Promise(r=>{const q=indexedDB.open(n);q.onsuccess=async()=>{const
  if(o.attachmentBlobs){for(const b of o.attachmentBlobs){const buf=await (b.data instanceof Blob?b.data.arrayBuffer():Promise.resolve(b.data));const h=await crypto.subtle.digest('SHA-256',buf);b.data=[...new Uint8Array(h)].map(x=>x.toString(16).padStart(2,'0')).join('')}}
  db.close();r(o)}})"""
 SETKEY="""k=>new Promise(r=>{const q=indexedDB.open('resume-tool');q.onsuccess=()=>{const db=q.result;const t=db.transaction(['settings'],'readwrite');const s=t.objectStore('settings');const g=s.get('settings');
- g.onsuccess=()=>{s.put({...(g.result||{id:'settings'}),id:'settings',apiKey:k,setupDone:true})};t.oncomplete=()=>{db.close();r()}}})"""
+ g.onsuccess=()=>{s.put({...(g.result||{id:'settings'}),id:'settings',apiKey:k,setupDone:true,apiProfiles:undefined,activeProfileId:undefined})};t.oncomplete=()=>{db.close();r()}}})"""
 dirs=[]
 def ctx_new(p, vp={'width':1280,'height':900}, **kw):
     d=tempfile.mkdtemp(prefix='chrome-p5-'); dirs.append(d)

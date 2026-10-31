@@ -15,6 +15,21 @@ export const DEFAULT_SETTINGS: Settings = {
 
 /** DeepSeek 官方已停用的旧默认模型名（2026-04-24 公告，2026-07-24 停用；见 https://api-docs.deepseek.com/updates ） */
 export const RETIRED_DEEPSEEK_MODEL = 'deepseek-chat';
+/**
+ * API 地址安全检查：只允许 https://；http:// 仅限明确的本机回环地址（localhost / 127.0.0.1 / [::1]）供本地开发代理使用。
+ * 返回 null 表示通过，否则返回中文提示。
+ */
+export function baseUrlProblem(raw: string): string | null {
+  let u: URL;
+  try { u = new URL((raw ?? '').trim()); } catch { return 'Base URL 格式不正确，应以 https:// 开头'; }
+  if (u.protocol === 'https:') return null;
+  if (u.protocol === 'http:') {
+    if (['localhost', '127.0.0.1', '[::1]'].includes(u.hostname.toLowerCase())) return null;
+    return '为保护 API Key，只能使用 https:// 开头的 API 地址（http:// 会明文传输 Key）。仅本机开发代理（localhost / 127.0.0.1）可以使用 http://';
+  }
+  return 'Base URL 格式不正确，应以 https:// 开头';
+}
+
 /** 是否为 DeepSeek 官方接口（自建代理 / 其他服务商不算） */
 export function isOfficialDeepSeek(s: Pick<Settings, 'provider' | 'baseUrl'>): boolean {
   return s.provider === 'deepseek' && /^https:\/\/api\.deepseek\.com(\/v1)?\/?$/i.test((s.baseUrl ?? '').trim());

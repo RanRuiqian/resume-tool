@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import type { JobParse, ProfileDoc, ResumeDoc, Settings, TemplateConfig } from './types';
 import { db, DEFAULT_SETTINGS } from './storage/db';
-import { migrateSettings } from './storage/defaults';
+import { loadSettings } from './storage/settingsLoad';
+import { applyActive, activateProfile as activateP, deleteProfile as deleteP, migrateToProfiles, upsertProfile, type ProfileDraft } from './storage/apiProfiles';
 import { emptyProfile, normalizeProfile } from './storage/profileIO';
 import { BUILTIN_TEMPLATES, ALL_TEMPLATES } from './templates';
 import { snapshotProfile, type BackupRow } from './storage/db';
@@ -12,6 +13,10 @@ interface AppState {
   ready: boolean;
   profile: ProfileDoc; setProfile: (p: ProfileDoc) => void;
   settings: Settings; setSettings: (s: Settings) => void;
+  /** 多 API 配置：新增/编辑（activate=true 同时启用）、一键切换、删除；均立即生效并保存，无需刷新 */
+  saveApiProfile: (d: ProfileDraft, activate?: boolean) => string;
+  switchApiProfile: (id: string) => void;
+  removeApiProfile: (id: string) => void;
   templates: TemplateConfig[]; saveTemplate: (t: TemplateConfig) => void; deleteTemplate: (id: string) => void;
   templateId: string; setTemplateId: (id: string) => void;
   job: JobParse | null; setJob: (j: JobParse | null) => void;
@@ -32,6 +37,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
   const [profile, setProfileS] = useState<ProfileDoc>(emptyProfile());
   const [settings, setSettingsS] = useState<Settings>(DEFAULT_SETTINGS);
+  const settingsRef = useRef<Settings>(DEFAULT_SETTINGS);
   const [custom, setCustom] = useState<TemplateConfig[]>([]);
   const [templateId, setTemplateIdS] = useState(BUILTIN_TEMPLATES[0].id);
   const [job, setJobS] = useState<JobParse | null>(null);
@@ -44,11 +50,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
     (async () => {
       const [p, s, ts, st] = await Promise.all([db.profile.get('me'), db.settings.get('settings'), db.templates.toArray(), db.state.toArray()]);
       if (p) { const doc = normalizeProfile(p.doc); setProfileS(doc); latest.current = doc; }
-      if (s) {
-        const m = migrateSettings({ ...DEFAULT_SETTINGS, ...s });
-        setSettingsS(m.settings);
-        if (m.changed) await db.settings.put(m.settings); // 旧默认模型名 deepseek-chat → deepseek-flash
-      }
+      if (s) { const ls = await loadSettings(db); if (ls) { settingsRef.current = ls; setSettingsS(ls); } }
       setCustom(ts);
       const get = (k: string) => st.find((x) => x.id === k)?.value;
       if (get('templateId')) setTemplateIdS(get('templateId') as string);
@@ -58,7 +60,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // ?demo：只读写独立的演示数据库（resume-tool-demo），真实资料库完全不碰
       if (IS_DEMO) {
         const d = await seedDemo(db);
-        setProfileS(d.profile); setJobS(d.job); setResumeS(d.resume); setSettingsS(d.settings);
+        const ds = migrateToProfiles(d.settings).settings;
+        setProfileS(d.profile); setJobS(d.job); setResumeS(d.resume); settingsRef.current = ds; setSettingsS(ds);
         uiStorage.setItem('wizardStep', '3');
       }
       setReady(true);
@@ -92,7 +95,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     await replaceProfile(normalizeProfile(b.doc), '恢复快照前的资料'); // 快照可能是旧版格式（如升级前自动快照），恢复时统一升级
     return true;
   }, [replaceProfile]);
-  const setSettings = (s: Settings) => { setSettingsS(s); db.settings.put(s); };
+  const setSettings = useCallback((s0: Settings) => { const s = Array.isArray(s0.apiProfiles) ? applyActive(s0) : s0; settingsRef.current = s; setSettingsS(s); db.settings.put(s); }, []);
+  const saveApiProfile = useCallback((d: ProfileDraft, activate = false) => { const r = upsertProfile(settingsRef.current, d, { activate }); setSettings(r.settings); return r.id; }, [setSettings]);
+  const switchApiProfile = useCallback((id: string) => setSettings(activateP(settingsRef.current, id)), [setSettings]);
+  const removeApiProfile = useCallback((id: string) => setSettings(deleteP(settingsRef.current, id)), [setSettings]);
   const saveTemplate = (t: TemplateConfig) => { setCustom((c) => [...c.filter((x) => x.id !== t.id), t]); db.templates.put(t); };
   const deleteTemplate = (id: string) => { setCustom((c) => c.filter((x) => x.id !== id)); db.templates.delete(id); if (templateId === id) setTemplateId(BUILTIN_TEMPLATES[0].id); };
   const setTemplateId = (id: string) => { setTemplateIdS(id); db.state.put({ id: 'templateId', value: id }); };
@@ -106,5 +112,5 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const templates = [...ALL_TEMPLATES, ...custom];
   const template = templates.find((t) => t.id === templateId) ?? BUILTIN_TEMPLATES[0];
 
-  return <Ctx.Provider value={{ ready, profile, setProfile, settings, setSettings, templates, saveTemplate, deleteTemplate, templateId, setTemplateId, job, setJob, resume, setResume, template, canUndo: history.length > 0, undo, replaceProfile, listBackups, restoreBackup, isDemo: IS_DEMO }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ ready, profile, setProfile, settings, setSettings, saveApiProfile, switchApiProfile, removeApiProfile, templates, saveTemplate, deleteTemplate, templateId, setTemplateId, job, setJob, resume, setResume, template, canUndo: history.length > 0, undo, replaceProfile, listBackups, restoreBackup, isDemo: IS_DEMO }}>{children}</Ctx.Provider>;
 }
