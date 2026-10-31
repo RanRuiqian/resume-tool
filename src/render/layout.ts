@@ -1,3 +1,4 @@
+import { eduDateText } from './degree';
 import { inferWorkKind, isCampusKind } from './classify';
 import type { Lang, ProfileDoc, ResumeDoc, TemplateConfig, ModuleKey, LocalizedText, Typography, PhotoPosition } from '../types';
 import { lt, formatRange, formatDate, moduleOrderFor } from '../locale/text';
@@ -87,14 +88,8 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   const order = moduleOrderFor(tpl, lang);
   /** 只有模板顺序包含 campus 时，社团 / 志愿经历才单列为「校园经历」；旧模板仍归入 work */
   const splitCampus = order.includes('campus');
-  /** 学位尚未授予时显示预计时间并明确标注，不把预计毕业写成已获学位 */
-  const eduRange = (e: ProfileDoc['education'][number]) => {
-    const pending = !e.actualConferralDate && !!e.expectedConferralDate;
-    const end = pending ? (e.end || e.expectedConferralDate!) : e.end;
-    const r = range(e.start, end);
-    const future = pending && (e.expectedConferralDate! > new Date().toISOString().slice(0, 7));
-    return future && r ? r + (lang === 'zh' ? '（预计）' : ' (expected)') : r;
-  };
+  /** 学位状态见 degree.ts：就读结束 / 预计授位 / 实际授位分开，不按今天日期推断 */
+  const eduRange = (e: ProfileDoc['education'][number]) => eduDateText(e, lang, { range, date: (d) => formatDate(d, loc.dateFormat, loc.presentLabel) });
   const summaryText = resume ? (itemMap.get('summary')?.[lang]?.trim() || (itemMap.has('summary') ? T(p.profile.summary) : '')) : T(p.profile.summary);
   if (summaryText) sections.summary = { key: 'summary', title: title('summary'), blocks: [{ bullets: [], text: summaryText }] };
   const sep = lang === 'zh' ? ' | ' : ', ';

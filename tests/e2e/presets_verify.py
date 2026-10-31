@@ -111,6 +111,20 @@ for dx in sorted(glob.glob(os.path.join(D, 'edge_*.docx'))):
         res[name] = {'lo_pages': page_checks(lpdf, name + ' (LO)')}
         subprocess.run(['pdftoppm', '-r', '70', '-png', lpdf, os.path.join(D, 'render_docx_' + name[:-5])])
 
+# 学位状态：四套预设 PDF 与 DOCX 的学历日期文字逐条一致
+import re
+DEG = {'zh': ['2024.09 – 2026.12（预计 2027.01 授予学位）', '2020.09 – 2024.06（预计）', '2016.09 – 2020.06'],
+       'en': ['Sep 2024 – Dec 2026 (degree expected Jan 2027)', 'Sep 2020 – Jun 2024 (expected)', 'Sep 2016 – Jun 2020']}
+for pdf in sorted(glob.glob(os.path.join(D, 'edge_degree_*.pdf'))):
+    name = os.path.basename(pdf); lang = 'en' if '_en-' in name else 'zh'
+    pt = norm(subprocess.run(['pdftotext', pdf, '-'], capture_output=True, text=True).stdout)
+    dd = Document(pdf[:-4] + '.docx'); dt = norm('\n'.join([p.text for p in dd.paragraphs] + [p.text for t in dd.tables for r in t.rows for c in r.cells for p in c.paragraphs]))
+    pat = re.compile(r'(?:\d{4}\.\d{2}|[A-Z][a-z]{2} \d{4}) – (?:\d{4}\.\d{2}|[A-Z][a-z]{2} \d{4})(?:（[^）]*）| \([^)]*\))?')
+    edu_p = lambda t: t[t.find('教育背景' if lang == 'zh' else 'EDUCATION'):t.find('项目经历' if lang == 'zh' else 'PROJECT EXPERIENCE')]
+    a, b = pat.findall(edu_p(pt)), pat.findall(edu_p(dt))
+    check(a == b == DEG[lang], f'{name}: 学位状态 PDF={a} DOCX={b}')
+    res[name] = {'pdf_degree': a, 'docx_degree': b}
+
 json.dump({'results': res, 'fails': fails}, open(os.path.join(D, 'verify_report.json'), 'w'), ensure_ascii=False, indent=1)
 print(json.dumps({'files': len(res), 'fails': fails}, ensure_ascii=False, indent=1))
 sys.exit(1 if fails else 0)

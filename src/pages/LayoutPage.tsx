@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../store';
+import { degreeWarnings } from '../render/degree';
 import { useT } from '../i18n';
 import type { Lang, ModuleKey, TemplateConfig, PhotoPosition, PersonalInfo } from '../types';
 import { MODULE_KEYS } from '../types';
@@ -22,6 +23,7 @@ export function LayoutPage() {
   const activePreset = FORMAL_PRESETS.find((p) => p.templateId === engBase && p.lang === lang) ?? null;
   const pick = (p: FormalPreset) => { setTemplateId(p.templateId); setLang(p.lang); setView(p.lang); };
   const togglePhoto = () => { if (!activePreset) return; const t = FORMAL_PRESETS.find((p) => p.lang === activePreset.lang && p.photo !== activePreset.photo)!; pick(t); };
+  const eduWarn = profile.education.flatMap((e) => degreeWarnings(e).map((w) => `${e.school.zh || e.school.en || '（未命名学校）'}：${w}`));
   const photoWanted = tpl.locales[lang].photo.enabled;
   const noPhoto = photoWanted && !profile.profile.photo;
   const editable = !tpl.builtin;
@@ -68,6 +70,7 @@ export function LayoutPage() {
             : <>当前模板「{tpl.name.zh}」不是工科正式版预设（你的选择已保留）；点击上方卡片即可切换。</>}
           <span className="muted">无照片版结构简单、便于网申系统解析，但不保证所有 ATS 都能正确识别。</span>
         </div>
+        {eduWarn.length > 0 && <div className="notice warn" data-testid="edu-date-warn">学历日期需要人工确认（简历中保留原始日期，不会标为已获学位）：<ul>{eduWarn.map((w, i) => <li key={i}>{w}</li>)}</ul></div>}
         {noPhoto && <div className="notice warn" data-testid="photo-missing">当前样式需要证件照，但资料库还没有上传照片：导出的文件不含照片，页眉会自动收拢。请在资料库上传本人真实证件照；本工具不会生成或替换人像，照片也不会发送给 AI。</div>}
       </div>
       <div className="layout-grid">

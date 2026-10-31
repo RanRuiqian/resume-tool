@@ -12,6 +12,8 @@ import { engineerProfile } from './fixtures/presets/engineerProfile';
 import { mukuProfile } from './fixtures/presets/mukuProfile';
 import { inferWorkKind } from '../src/render/classify';
 import { skillName } from '../src/render/layout';
+import { degreeStatus, degreeWarnings } from '../src/render/degree';
+import type { ProfileDoc } from '../src/types';
 
 const tpl = (id: string) => ALL_TEMPLATES.find((t) => t.id === id)!;
 const titles = (m: ReturnType<typeof buildLayout>) => m.main.map((s) => s.title);
@@ -250,6 +252,60 @@ describe('v1.8 经历分类 / 英文细节（测试用途 · 虚构数据）', (
     expect(xml).not.toContain('<w:txbxContent'); // 不用文本框
     expect(xml).toMatch(/Mechanical CAD Drafter Certificate \(test sample\)<\/w:t>[\s\S]{0,200}?>\tJun 2023</);
   });
+});
+
+/** 学位日期边界样例（测试用途 · 虚构学校） */
+export function degreeProfile(photo = false): ProfileDoc {
+  const p = engineerProfile({ photo });
+  const L = (zh: string, en: string) => ({ id: `dg-${zh}`, zh, en, source: 'zh', status: { zh: 'manual', en: 'confirmed' } }) as never;
+  const base = { enabled: true, major: L('机械工程', 'Mechanical Engineering'), degree: L('工学硕士', 'Master of Engineering'), highlights: [] };
+  p.education = [
+    { id: 'dg-a', school: L('甲测试大学（虚构）', 'Alpha Test University (fictional)'), ...base, start: '2024-09', end: '2026-12', expectedConferralDate: '2027-01' },
+    { id: 'dg-b', school: L('乙测试大学（虚构）', 'Beta Test University (fictional)'), ...base, degree: L('工学学士', 'Bachelor of Engineering'), start: '2020-09', end: '', expectedConferralDate: '2024-06' },
+    { id: 'dg-c', school: L('丙测试大学（虚构）', 'Gamma Test University (fictional)'), ...base, degree: L('工学学士', 'Bachelor of Engineering'), start: '2016-09', end: '2020-06', actualConferralDate: '2020-06', degreeProofStatus: 'pending' },
+  ] as never;
+  return p;
+}
+
+describe('v1.8 学位日期：就读结束 / 预计授位 / 实际授位分开（测试用途）', () => {
+  const ed = (lang: 'zh' | 'en') => buildLayout(degreeProfile(), tpl('tpl-eng'), lang).main.find((s) => s.key === 'education')!.blocks.map((b) => b.date);
+  it('课程结束 2026-12、预计授位 2027-01、实际为空：两者都写明，不混用', () => {
+    expect(ed('zh')[0]).toBe('2024.09 – 2026.12（预计 2027.01 授予学位）');
+    expect(ed('en')[0]).toBe('Sep 2024 – Dec 2026 (degree expected Jan 2027)');
+  });
+  it('预计授位日期已过、实际为空：仍显示预计，不按今天推断为已授位；并提示人工确认', () => {
+    expect(ed('zh')[1]).toBe('2020.09 – 2024.06（预计）');
+    expect(ed('en')[1]).toBe('Sep 2020 – Jun 2024 (expected)');
+    expect(degreeStatus({ end: '', expectedConferralDate: '2024-06' })).toBe('expected');
+    expect(degreeWarnings({ end: '', expectedConferralDate: '2024-06' } as never, '2026-10')[0]).toContain('已过');
+    expect(degreeWarnings({ end: '', expectedConferralDate: '2028-06' } as never, '2026-10')).toEqual([]);
+  });
+  it('实际授位只在资料明确确认时使用；矛盾时保留原始区间、不加状态并提示', () => {
+    expect(ed('zh')[2]).toBe('2016.09 – 2020.06');
+    expect(degreeStatus({ end: '2020-06', actualConferralDate: '2020-06', degreeProofStatus: 'pending' })).toBe('conflict');
+    expect(degreeStatus({ end: '2020-06', actualConferralDate: '2020-06' })).toBe('conferred');
+    expect(degreeStatus({ end: '2020-06', degreeProofStatus: 'issued' })).toBe('conflict');
+    expect(degreeStatus({ end: '2027-06', expectedConferralDate: '2027-01' })).toBe('conflict');
+    expect(degreeWarnings({ end: '2020-06', actualConferralDate: '2020-06', degreeProofStatus: 'pending' } as never)).toHaveLength(1);
+  });
+  it('旧资料（没有任何授位字段）：按原就读区间显示，不加状态', () => {
+    expect(degreeStatus({ end: '2025-06' })).toBe('unknown');
+    const p = engineerProfile(); p.education[1].actualConferralDate = undefined;
+    expect(buildLayout(p, BUILTIN_TEMPLATES[0], 'zh').main.find((s) => s.key === 'education')!.blocks[1].date).toBe('2021.09 – 2025.06');
+  });
+  it('四套预设导出学位边界样例（PDF + DOCX，供 verify 脚本比对）', async () => {
+    for (const pr of FORMAL_PRESETS) {
+      const p = degreeProfile(pr.photo);
+      const f = await renderPdfFit(p, tpl(pr.templateId), pr.lang, null);
+      const d = await docxBytes(buildLayout(p, f.tpl, pr.lang, null));
+      if (process.env.P11_OUT) {
+        writeFileSync(resolve(process.env.P11_OUT, `edge_degree_${pr.id}.pdf`), f.bytes);
+        writeFileSync(resolve(process.env.P11_OUT, `edge_degree_${pr.id}.docx`), d);
+      }
+      const xml = await (await JSZip.loadAsync(d)).file('word/document.xml')!.async('string');
+      expect(xml).toContain(pr.lang === 'zh' ? '（预计 2027.01 授予学位）' : '(degree expected Jan 2027)');
+    }
+  }, 120000);
 });
 
 // 供浏览器端 e2e 注入的虚构资料（测试用途），仅在 P11_OUT 下输出
