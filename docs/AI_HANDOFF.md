@@ -27,7 +27,10 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 | `src/tracker/stats.ts` | 统计（只从真实记录计算） |
 | `src/storage/db.ts` | Dexie 数据库与迁移（v1–v4） |
 | `src/storage/mode.ts`, `demo.ts` | `?demo` 演示模式与示例数据 |
-| `src/ai/` | DeepSeek 调用（不要改调用方式） |
+| `src/ai/` | DeepSeek 调用（不要改调用方式）；`provider.ts` 的 `AiError.kind` 区分 Key 无效 / 余额 / 模型 / 超时 / 网络；`testConnection` 用于连接测试 |
+| `src/storage/apiProfiles.ts` | 多 API 配置纯函数：迁移、增改、切换、删除、脱敏、校验 |
+| `src/storage/settingsLoad.ts` | 读取设置 + 迁移（deepseek-chat→deepseek-flash、单套→列表、迁移前快照） |
+| `src/components/ApiManager.tsx` | 设置页「AI API 管理」界面；`ApiForm` 也用于首次使用卡片 |
 | `src/audit/` | 事实审查 |
 | `src/export/` | PDF / Word 导出 |
 | `tests/` | vitest；`tests/e2e/*.py` 浏览器验收；`tests/fixtures/` 全部虚构 |
@@ -40,12 +43,20 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 - **导入幂等**：每条记录有 `importKeys`；导航工具按原始 `id`，其他来源按「公司|岗位|城市|链接」哈希。
 - **导入不伪造**：未知状态不建申请；原数据没有投递日期时不填写投递时间。
 
+## 4b. 多 API 配置（2026-10-31）
+- **存储**：不升级 Dexie、不改业务表。在原 `settings` 表的 `id='settings'` 记录里新增 `apiProfiles: ApiProfile[]` 与 `activeProfileId: string | null`。每条配置有独立 `id`（`api-<时间>-<随机>`），同一服务商可存多条。
+- **不变式**：`settings` 的平铺字段 `provider / baseUrl / apiKey / model / translateModel / visionModel` 永远等于当前启用配置（`applyActive` 统一刷新，store 的 `setSettings` 也会调用）。所以所有 AI 调用（资料整理、JD 解析、生成、翻译、OCR 视觉）无需改动；每个操作在开始时拿到当时的 `settings` 对象，中途切换不会混用。没有启用配置时 `apiKey=''`，调用直接报「尚未启用 API」。
+- **迁移**（`loadSettings`，幂等）：旧单套配置有 Key → 生成一条「<服务商>（原配置）」并启用；没 Key → 空列表。迁移前把原始记录原样存为同表 `id='settings-premigrate-profiles-v1'`（只写一次）。DeepSeek `deepseek-chat→deepseek-flash` 规则对每条配置继续生效。
+- **删除当前配置**：不自动切换（避免切到其他收费服务），进入未启用状态，由用户选择。
+- **连接测试**：`testConnection(settingsForProfile(settings, p))`，最小请求（`max_tokens: 8`），不改变启用配置；网络故障归为 `network`，不会提示 Key 无效。
+- **演示模式**：启用 / 切换配置会关闭演示模式；设置页顶部 `AiModeBanner` 显示「演示 / 未启用 / 真实调用 xx」。
+
 ## 5. ran-application-handoff 1.0（旧导航工具）
 **重要：目前只按用户口头描述的结构实现和测试，尚未用真实导出文件验证。** 用户可以提供真实样本；拿到后请：把脱敏后的样本存为 fixture、跑 `tests/handoff10.test.ts` 同类测试、修正 `HANDOFF_MAPPING` / `HANDOFF_STATUS`。
 描述的结构与映射规则见 `docs/DATA_SCHEMA.md`「导入格式」。实现：`src/tracker/importers.ts` 中 `handoff10()`、`HANDOFF_MAPPING`、`HANDOFF_STATUS`。
 
 ## 6. 测试现状
-单元 / 集成 111 项（vitest），浏览器 e2e 33 + 35 项，导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
+单元 / 集成 154 项（vitest），浏览器 e2e 33 + 35 + 46 项（`api_profiles_e2e.py`），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
 
 ## 7. 待办与已知限制
 见 `docs/PROJECT_STATUS.md`。

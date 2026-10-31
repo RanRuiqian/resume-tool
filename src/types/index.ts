@@ -245,4 +245,23 @@ export interface Settings {
   provider: 'deepseek' | 'openai' | 'qwen' | 'custom';
   ocrMode: 'local' | 'vision';
   setupDone: boolean;
+  /** 多 API 配置（v1，存于同一条 settings 记录，无数据库结构变更）。上面的 baseUrl/apiKey/model 等平铺字段始终 = 当前启用配置的副本，供所有 AI 调用读取 */
+  apiProfiles?: ApiProfile[];
+  /** 当前启用的配置 id；null = 尚未配置 / 已删除当前配置且未选择新配置 */
+  activeProfileId?: string | null;
+}
+
+export type ApiProvider = 'deepseek' | 'openai' | 'qwen' | 'custom';
+/** 一套已保存的 AI API 配置（Key 仅保存在本浏览器 IndexedDB） */
+export interface ApiProfile {
+  id: string;
+  name: string;
+  provider: ApiProvider;
+  baseUrl: string;
+  apiKey: string;
+  model: string;
+  translateModel: string;
+  visionModel: string;
+  createdAt: string;
+  updatedAt: string;
 }
