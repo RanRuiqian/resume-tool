@@ -9,6 +9,9 @@ import { renderPdfFit } from '../src/export/zip';
 import { docxBytes } from '../src/export/docx/resumeDocx';
 import { registerPdfFonts, fontFor } from '../src/export/pdf/fonts';
 import { engineerProfile } from './fixtures/presets/engineerProfile';
+import { mukuProfile } from './fixtures/presets/mukuProfile';
+import { inferWorkKind } from '../src/render/classify';
+import { skillName } from '../src/render/layout';
 
 const tpl = (id: string) => ALL_TEMPLATES.find((t) => t.id === id)!;
 const titles = (m: ReturnType<typeof buildLayout>) => m.main.map((s) => s.title);
@@ -30,13 +33,14 @@ describe('v1.7 工科正式版预设（测试用途 · 虚构数据）', () => {
   });
   it('EN 模块顺序、自然英文日期与 (expected)，不是中文结构的直译', () => {
     const m = buildLayout(engineerProfile(), tpl('tpl-eng'), 'en');
-    expect(titles(m)).toEqual(['EDUCATION', 'PROJECT EXPERIENCE', 'PROFESSIONAL EXPERIENCE', 'TECHNICAL SKILLS', 'CERTIFICATIONS AND AWARDS']);
+    expect(titles(m)).toEqual(['EDUCATION', 'PROJECT EXPERIENCE', 'PROFESSIONAL EXPERIENCE', 'TECHNICAL SKILLS', 'LEADERSHIP & ACTIVITIES', 'CERTIFICATIONS AND AWARDS']);
     const ed = m.main[0].blocks;
     expect(ed[0].date).toBe('Sep 2025 – Mar 2028 (expected)');
     expect(ed[0].subtitle).toBe('Master of Engineering in Mechanical Engineering');
     expect(ed[1].date).toBe('Sep 2021 – Jun 2025'); // 已授予学位，不加 expected
-    // EN 无「校园经历」单独模块：社团经历留在 Professional Experience 中，不丢内容
-    expect(m.main[2].blocks.map((b) => b.title)).toContain('Mechanical Innovation Society (student club)');
+    // v1.8：社团经历进入 LEADERSHIP & ACTIVITIES，不再混入 Professional Experience
+    expect(m.main[2].blocks.map((b) => b.title)).toEqual(['Test Heavy Equipment Co., Ltd. (fictional)']);
+    expect(m.main[4].blocks.map((b) => b.title)).toEqual(['Mechanical Innovation Society (student club)']);
     expect(m.header.personal).toEqual([]);
   });
   it('中文预计毕业标注（预计）；课程设计 / 课程实验性质随角色显示', () => {
@@ -162,6 +166,90 @@ describe('v1.7 工科正式版预设（测试用途 · 虚构数据）', () => {
     expect(z.file(/media\//)).toHaveLength(0);
     if (process.env.P11_OUT) writeFileSync(resolve(process.env.P11_OUT, 'edge_photo_missing_zh.pdf'), f.bytes);
   }, 60000);
+});
+
+describe('v1.8 经历分类 / 英文细节（测试用途 · 虚构数据）', () => {
+  const W = (zh: string, en: string, title = '', kind?: string) => ({ kind, company: { zh, en }, title: { zh: title, en: '' } }) as never;
+  it('旧资料无 kind：按名称谨慎推断；显式 kind 优先', () => {
+    expect(inferWorkKind(W('机械创新协会', 'Mechanical Innovation Society'))).toBe('club');
+    expect(inferWorkKind(W('学院学生会', '', '学术部部长'))).toBe('club');
+    expect(inferWorkKind(W('机械 2101 班', '', '班长'))).toBe('club');
+    expect(inferWorkKind(W('', 'Robotics Club', '', 'other'))).toBe('club');
+    expect(inferWorkKind(W('城市马拉松', '', '赛事志愿者'))).toBe('volunteer');
+    expect(inferWorkKind(W('', 'Sample Co.', 'Design Intern'))).toBe('internship');
+    expect(inferWorkKind(W('样例精密测量研究所', '', '科研助理'))).toBe('');
+    expect(inferWorkKind(W('某行业协会', '', '', 'fulltime'))).toBe('fulltime');
+    expect(inferWorkKind(W('', 'Clubhouse Software Inc.', 'Engineer'))).toBe(''); // 单词边界：Clubhouse 不是社团
+  });
+  it('仿母库结构：CN 各经历进入正确模块，条目一条不少', () => {
+    const p = mukuProfile();
+    const m = buildLayout(p, tpl('tpl-eng'), 'zh');
+    const sec = (k: string) => m.main.find((s) => s.key === k)?.blocks.map((b) => b.title) ?? [];
+    expect(titles(m)).toEqual(['教育背景', '项目经历', '实习 / 工作经历', '专业技能', '校园经历', '证书及奖项']);
+    expect(sec('work')).toEqual(['样例轨道装备有限公司（虚构）', '样例精密测量研究所（虚构）']);
+    expect(sec('campus')).toEqual(['样例工业大学机械学院学生会（虚构）', '机械 2101 班（虚构）', '机器人创新俱乐部（虚构）', '样例城市马拉松赛事（虚构）']);
+    expect(sec('projects')).toHaveLength(4);
+    expect(sec('work').length + sec('campus').length).toBe(p.work.length);
+    expect(m.main[0].blocks[0].date).toContain('（预计）');
+    expect(m.main[0].blocks[1].date).not.toContain('预计');
+    const pr = m.main.find((s) => s.key === 'projects')!.blocks;
+    expect(pr.map((b) => b.subtitle)).toEqual(['课题组成员 | 硕士课题', '个人完成 | 本科毕业设计', '实验小组成员 | 课程实验', '个人完成 | 课程设计']);
+    expect(sec('certificates')).toHaveLength(4);
+  });
+  it('仿母库结构：EN 社团 / 学生干部 / 志愿进入 LEADERSHIP & ACTIVITIES，不进 PROFESSIONAL EXPERIENCE', () => {
+    const m = buildLayout(mukuProfile(), tpl('tpl-eng-photo'), 'en');
+    const sec = (k: string) => m.main.find((s) => s.key === k)?.blocks.map((b) => b.title) ?? [];
+    expect(titles(m)).toEqual(['EDUCATION', 'PROJECT EXPERIENCE', 'PROFESSIONAL EXPERIENCE', 'TECHNICAL SKILLS', 'LEADERSHIP & ACTIVITIES', 'CERTIFICATIONS AND AWARDS']);
+    expect(sec('work').join(' ')).not.toMatch(/Union|Class|Club|Marathon|Society/);
+    expect(sec('campus')).toHaveLength(4);
+    expect(m.main[0].blocks[0].date).toMatch(/\(expected\)$/);
+    const pr = m.main.find((s) => s.key === 'projects')!.blocks.map((b) => b.subtitle);
+    expect(pr).toEqual(["Research Team Member, Master's Research", 'Individual, Capstone Project', 'Lab Group Member, Course Lab', 'Individual, Course Project']);
+    expect(JSON.stringify(m.main)).not.toMatch(/[\u4e00-\u9fff]/);
+  });
+  it('技能去重复标签：不出现 Languages: English: CET-6', () => {
+    expect(skillName('English: CET-6 (score 532)', 'Languages')).toBe('English CET-6 (score 532)');
+    expect(skillName('Languages: English: CET-6', 'Languages')).toBe('English CET-6');
+    expect(skillName('SolidWorks', 'Design Software')).toBe('SolidWorks');
+    expect(skillName('英语 CET-6（532 分）', '语言')).toBe('英语 CET-6（532 分）');
+    const sk = buildLayout(engineerProfile(), tpl('tpl-eng'), 'en').main.find((s) => s.key === 'skills')!.blocks;
+    expect(sk.find((b) => b.title === 'Languages')!.text).toBe('English CET-6 (score 532)');
+  });
+  it('旧版工科自定义模板（英文顺序没有 campus）导入后自动补上，不影响非工科模板', () => {
+    const old = structuredClone(tpl('tpl-eng')) as TemplateConfig;
+    old.locales.en.moduleOrderOverride = ['summary', 'education', 'projects', 'work', 'skills', 'certificates', 'awards'];
+    expect(normalizeTemplate(old).locales.en.moduleOrderOverride).toEqual(['summary', 'education', 'projects', 'work', 'skills', 'campus', 'certificates', 'awards']);
+    const cls = normalizeTemplate(structuredClone(BUILTIN_TEMPLATES[0]));
+    expect(cls.moduleOrder).toEqual(BUILTIN_TEMPLATES[0].moduleOrder);
+    // 非工科旧模板：社团仍归入原 work 模块（渲染结果不变）
+    const m = buildLayout(mukuProfile(), BUILTIN_TEMPLATES[0], 'en');
+    expect(m.main.find((s) => s.key === 'work')!.blocks).toHaveLength(6);
+  });
+  it('丰富经历：自动分到多页，字号不低于下限（PDF + DOCX）', async () => {
+    for (const [id, lang] of [['tpl-eng', 'zh'], ['tpl-eng-photo', 'en']] as const) {
+      const p = mukuProfile({ rich: true, photo: true });
+      const f = await renderPdfFit(p, tpl(id), lang, null);
+      expect(f.pages).toBeGreaterThanOrEqual(2);
+      expect(f.tpl.locales[lang].typography.bodySizePt).toBeGreaterThanOrEqual(9.5);
+      const d = await docxBytes(buildLayout(p, f.tpl, lang, null));
+      if (process.env.P11_OUT) {
+        writeFileSync(resolve(process.env.P11_OUT, `edge_rich_multipage_${lang}.pdf`), f.bytes);
+        writeFileSync(resolve(process.env.P11_OUT, `edge_rich_multipage_${lang}.docx`), d);
+        const m2 = mukuProfile({ photo: true });
+        const f2 = await renderPdfFit(m2, tpl(id), lang, null);
+        writeFileSync(resolve(process.env.P11_OUT, `edge_muku_structure_${lang}.pdf`), f2.bytes);
+        writeFileSync(resolve(process.env.P11_OUT, `edge_muku_structure_${lang}.docx`), await docxBytes(buildLayout(m2, f2.tpl, lang, null)));
+      }
+    }
+  }, 120000);
+  it('DOCX 长标题：证书 / 奖项长标题用无边框两列表格，日期留在首行右侧；短标题仍用制表位', async () => {
+    const d = await docxBytes(buildLayout(mukuProfile(), tpl('tpl-eng'), 'en'));
+    const xml = await (await JSZip.loadAsync(d)).file('word/document.xml')!.async('string');
+    const tables = xml.match(/<w:tbl>[\s\S]*?<\/w:tbl>/g) ?? [];
+    expect(tables.some((t) => t.includes('First Prize (Team)') && t.includes('May 2023') && t.includes('w:jc w:val="right"'))).toBe(true);
+    expect(xml).not.toContain('<w:txbxContent'); // 不用文本框
+    expect(xml).toMatch(/Mechanical CAD Drafter Certificate \(test sample\)<\/w:t>[\s\S]{0,200}?>\tJun 2023</);
+  });
 });
 
 // 供浏览器端 e2e 注入的虚构资料（测试用途），仅在 P11_OUT 下输出

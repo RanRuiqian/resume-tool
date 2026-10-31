@@ -2,7 +2,7 @@
 import json, os, sys, tempfile
 from playwright.sync_api import sync_playwright
 B=os.environ.get('P11_BASE','http://localhost:4173/')  # 只测本地 preview，不读 E2E_BASE，避免误打线上
-S=os.environ.get('P11_SHOT_DIR','/workspace/resume-tool/screenshots/'); A=os.environ.get('P11_OUT','/workspace/resume-tool/artifacts/p11/')
+S=os.environ.get('P11_SHOT_DIR','/workspace/resume-tool/screenshots/'); A=os.environ.get('P11_OUT','/workspace/resume-tool/artifacts/p12/')
 os.makedirs(S,exist_ok=True)
 PH=open(os.path.join(A,'e2e_profile_photo.json')).read(); NP=open(os.path.join(A,'e2e_profile_nophoto.json')).read()
 ok=[]
@@ -38,15 +38,15 @@ with sync_playwright() as p:
     pg.click('[data-preset=cn-eng]'); pg.click('[data-testid=preset-photo-toggle]'); pg.wait_for_timeout(300)
     chk('照片切换：CN 无照片 → CN 有照片', active(pg)==['cn-eng-photo'])
     chk('有照片时不显示缺照片提示', pg.locator('[data-testid=photo-missing]').count()==0)
-    pg.screenshot(path=S+'p11_layout_1366.png')
-    pg.set_viewport_size({'width':768,'height':1000}); pg.wait_for_timeout(400); pg.screenshot(path=S+'p11_layout_768.png')
-    pg.set_viewport_size({'width':390,'height':844}); pg.wait_for_timeout(400); pg.screenshot(path=S+'p11_layout_390.png',full_page=True)
+    pg.screenshot(path=S+'p12_layout_1366.png')
+    pg.set_viewport_size({'width':768,'height':1000}); pg.wait_for_timeout(400); pg.screenshot(path=S+'p12_layout_768.png')
+    pg.set_viewport_size({'width':390,'height':844}); pg.wait_for_timeout(400); pg.screenshot(path=S+'p12_layout_390.png',full_page=True)
     ov=pg.evaluate('document.documentElement.scrollWidth<=window.innerWidth+1')
     chk('390 宽度无横向溢出', ov)
     pg.set_viewport_size({'width':1366,'height':900})
     pg.evaluate(PUT,['profile',{'id':'me','doc':json.loads(NP)}]); layout(pg)
     chk('缺照片时显示提示', pg.locator('[data-testid=photo-missing]').count()==1)
-    pg.screenshot(path=S+'p11_layout_photo_missing.png')
+    pg.screenshot(path=S+'p12_layout_photo_missing.png')
     chk('无页面报错', not pg.errs); c.close()
     # 老用户：已有资料、无模板记录 → 保持经典
     c,pg=new(p,{'width':1366,'height':900}); pg.goto(B); pg.wait_for_timeout(1200)

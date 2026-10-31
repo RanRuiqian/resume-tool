@@ -1,3 +1,4 @@
+import { inferWorkKind, isCampusKind } from './classify';
 import type { Lang, ProfileDoc, ResumeDoc, TemplateConfig, ModuleKey, LocalizedText, Typography, PhotoPosition } from '../types';
 import { lt, formatRange, formatDate, moduleOrderFor } from '../locale/text';
 
@@ -38,6 +39,15 @@ const NATURE_EN: [RegExp, string][] = [
   [/课程设计/, 'Course Project'], [/课程实验|实验课/, 'Course Lab'], [/教学实训|实训/, 'Training Practicum'], [/大创|大学生创新/, 'Student Innovation Project'],
   [/竞赛/, 'Competition Project'], [/个人项目|个人练习/, 'Personal Project'],
 ];
+/** 技能名去重复标签：「Languages: English: CET-6」→「Languages: English CET-6」；名称里重复的分类前缀去掉 */
+export function skillName(name: string, cat: string): string {
+  let n = name.trim();
+  if (cat) { const esc = cat.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); n = n.replace(new RegExp(`^${esc}\\s*[:：]\\s*`, 'i'), ''); }
+  const m = n.match(/^([^:：()（）]{1,30}?)\s*[:：]\s*(.+)$/);
+  if (m && cat) n = `${m[1]} ${m[2]}`;
+  return n;
+}
+
 export function natureLabel(n: string | undefined, lang: Lang): string {
   const v = n?.trim();
   if (!v) return '';
@@ -71,13 +81,12 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   const byIds = <X extends { id: string }>(arr: X[], ids: string[]) => ids.map((id) => arr.find((x) => x.id === id)).filter((x): x is X => !!x);
 
   const sections: Partial<Record<ModuleKey, LSection>> = {};
-  const DEFAULT_TITLES: Record<Lang, Partial<Record<ModuleKey, string>>> = { zh: { campus: '校园经历' }, en: { campus: 'Campus Activities' } };
+  const DEFAULT_TITLES: Record<Lang, Partial<Record<ModuleKey, string>>> = { zh: { campus: '校园经历' }, en: { campus: 'Leadership & Activities' } };
   const title = (k: ModuleKey) => loc.sectionTitles[k] ?? DEFAULT_TITLES[lang][k] ?? k;
   const engineering = tpl.layout.style === 'engineering';
   const order = moduleOrderFor(tpl, lang);
   /** 只有模板顺序包含 campus 时，社团 / 志愿经历才单列为「校园经历」；旧模板仍归入 work */
   const splitCampus = order.includes('campus');
-  const isCampus = (k?: string) => k === 'club' || k === 'volunteer';
   /** 学位尚未授予时显示预计时间并明确标注，不把预计毕业写成已获学位 */
   const eduRange = (e: ProfileDoc['education'][number]) => {
     const pending = !e.actualConferralDate && !!e.expectedConferralDate;
@@ -91,9 +100,10 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   const sep = lang === 'zh' ? ' | ' : ', ';
   const wSel = byIds(p.work, sel.work);
   const wBlock = (e: ProfileDoc['work'][number]) => ({ title: T(e.company), subtitle: T(e.title), date: range(e.start, e.end), bullets: pickBullets(e.bullets) });
-  const w = wSel.filter((e) => !(splitCampus && isCampus(e.kind))).map(wBlock);
+  const campusOf = (e: ProfileDoc['work'][number]) => isCampusKind(inferWorkKind(e));
+  const w = wSel.filter((e) => !(splitCampus && campusOf(e))).map(wBlock);
   if (w.length) sections.work = { key: 'work', title: title('work'), blocks: w };
-  const cp = splitCampus ? wSel.filter((e) => isCampus(e.kind)).map(wBlock) : [];
+  const cp = splitCampus ? wSel.filter(campusOf).map(wBlock) : [];
   if (cp.length) sections.campus = { key: 'campus', title: title('campus'), blocks: cp };
   /** engineering：课程实验 / 教学实训等项目性质随角色显示，避免把课程作业包装成商业项目 */
   const prSub = (e: ProfileDoc['projects'][number]) => engineering ? [T(e.role), natureLabel(e.nature, lang)].filter(Boolean).join(sep) : T(e.role);
@@ -110,7 +120,7 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   if (sk.length) {
     // 按分类分组
     const groups = new Map<string, string[]>();
-    sk.forEach((s) => { const c = T(s.category); groups.set(c, [...(groups.get(c) ?? []), T(s.name)]); });
+    sk.forEach((s) => { const c = T(s.category); groups.set(c, [...(groups.get(c) ?? []), skillName(T(s.name), c)]); });
     sections.skills = { key: 'skills', title: title('skills'), blocks: [...groups].map(([c, names]) => ({ title: c || undefined, bullets: [], text: names.join(lang === 'zh' ? '、' : ', ') })) };
   }
   const simple = (k: 'certificates' | 'awards') => {

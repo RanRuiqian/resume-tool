@@ -3,14 +3,35 @@ python-docx 解析、LibreOffice headless DOCX→PDF→PNG。用法：python3 te
 import json, subprocess, sys, os, glob, shutil
 from docx import Document
 
-D = sys.argv[1] if len(sys.argv) > 1 else '/workspace/resume-tool/artifacts/p11'
+D = sys.argv[1] if len(sys.argv) > 1 else '/workspace/resume-tool/artifacts/p12'
 EXPECT = {
     'CN': ['张测试', '教育背景', '项目经历', '实习 / 工作经历', '专业技能', '校园经历', '证书及奖项'],
-    'EN': ['Ce Zhang', 'EDUCATION', 'PROJECT EXPERIENCE', 'PROFESSIONAL EXPERIENCE', 'TECHNICAL SKILLS', 'CERTIFICATIONS AND AWARDS'],
+    'EN': ['Ce Zhang', 'EDUCATION', 'PROJECT EXPERIENCE', 'PROFESSIONAL EXPERIENCE', 'TECHNICAL SKILLS', 'LEADERSHIP & ACTIVITIES', 'CERTIFICATIONS AND AWARDS'],
 }
 MUST = {'CN': ['2025.09 – 2028.03（预计）', 'Φ90H7', 'Ra 1.6 μm', '≤ 0.02 mm', 'GD&T', 'MATLAB/Simulink', '课程设计'],
-        'EN': ['Sep 2025 – Mar 2028 (expected)', 'Φ90H7', 'Ra 1.6 μm', '≤ 0.02 mm', 'Dassault Systèmes', 'Course Project', 'GD&T']}
-FORBID = ['出生年月', '性别', '籍贯', '政治面貌', 'Gender', 'Hometown', 'Born']
+        'EN': ['Sep 2025 – Mar 2028 (expected)', 'Φ90H7', 'Ra 1.6 μm', '≤ 0.02 mm', 'Dassault Systèmes', 'Course Project', 'GD&T', 'English CET-6 (score 532)']}
+FORBID = ['出生年月', '性别', '籍贯', '政治面貌', 'Gender', 'Hometown', 'Born', 'English: CET-6', '\ufffd']
+HEADS = {'教育背景', '项目经历', '实习 / 工作经历', '专业技能', '校园经历', '证书及奖项', 'EDUCATION', 'PROJECT EXPERIENCE', 'PROFESSIONAL EXPERIENCE', 'TECHNICAL SKILLS', 'LEADERSHIP & ACTIVITIES', 'CERTIFICATIONS AND AWARDS'}
+
+def page_checks(pdf, label):
+    """逐页：页尾不能是孤立的模块标题；不能有替换字符（乱码）"""
+    info = subprocess.run(['pdfinfo', pdf], capture_output=True, text=True).stdout
+    pages = int([l for l in info.splitlines() if l.startswith('Pages')][0].split()[-1])
+    orphan = []
+    for i in range(1, pages + 1):
+        t = subprocess.run(['pdftotext', '-f', str(i), '-l', str(i), '-layout', pdf, '-'], capture_output=True, text=True).stdout
+        lines = [l.strip() for l in t.splitlines() if l.strip()]
+        if lines and lines[-1] in HEADS: orphan.append(i)
+        check('\ufffd' not in t, f'{label}: 第 {i} 页有乱码')
+    check(not orphan, f'{label}: 第 {orphan} 页页尾孤立标题')
+    return pages
+
+def campus_ok(n, lang, label):
+    """社团经历只能出现在校园 / LEADERSHIP 模块"""
+    key = '机械创新协会' if lang == 'CN' else 'Mechanical Innovation Society'
+    work_h, next_h, camp_h = ('实习 / 工作经历', '专业技能', '校园经历') if lang == 'CN' else ('PROFESSIONAL EXPERIENCE', 'TECHNICAL SKILLS', 'LEADERSHIP & ACTIVITIES')
+    w0, w1, c0, k = n.find(work_h), n.find(next_h), n.find(camp_h), n.find(key)
+    return check(k > c0 >= 0 and not (w0 <= k < w1), f'{label}: 社团经历位置错误')
 res, fails = {}, []
 
 def check(cond, msg):
@@ -33,6 +54,7 @@ for pdf in sorted(glob.glob(os.path.join(D, '*_CN_*.pdf')) + glob.glob(os.path.j
     check(all(r['must_present'].values()), f'{name}: 缺字/缺文本 {[k for k, v in r["must_present"].items() if not v]}')
     check(r['forbidden_absent'], f'{name}: 出现个人敏感字段')
     check(r['fonts_all_embedded'], f'{name}: 有未嵌入字体')
+    r['pages'] = page_checks(pdf, name); r['campus_ok'] = campus_ok(n, lang, name)
     res[name] = r
 
 # DOCX：python-docx 解析 + LibreOffice 渲染
@@ -54,7 +76,13 @@ for dx in sorted(glob.glob(os.path.join(D, '*_CN_*.docx')) + glob.glob(os.path.j
     rFonts = doc.styles['Normal'].element.rPr.rFonts if doc.styles['Normal'].element.rPr is not None else None
     ea = rFonts.get('{http://schemas.openxmlformats.org/wordprocessingml/2006/main}eastAsia') if rFonts is not None else None
     images = len(doc.inline_shapes)
-    r = {'paragraphs': len(doc.paragraphs), 'headings': heads, 'normal_font': st.name, 'eastAsia': ea, 'run_font_overrides': sorted(fonts), 'images': images,
+    import zipfile
+    xml = zipfile.ZipFile(dx).read('word/document.xml').decode()
+    check('txbxContent' not in xml and '<w:pict' not in xml, f'{name}: 使用了文本框')
+    if images:
+        t0 = doc.tables[0]; last = t0.rows[0].cells[-1]
+        check('graphic' in last._tc.xml and 'wp:inline' in last._tc.xml, f'{name}: 照片不在页眉右侧单元格')
+    r = {'paragraphs': len(doc.paragraphs), 'headings': heads, 'campus_ok': campus_ok(full, lang, name + ' docx'), 'normal_font': st.name, 'eastAsia': ea, 'run_font_overrides': sorted(fonts), 'images': images,
          'must_present': {m: (m in full) for m in MUST[lang]}}
     check(heads == [h for h in EXPECT[lang][1:] if h in heads] and len(heads) >= 5, f'{name}: 标题 {heads}')
     check(all(r['must_present'].values()), f'{name}: DOCX 缺文本 {[k for k, v in r["must_present"].items() if not v]}')
@@ -64,11 +92,24 @@ for dx in sorted(glob.glob(os.path.join(D, '*_CN_*.docx')) + glob.glob(os.path.j
     if check(os.path.exists(lpdf), f'{name}: LibreOffice 转换失败'):
         pages = int([l for l in subprocess.run(['pdfinfo', lpdf], capture_output=True, text=True).stdout.splitlines() if l.startswith('Pages')][0].split()[-1])
         r['lo_pages'] = pages
+        page_checks(lpdf, name + ' (LO)')
+        check(pages == res.get(name[:-5] + '.pdf', {}).get('pages', pages), f'{name}: LO 页数 {pages} 与 PDF 不同')
         subprocess.run(['pdftoppm', '-r', '90', '-png', lpdf, os.path.join(D, 'render_docx_' + name[:-5])])
         lt = norm(subprocess.run(['pdftotext', lpdf, '-'], capture_output=True, text=True).stdout)
         r['lo_text_has_headings'] = all(h in lt for h in EXPECT[lang][1:])
         check(r['lo_text_has_headings'], f'{name}: LO 渲染后标题缺失')
     res[name] = r
+
+# 边界样例：逐页孤立标题 / 乱码；DOCX 同样经 LibreOffice 渲染
+for pdf in sorted(glob.glob(os.path.join(D, 'edge_*.pdf'))):
+    res[os.path.basename(pdf)] = {'pages': page_checks(pdf, os.path.basename(pdf))}
+for dx in sorted(glob.glob(os.path.join(D, 'edge_*.docx'))):
+    name = os.path.basename(dx); Document(dx)
+    subprocess.run(['soffice', '--headless', '--convert-to', 'pdf', '--outdir', lo_out, dx], capture_output=True, timeout=180)
+    lpdf = os.path.join(lo_out, name[:-5] + '.pdf')
+    if check(os.path.exists(lpdf), f'{name}: LibreOffice 转换失败'):
+        res[name] = {'lo_pages': page_checks(lpdf, name + ' (LO)')}
+        subprocess.run(['pdftoppm', '-r', '70', '-png', lpdf, os.path.join(D, 'render_docx_' + name[:-5])])
 
 json.dump({'results': res, 'fails': fails}, open(os.path.join(D, 'verify_report.json'), 'w'), ensure_ascii=False, indent=1)
 print(json.dumps({'files': len(res), 'fails': fails}, ensure_ascii=False, indent=1))

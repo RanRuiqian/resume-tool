@@ -2,7 +2,7 @@ import { FEATURES } from '../features';
 import type { TemplateConfig, TemplateLocale, ModuleKey } from '../types';
 
 const zhTitles: Record<ModuleKey, string> = { summary: '个人简介', work: '工作经历', projects: '项目经历', education: '教育背景', skills: '专业技能', campus: '校园经历', certificates: '证书', awards: '获奖' };
-const enTitles: Record<ModuleKey, string> = { summary: 'Summary', work: 'Experience', projects: 'Projects', education: 'Education', skills: 'Skills', campus: 'Campus Activities', certificates: 'Certifications', awards: 'Awards' };
+const enTitles: Record<ModuleKey, string> = { summary: 'Summary', work: 'Experience', projects: 'Projects', education: 'Education', skills: 'Skills', campus: 'Leadership & Activities', certificates: 'Certifications', awards: 'Awards' };
 
 const zh = (o: Partial<TemplateLocale> = {}): TemplateLocale => ({
   sectionTitles: zhTitles, dateFormat: 'YYYY.MM', presentLabel: '至今',
@@ -76,9 +76,9 @@ export const EXTRA_TEMPLATES: TemplateConfig[] = [
  * 中英文不是互译：标题、模块顺序、日期格式、字号与密度分别设定。 */
 const ENG_COLORS = { primary: '#111111', text: '#1a1a1a', muted: '#4a4a4a', accent: '#333333' };
 const engZhTitles: Record<ModuleKey, string> = { summary: '个人简介', education: '教育背景', projects: '项目经历', work: '实习 / 工作经历', skills: '专业技能', campus: '校园经历', certificates: '证书及奖项', awards: '证书及奖项' };
-const engEnTitles: Record<ModuleKey, string> = { summary: 'SUMMARY', education: 'EDUCATION', projects: 'PROJECT EXPERIENCE', work: 'PROFESSIONAL EXPERIENCE', skills: 'TECHNICAL SKILLS', campus: 'LEADERSHIP AND ACTIVITIES', certificates: 'CERTIFICATIONS AND AWARDS', awards: 'CERTIFICATIONS AND AWARDS' };
+const engEnTitles: Record<ModuleKey, string> = { summary: 'SUMMARY', education: 'EDUCATION', projects: 'PROJECT EXPERIENCE', work: 'PROFESSIONAL EXPERIENCE', skills: 'TECHNICAL SKILLS', campus: 'LEADERSHIP & ACTIVITIES', certificates: 'CERTIFICATIONS AND AWARDS', awards: 'CERTIFICATIONS AND AWARDS' };
 export const ENG_ZH_ORDER: ModuleKey[] = ['summary', 'education', 'projects', 'work', 'skills', 'campus', 'certificates', 'awards'];
-export const ENG_EN_ORDER: ModuleKey[] = ['summary', 'education', 'projects', 'work', 'skills', 'certificates', 'awards'];
+export const ENG_EN_ORDER: ModuleKey[] = ['summary', 'education', 'projects', 'work', 'skills', 'campus', 'certificates', 'awards'];
 const engZh = (photo: boolean): TemplateLocale => ({
   sectionTitles: engZhTitles, dateFormat: 'YYYY.MM', presentLabel: '至今',
   typography: { fontFamily: 'Noto Sans SC', nameSizePt: 20, bodySizePt: 10, lineHeight: 1.42 },
@@ -139,6 +139,12 @@ export function normalizeTemplate(t: TemplateConfig): TemplateConfig {
     loc.sectionTitles = { ...(l === 'zh' ? zhTitles : enTitles), ...loc.sectionTitles };
     loc.personalFields = loc.personalFields ?? [];
     loc.moduleOrderOverride = loc.moduleOrderOverride ?? null;
+    // v1.8：v1.7 工科英文顺序没有 campus，社团经历会混进 PROFESSIONAL EXPERIENCE；补到证书前
+    const ord = loc.moduleOrderOverride;
+    if (n.layout.style === 'engineering' && ord && !ord.includes('campus')) {
+      const i = ord.indexOf('certificates');
+      ord.splice(i < 0 ? ord.length : i, 0, 'campus');
+    }
   });
   return n;
 }

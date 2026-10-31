@@ -57,6 +57,7 @@ export function formatDate(iso: string, fmt: string, presentLabel: string): stri
 }
 export function formatRange(start: string, end: string, fmt: string, present: string): string {
   const a = formatDate(start, fmt, present), b = formatDate(end, fmt, present);
+  if (a && a === b) return a; // 同月起止（如单次志愿活动）只显示一次
   return a && b ? `${a} – ${b}` : a || b;
 }
 

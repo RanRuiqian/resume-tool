@@ -47,7 +47,7 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
             <View>
               <View style={st.row}>
                 <Text style={[st.bTitle, F(b.title ?? ''), { flex: 1 }]}>{b.title}</Text>
-                {b.date && <Text style={[st.muted, F(b.date), { marginLeft: 10 }]}>{b.date}</Text>}
+                {b.date && <Text style={[st.muted, F(b.date), { marginLeft: 10, flexShrink: 0 }]}>{b.date}</Text>}
               </View>
               {b.subtitle ? <Text style={[st.muted, F(b.subtitle)]}>{b.subtitle}</Text> : null}
             </View>

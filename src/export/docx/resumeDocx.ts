@@ -17,6 +17,13 @@ function dataUrlToBytes(d: string): { data: Uint8Array; type: 'png' | 'jpg' } {
   return { data, type: /png/.test(head) ? 'png' : 'jpg' };
 }
 
+/** 粗略估算文字宽度（twip）：中日韩字符按 1em，拉丁字母按 Arial 平均字宽 */
+function estTw(t: string, pt: number, bold = false): number {
+  let em = 0;
+  for (const ch of t) em += /[\u2E80-\uFFEF]/.test(ch) ? 1 : /[A-Z]/.test(ch) ? 0.67 : /[ .,:;'|il!()-]/.test(ch) ? 0.3 : 0.53;
+  return Math.round(em * pt * 20 * (bold ? 1.06 : 1));
+}
+
 /** Word 渲染器：真实段落 + 内置标题样式 + 无边框表格（双栏/照片），不使用文本框（F6.4） */
 export function buildDocx(m: LayoutModel): Document {
   const ff = m.typography.fontFamily;
@@ -36,8 +43,8 @@ export function buildDocx(m: LayoutModel): Document {
   /** 工科正式版用固定行距：不同机器的中文回退字体（微软雅黑 / 思源黑体等）行高差异很大，固定行距让 Word 排版与 PDF 接近 */
   const exactLine = Math.round(m.typography.bodySizePt * m.typography.lineHeight * 20);
 
-  const sectionParas = (s: LSection, width: number, narrow: boolean): Paragraph[] => {
-    const out: Paragraph[] = [new Paragraph({ text: s.title, heading: HeadingLevel.HEADING_1 })];
+  const sectionParas = (s: LSection, width: number, narrow: boolean): (Paragraph | Table)[] => {
+    const out: (Paragraph | Table)[] = [new Paragraph({ text: s.title, heading: HeadingLevel.HEADING_1 })];
     s.blocks.forEach((b, bi) => {
       if (!narrow && s.key === 'skills' && b.text) {
         out.push(new Paragraph({ spacing: { after: 40 }, children: [...(b.title ? [new TextRun({ text: b.title + (m.lang === 'zh' ? '：' : ': '), bold: true })] : []), new TextRun(b.text)] }));
@@ -51,9 +58,20 @@ export function buildDocx(m: LayoutModel): Document {
           if (b.subtitle) out.push(new Paragraph({ children: [new TextRun({ text: b.subtitle, color: hex(m.colors.muted) })] }));
         } else if (eng) {
           // 工科正式版：标题与右对齐日期同行，副标题另起一行（长名称自动换行，日期不重叠）
-          const runs = [new TextRun({ text: b.title ?? '', bold: true })];
-          if (b.date) runs.push(new TextRun({ text: '\t' + b.date, color: hex(m.colors.muted) }));
-          out.push(new Paragraph({ keepNext: true, tabStops: [{ type: TabStopType.RIGHT, position: width - 20 }], children: runs }));
+          const dateW = b.date ? estTw(b.date, m.typography.bodySizePt) + 240 : 0;
+          if (b.date && estTw(b.title ?? '', m.typography.bodySizePt, true) > width - dateW - 120) {
+            // 长标题：无边框两列表格，标题在左列内换行，日期固定在首行右侧（仍是可编辑文字）
+            const dW = Math.min(dateW, Math.round(width * 0.35));
+            out.push(new Table({ layout: TableLayoutType.FIXED, width: { size: width, type: WidthType.DXA }, columnWidths: [width - dW, dW], borders: NO_BORDERS,
+              rows: [new TableRow({ cantSplit: true, children: [
+                new TableCell({ width: { size: width - dW, type: WidthType.DXA }, borders: NO_BORDERS, margins: { left: 0, right: 120, top: 0, bottom: 0 }, children: [new Paragraph({ keepNext: true, children: [new TextRun({ text: b.title ?? '', bold: true })] })] }),
+                new TableCell({ width: { size: dW, type: WidthType.DXA }, borders: NO_BORDERS, margins: { left: 0, right: 0, top: 0, bottom: 0 }, children: [new Paragraph({ keepNext: true, alignment: AlignmentType.RIGHT, children: [new TextRun({ text: b.date, color: hex(m.colors.muted) })] })] }),
+              ] })] }));
+          } else {
+            const runs = [new TextRun({ text: b.title ?? '', bold: true })];
+            if (b.date) runs.push(new TextRun({ text: '\t' + b.date, color: hex(m.colors.muted) }));
+            out.push(new Paragraph({ keepNext: true, tabStops: [{ type: TabStopType.RIGHT, position: width - 20 }], children: runs }));
+          }
           if (b.subtitle) out.push(new Paragraph({ keepNext: true, children: [new TextRun({ text: b.subtitle, color: hex(m.colors.muted) })] }));
         } else {
           const runs = [new TextRun({ text: b.title ?? '', bold: true })];
@@ -88,7 +106,7 @@ export function buildDocx(m: LayoutModel): Document {
   } else children.push(...headerParas);
 
   if (twoCol) {
-    const cell = (w: number, kids: Paragraph[], side: boolean) => new TableCell({ width: { size: w, type: WidthType.DXA }, borders: NO_BORDERS, margins: side ? { right: 200 } : { left: 200 }, children: kids.length ? kids : [new Paragraph('')] });
+    const cell = (w: number, kids: (Paragraph | Table)[], side: boolean) => new TableCell({ width: { size: w, type: WidthType.DXA }, borders: NO_BORDERS, margins: side ? { right: 200 } : { left: 200 }, children: kids.length ? kids : [new Paragraph('')] });
     children.push(new Table({
       layout: TableLayoutType.FIXED, width: { size: contentW, type: WidthType.DXA }, columnWidths: [sideW, mainW], borders: NO_BORDERS,
       rows: [new TableRow({ children: [cell(sideW, m.side.flatMap((s) => sectionParas(s, sideW, true)), true), cell(mainW, m.main.flatMap((s) => sectionParas(s, mainW - 200, false)), false)] })],
