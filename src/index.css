@@ -1,5 +1,7 @@
 @font-face { font-family: 'Noto Sans SC'; src: url('/fonts/NotoSansSC-Regular.otf') format('opentype'); font-weight: 400; font-display: swap; }
 @font-face { font-family: 'Noto Sans SC'; src: url('/fonts/NotoSansSC-Bold.otf') format('opentype'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Arimo'; src: url('/fonts/Arimo-Regular.ttf') format('truetype'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Arimo'; src: url('/fonts/Arimo-Bold.ttf') format('truetype'); font-weight: 700; font-display: swap; }
 :root { --c: #1a365d; --bg: #f4f6f9; --line: #dde3ea; --muted: #6b7785; font-family: system-ui, -apple-system, 'PingFang SC', 'Microsoft YaHei', sans-serif; color: #1f2933; background: var(--bg); font-size: 14px; }
 * { box-sizing: border-box; }
 body { margin: 0; }
@@ -318,3 +320,16 @@ select.imp-action { width: auto; min-width: 9.5em; max-width: 100%; white-space:
 .mode-pick .mode { display: grid; grid-template-columns: auto 1fr; column-gap: 6px; border: 1px solid #e2e8f0; border-radius: 6px; padding: 4px 8px; cursor: pointer; }
 .mode-pick .mode input { width: auto; } .mode-pick .mode .muted { grid-column: 2; }
 .mode-pick .mode.on { border-color: #3182ce; background: #ebf8ff; }
+
+/* v1.7 正式版预设选择器 */
+.preset-chooser { margin-bottom: 12px; }
+.preset-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.preset-card { display: flex; flex-direction: column; align-items: stretch; gap: 6px; padding: 8px; text-align: left; background: #fff; border: 1px solid #d0d5dd; border-radius: 8px; cursor: pointer; min-width: 0; }
+.preset-card.active { border: 2px solid #1a202c; padding: 7px; }
+.preset-thumb { height: 150px; overflow: hidden; border: 1px solid #e5e7eb; background: #fafafa; display: flex; justify-content: center; pointer-events: none; }
+.preset-meta { display: flex; flex-direction: column; gap: 2px; min-width: 0; overflow-wrap: anywhere; }
+.preset-meta .tag { align-self: flex-start; padding: 0 6px; border-radius: 4px; background: #f3f4f6; color: #4a4a4a; }
+.preset-meta .tag.ok { background: #eef6ee; color: #276749; }
+.preset-meta .tag.cur { background: #1a202c; color: #fff; }
+@media (max-width: 1100px) { .preset-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .preset-cards { grid-template-columns: minmax(0, 1fr); } .preset-thumb { height: 120px; } }

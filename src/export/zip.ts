@@ -26,7 +26,16 @@ export async function renderPdfFit(p: ProfileDoc, tpl: TemplateConfig, lang: Lan
     const t = fitTemplate(tpl, lang, level);
     const bytes = await pdfBytes(p, t, lang, r);
     const pages = countPdfPages(bytes);
-    if (!auto || pages <= target || level >= MAX_FIT_LEVEL) return { bytes, pages, level, tpl: t, overflow: pages > target };
+    if (!auto || pages <= target) return { bytes, pages, level, tpl: t, overflow: pages > target };
+    if (level >= MAX_FIT_LEVEL) {
+      // 收紧到下限仍超页：内容本身需要更多页，回到原始字号与间距排版，不做无意义的压缩
+      if (level > 0) {
+        const raw = await pdfBytes(p, tpl, lang, r);
+        const rawPages = countPdfPages(raw);
+        if (rawPages <= pages) return { bytes: raw, pages: rawPages, level: 0, tpl, overflow: true };
+      }
+      return { bytes, pages, level, tpl: t, overflow: true };
+    }
     level += pages - target > 1 ? 2 : 1;
     level = Math.min(level, MAX_FIT_LEVEL);
   }

@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { useApp } from '../store';
+import { degreeWarnings } from '../render/degree';
 import { useT } from '../i18n';
 import type { Lang, ModuleKey, TemplateConfig, PhotoPosition, PersonalInfo } from '../types';
 import { MODULE_KEYS } from '../types';
-import { FONT_OPTIONS } from '../templates';
+import { FONT_OPTIONS, FORMAL_PRESETS, engineeringBaseOf } from '../templates';
+import type { FormalPreset } from '../templates';
 import { buildLayout } from '../render/layout';
 import { Preview } from '../render/Preview';
 import { uid } from '../locale/text';
 
-const MOD_LABEL: Record<ModuleKey, string> = { summary: '简介', work: '工作', projects: '项目', education: '教育', skills: '技能', certificates: '证书', awards: '获奖' };
+const MOD_LABEL: Record<ModuleKey, string> = { summary: '简介', work: '工作', projects: '项目', education: '教育', skills: '技能', campus: '校园', certificates: '证书', awards: '获奖' };
 
 export function LayoutPage() {
   const { templates, template, setTemplateId, saveTemplate, deleteTemplate, profile, resume } = useApp();
@@ -17,6 +19,13 @@ export function LayoutPage() {
   const [view, setView] = useState<'zh' | 'en' | 'both'>('zh');
   const [json, setJson] = useState<string | null>(null);
   const tpl = template;
+  const engBase = engineeringBaseOf(tpl);
+  const activePreset = FORMAL_PRESETS.find((p) => p.templateId === engBase && p.lang === lang) ?? null;
+  const pick = (p: FormalPreset) => { setTemplateId(p.templateId); setLang(p.lang); setView(p.lang); };
+  const togglePhoto = () => { if (!activePreset) return; const t = FORMAL_PRESETS.find((p) => p.lang === activePreset.lang && p.photo !== activePreset.photo)!; pick(t); };
+  const eduWarn = profile.education.flatMap((e) => degreeWarnings(e).map((w) => `${e.school.zh || e.school.en || '（未命名学校）'}：${w}`));
+  const photoWanted = tpl.locales[lang].photo.enabled;
+  const noPhoto = photoWanted && !profile.profile.photo;
   const editable = !tpl.builtin;
   /** 内置模板修改时自动另存为自定义模板（F4.3） */
   const upd = (fn: (x: TemplateConfig) => void) => {
@@ -36,6 +45,34 @@ export function LayoutPage() {
   return (
     <div className="page">
       <div className="toolbar"><h2>{t('navLayout')}</h2></div>
+      <div className="card preset-chooser" data-testid="preset-chooser">
+        <div className="row"><h4>正式版预设（工科）</h4><span className="muted small">四套共用同一份资料库与同一套渲染，切换预设不会修改母库；选中后仍可在下方自定义。</span></div>
+        <div className="preset-cards">
+          {FORMAL_PRESETS.map((p) => {
+            const t = templates.find((x) => x.id === p.templateId)!;
+            const on = activePreset?.id === p.id;
+            return (
+              <button key={p.id} className={`preset-card${on ? ' active' : ''}`} onClick={() => pick(p)} data-preset={p.id} aria-pressed={on}>
+                <div className="preset-thumb"><Preview m={buildLayout(profile, t, p.lang, resume)} scale={0.2} /></div>
+                <div className="preset-meta">
+                  <b>{p.label}</b>
+                  <span className="small">{p.lang === 'zh' ? '中文' : 'English'} · {p.photo ? '有照片' : '无照片'}</span>
+                  <span className={`small tag${p.recommended ? ' ok' : ''}`}>{p.recommended ? (p.lang === 'zh' ? '网申推荐' : '网申推荐 · Recommended') : '用于要求照片的单位'}</span>
+                  {on && <span className="small tag cur">当前预览</span>}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+        <div className="row small" data-testid="preset-status">
+          {activePreset ? <>当前预览：<b>{activePreset.label}</b>（{activePreset.note}）{tpl.builtin ? '' : ' · 已自定义'}
+            <button onClick={togglePhoto} data-testid="preset-photo-toggle">{activePreset.photo ? '关闭照片（切到无照片版）' : '开启照片（切到有照片版）'}</button></>
+            : <>当前模板「{tpl.name.zh}」不是工科正式版预设（你的选择已保留）；点击上方卡片即可切换。</>}
+          <span className="muted">无照片版结构简单、便于网申系统解析，但不保证所有 ATS 都能正确识别。</span>
+        </div>
+        {eduWarn.length > 0 && <div className="notice warn" data-testid="edu-date-warn">学历日期需要人工确认（简历中保留原始日期，不会标为已获学位）：<ul>{eduWarn.map((w, i) => <li key={i}>{w}</li>)}</ul></div>}
+        {noPhoto && <div className="notice warn" data-testid="photo-missing">当前样式需要证件照，但资料库还没有上传照片：导出的文件不含照片，页眉会自动收拢。请在资料库上传本人真实证件照；本工具不会生成或替换人像，照片也不会发送给 AI。</div>}
+      </div>
       <div className="layout-grid">
         <div className="card form">
           <label>模板<select value={tpl.id} onChange={(e) => setTemplateId(e.target.value)}>{templates.map((x) => <option key={x.id} value={x.id}>{x.name.zh}{x.builtin ? '（内置）' : ''}</option>)}</select></label>
@@ -49,7 +86,7 @@ export function LayoutPage() {
           <h4>共享版式</h4>
           <div className="grid2">
             <label>栏数<select value={tpl.layout.columns} onChange={(e) => upd((x) => { x.layout.columns = Number(e.target.value) as 1 | 2; if (x.layout.columns === 2 && !x.layout.sidebarModules.length) x.layout.sidebarModules = ['education', 'skills', 'certificates', 'awards']; })}><option value={1}>单栏</option><option value={2}>双栏</option></select></label>
-            <label>标题样式<select value={tpl.layout.titleStyle ?? 'underline'} onChange={(e) => upd((x) => { x.layout.titleStyle = e.target.value as 'underline' | 'bar' | 'band'; })}><option value="underline">下划线</option><option value="bar">左侧色条</option><option value="band">色块</option></select></label>
+            <label>标题样式<select value={tpl.layout.titleStyle ?? 'underline'} onChange={(e) => upd((x) => { x.layout.titleStyle = e.target.value as 'underline' | 'bar' | 'band' | 'rule'; })}><option value="rule">细灰线（工科）</option><option value="underline">下划线</option><option value="bar">左侧色条</option><option value="band">色块</option></select></label>
             <label>页眉对齐<select value={tpl.layout.headerAlign ?? 'left'} onChange={(e) => upd((x) => { x.layout.headerAlign = e.target.value as 'left' | 'center'; })}><option value="left">左对齐</option><option value="center">居中</option></select></label>
             {tpl.layout.columns === 2 && <label>侧栏宽度 %<input type="number" min={20} max={45} value={tpl.layout.sidebarWidthPercent} onChange={(e) => upd((x) => { x.layout.sidebarWidthPercent = Number(e.target.value); })} /></label>}
             <label>页眉样式<select value={tpl.layout.headerStyle} onChange={(e) => upd((x) => { x.layout.headerStyle = e.target.value as 'band' | 'plain'; })}><option value="plain">细线</option><option value="band">强调色粗线</option></select></label>
