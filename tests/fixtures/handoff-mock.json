@@ -1,0 +1,9 @@
+{
+  "format": "ran-application-handoff",
+  "schemaVersion": "1.0",
+  "exportedAt": "2026-10-20T08:00:00.000Z",
+  "applications": [
+    { "company": "模拟视觉科技有限公司", "position": "视觉算法工程师（校招）", "city": "上海", "status": "已投递", "url": "https://example.com/jobs/101", "appliedAt": "2026-10-12" },
+    { "company": "虚构半导体", "position": "设备工程师", "city": "无锡", "status": "已收藏", "url": "https://example.com/jobs/201", "deadline": "2026-11-15" }
+  ]
+}
