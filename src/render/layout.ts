@@ -11,7 +11,9 @@ export interface LayoutModel {
   columns: 1 | 2;
   sidebarWidthPercent: number;
   headerStyle: 'band' | 'plain';
-  titleStyle: 'underline' | 'bar' | 'band';
+  titleStyle: 'underline' | 'bar' | 'band' | 'rule';
+  /** engineering：副标题另起一行（与日期不同行，长名称不会和日期重叠） */
+  style: 'default' | 'engineering';
   headerAlign: 'left' | 'center';
   colors: TemplateConfig['colors'];
   spacing: TemplateConfig['spacing'];
@@ -28,6 +30,20 @@ export interface LayoutModel {
 export function selectionFromProfile(p: ProfileDoc): ResumeDoc['selection'] {
   const ids = <T extends { id: string; enabled: boolean }>(a: T[]) => a.filter((e) => e.enabled).map((e) => e.id);
   return { work: ids(p.work), projects: ids(p.projects), education: ids(p.education), skills: ids(p.skills), certificates: ids(p.certificates), awards: ids(p.awards) };
+}
+
+/** 项目性质的英文说法；无对应译法时英文版不显示（不把中文混进英文简历，也不自行意译） */
+const NATURE_EN: [RegExp, string][] = [
+  [/本科毕业设计|毕业设计|毕设/, 'Capstone Project'], [/硕士课题|研究生课题/, "Master's Research"], [/博士课题/, 'Doctoral Research'],
+  [/课程设计/, 'Course Project'], [/课程实验|实验课/, 'Course Lab'], [/教学实训|实训/, 'Training Practicum'], [/大创|大学生创新/, 'Student Innovation Project'],
+  [/竞赛/, 'Competition Project'], [/个人项目|个人练习/, 'Personal Project'],
+];
+export function natureLabel(n: string | undefined, lang: Lang): string {
+  const v = n?.trim();
+  if (!v) return '';
+  if (lang === 'zh') return v;
+  if (!/[\u2e80-\u9fff]/.test(v)) return v;
+  return NATURE_EN.find(([re]) => re.test(v))?.[1] ?? '';
 }
 
 const PERSONAL_LABEL: Record<Lang, Record<string, string>> = {
@@ -55,15 +71,40 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   const byIds = <X extends { id: string }>(arr: X[], ids: string[]) => ids.map((id) => arr.find((x) => x.id === id)).filter((x): x is X => !!x);
 
   const sections: Partial<Record<ModuleKey, LSection>> = {};
-  const title = (k: ModuleKey) => loc.sectionTitles[k];
+  const DEFAULT_TITLES: Record<Lang, Partial<Record<ModuleKey, string>>> = { zh: { campus: '校园经历' }, en: { campus: 'Campus Activities' } };
+  const title = (k: ModuleKey) => loc.sectionTitles[k] ?? DEFAULT_TITLES[lang][k] ?? k;
+  const engineering = tpl.layout.style === 'engineering';
+  const order = moduleOrderFor(tpl, lang);
+  /** 只有模板顺序包含 campus 时，社团 / 志愿经历才单列为「校园经历」；旧模板仍归入 work */
+  const splitCampus = order.includes('campus');
+  const isCampus = (k?: string) => k === 'club' || k === 'volunteer';
+  /** 学位尚未授予时显示预计时间并明确标注，不把预计毕业写成已获学位 */
+  const eduRange = (e: ProfileDoc['education'][number]) => {
+    const pending = !e.actualConferralDate && !!e.expectedConferralDate;
+    const end = pending ? (e.end || e.expectedConferralDate!) : e.end;
+    const r = range(e.start, end);
+    const future = pending && (e.expectedConferralDate! > new Date().toISOString().slice(0, 7));
+    return future && r ? r + (lang === 'zh' ? '（预计）' : ' (expected)') : r;
+  };
   const summaryText = resume ? (itemMap.get('summary')?.[lang]?.trim() || (itemMap.has('summary') ? T(p.profile.summary) : '')) : T(p.profile.summary);
   if (summaryText) sections.summary = { key: 'summary', title: title('summary'), blocks: [{ bullets: [], text: summaryText }] };
   const sep = lang === 'zh' ? ' | ' : ', ';
-  const w = byIds(p.work, sel.work).map((e) => ({ title: T(e.company), subtitle: T(e.title), date: range(e.start, e.end), bullets: pickBullets(e.bullets) }));
+  const wSel = byIds(p.work, sel.work);
+  const wBlock = (e: ProfileDoc['work'][number]) => ({ title: T(e.company), subtitle: T(e.title), date: range(e.start, e.end), bullets: pickBullets(e.bullets) });
+  const w = wSel.filter((e) => !(splitCampus && isCampus(e.kind))).map(wBlock);
   if (w.length) sections.work = { key: 'work', title: title('work'), blocks: w };
-  const pr = byIds(p.projects, sel.projects).map((e) => ({ title: T(e.name), subtitle: T(e.role), date: range(e.start, e.end), bullets: pickBullets(e.bullets), tags: e.tags }));
+  const cp = splitCampus ? wSel.filter((e) => isCampus(e.kind)).map(wBlock) : [];
+  if (cp.length) sections.campus = { key: 'campus', title: title('campus'), blocks: cp };
+  /** engineering：课程实验 / 教学实训等项目性质随角色显示，避免把课程作业包装成商业项目 */
+  const prSub = (e: ProfileDoc['projects'][number]) => engineering ? [T(e.role), natureLabel(e.nature, lang)].filter(Boolean).join(sep) : T(e.role);
+  const pr = byIds(p.projects, sel.projects).map((e) => ({ title: T(e.name), subtitle: prSub(e), date: range(e.start, e.end), bullets: pickBullets(e.bullets), tags: engineering ? undefined : e.tags }));
   if (pr.length) sections.projects = { key: 'projects', title: title('projects'), blocks: pr };
-  const ed = byIds(p.education, sel.education).map((e) => ({ title: T(e.school), subtitle: [T(e.major), T(e.degree)].filter(Boolean).join(sep), date: range(e.start, e.end), bullets: pickBullets(e.highlights) }));
+  const eduSub = (e: ProfileDoc['education'][number]) => {
+    const maj = T(e.major), deg = T(e.degree);
+    if (engineering && lang === 'en' && maj && deg) return `${deg} in ${maj}`;
+    return [maj, deg].filter(Boolean).join(sep);
+  };
+  const ed = byIds(p.education, sel.education).map((e) => ({ title: T(e.school), subtitle: eduSub(e), date: eduRange(e), bullets: pickBullets(e.highlights) }));
   if (ed.length) sections.education = { key: 'education', title: title('education'), blocks: ed };
   const sk = byIds(p.skills, sel.skills);
   if (sk.length) {
@@ -77,8 +118,13 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
     if (arr.length) sections[k] = { key: k, title: title(k), blocks: arr };
   };
   simple('certificates'); simple('awards');
+  // engineering：证书与奖项合并为一个模块（标题取 certificates 的标题）
+  if (engineering && sections.awards && order.includes('certificates')) {
+    const c = sections.certificates;
+    sections.certificates = { key: 'certificates', title: title('certificates'), blocks: [...(c?.blocks ?? []), ...sections.awards.blocks] };
+    delete sections.awards;
+  }
 
-  const order = moduleOrderFor(tpl, lang);
   const side = tpl.layout.columns === 2 ? tpl.layout.sidebarModules : [];
   const main: LSection[] = [], sideS: LSection[] = [];
   order.forEach((k) => { const s = sections[k]; if (s) (side.includes(k) ? sideS : main).push(s); });
@@ -107,7 +153,7 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
 
   return {
     lang, pageSize: tpl.page.size, marginMm: tpl.page.marginMm, columns: tpl.layout.columns, sidebarWidthPercent: tpl.layout.sidebarWidthPercent,
-    headerStyle: tpl.layout.headerStyle, titleStyle: tpl.layout.titleStyle ?? 'underline', headerAlign: tpl.layout.headerAlign ?? 'left', colors: tpl.colors, spacing: tpl.spacing, typography: loc.typography, photo,
+    headerStyle: tpl.layout.headerStyle, titleStyle: tpl.layout.titleStyle ?? 'underline', style: tpl.layout.style ?? 'default', headerAlign: tpl.layout.headerAlign ?? 'left', colors: tpl.colors, spacing: tpl.spacing, typography: loc.typography, photo,
     header: { name: T(p.profile.name), headline: T(p.profile.headline), contacts, personal },
     main, side: sideS, movedFromSide,
   };

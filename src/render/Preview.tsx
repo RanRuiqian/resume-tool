@@ -4,13 +4,15 @@ const PX = 3.7795; // px per mm
 /** 网页预览：与 PDF 渲染器共用同一 Layout Model（近似 WYSIWYG） */
 export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number }) {
   const ty = m.typography;
-  const font = m.lang === 'zh' || ty.fontFamily === 'Noto Sans SC' ? "'Noto Sans SC', sans-serif" : ty.fontFamily === 'Times-Roman' ? "'Times New Roman', Times, 'Noto Sans SC', serif" : "Helvetica, Arial, 'Noto Sans SC', sans-serif";
+  const font = m.lang === 'zh' || ty.fontFamily === 'Noto Sans SC' ? "'Noto Sans SC', sans-serif" : ty.fontFamily === 'Arimo' ? "Arimo, Arial, 'Liberation Sans', 'Noto Sans SC', sans-serif" : ty.fontFamily === 'Times-Roman' ? "'Times New Roman', Times, 'Noto Sans SC', serif" : "Helvetica, Arial, 'Noto Sans SC', sans-serif";
   const pt = (n: number) => `${n * 1.333}px`;
+  const eng = m.style === 'engineering';
   const wMm = m.pageSize === 'A4' ? 210 : 215.9, hMm = m.pageSize === 'A4' ? 297 : 279.4;
   const sec = (s: LSection, narrow: boolean) => (
     <div key={s.key} style={{ marginBottom: m.spacing.sectionGapMm * PX }}>
       <div style={m.titleStyle === 'band' ? { fontSize: pt(ty.bodySizePt + 1.5), fontWeight: 700, color: '#fff', background: m.colors.primary, padding: '2px 8px', marginBottom: 5 }
         : m.titleStyle === 'bar' ? { fontSize: pt(ty.bodySizePt + 2), fontWeight: 700, color: m.colors.primary, borderLeft: `4px solid ${m.colors.accent}`, paddingLeft: 8, marginBottom: 5 }
+        : m.titleStyle === 'rule' ? { fontSize: pt(ty.bodySizePt + 1.5), fontWeight: 700, color: m.colors.primary, borderBottom: `0.75px solid ${m.colors.muted}`, paddingBottom: 1, marginBottom: 4, letterSpacing: m.lang === 'en' ? 0.4 : 0 }
         : { fontSize: pt(ty.bodySizePt + 2), fontWeight: 700, color: m.colors.primary, borderBottom: `1px solid ${m.colors.primary}`, marginBottom: 4 }}>{s.title}</div>
       {s.blocks.map((b, i) => (
         !narrow && s.key === 'skills' && b.text ? (
@@ -20,10 +22,20 @@ export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number })
             {(b.title || b.date) && (narrow ? (
               <><div style={{ fontWeight: 700 }}>{b.title}</div>{b.date && <div style={{ color: m.colors.muted, fontSize: pt(ty.bodySizePt - 1) }}>{b.date}</div>}{b.subtitle && <div style={{ color: m.colors.muted }}>{b.subtitle}</div>}</>
             ) : (
+              eng ? (
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+                    <b style={{ flex: 1, minWidth: 0 }}>{b.title}</b>
+                    <span style={{ color: m.colors.muted, whiteSpace: 'nowrap' }}>{b.date}</span>
+                  </div>
+                  {b.subtitle && <div style={{ color: m.colors.muted }}>{b.subtitle}</div>}
+                </>
+              ) : (
               <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
                 <span><b>{b.title}</b>{b.subtitle && <span style={{ color: m.colors.muted }}>{'  '}{b.subtitle}</span>}</span>
                 <span style={{ color: m.colors.muted, whiteSpace: 'nowrap' }}>{b.date}</span>
               </div>
+              )
             ))}
             {b.text && <div>{b.text}</div>}
             {b.bullets.length > 0 && <ul style={{ margin: 0, paddingLeft: 14 }}>{b.bullets.map((x, j) => <li key={j} style={{ ['--dot' as string]: m.colors.accent }}>{x}</li>)}</ul>}
@@ -38,12 +50,12 @@ export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number })
   return (
     <div className="preview-wrap" style={{ width: wMm * PX * scale, minHeight: hMm * PX * scale }}>
       <div className="preview-page" style={{ width: wMm * PX, minHeight: hMm * PX, transform: `scale(${scale})`, padding: `${m.marginMm.top * PX}px ${m.marginMm.right * PX}px ${m.marginMm.bottom * PX}px ${m.marginMm.left * PX}px`, fontFamily: font, fontSize: pt(ty.bodySizePt), lineHeight: ty.lineHeight, color: m.colors.text }}>
-        <div style={{ display: 'flex', alignItems: 'center', borderBottom: `${m.headerStyle === 'band' ? 3 : 1}px solid ${m.headerStyle === 'band' ? m.colors.accent : m.colors.primary}`, paddingBottom: 6, marginBottom: m.spacing.sectionGapMm * PX }}>
+        <div style={eng ? { display: 'flex', alignItems: 'flex-start', paddingBottom: 2, marginBottom: m.spacing.sectionGapMm * PX * 0.8 } : { display: 'flex', alignItems: 'center', borderBottom: `${m.headerStyle === 'band' ? 3 : 1}px solid ${m.headerStyle === 'band' ? m.colors.accent : m.colors.primary}`, paddingBottom: 6, marginBottom: m.spacing.sectionGapMm * PX }}>
           {m.photo?.position === 'left' && photo}
           <div style={{ flex: 1, textAlign: m.headerAlign }}>
             <div style={{ fontSize: pt(ty.nameSizePt), fontWeight: 700, color: m.colors.primary, lineHeight: 1.2 }}>{m.header.name || '（姓名）'}</div>
-            {m.header.headline && <div style={{ color: m.colors.accent, fontSize: pt(ty.bodySizePt + 1.5) }}>{m.header.headline}</div>}
-            <div style={{ color: m.colors.muted, fontSize: pt(ty.bodySizePt - 0.5) }}>{[...m.header.contacts, ...m.header.personal].join('  |  ')}</div>
+            {m.header.headline && <div style={{ color: m.colors.accent, fontSize: pt(ty.bodySizePt + (eng ? 0.5 : 1.5)), marginTop: eng ? 2 : 0 }}>{m.header.headline}</div>}
+            <div style={{ color: m.colors.muted, fontSize: pt(ty.bodySizePt - 0.5), marginTop: eng ? 2 : 0 }}>{[...m.header.contacts, ...m.header.personal].join(eng ? '  ·  ' : '  |  ')}</div>
           </div>
           {m.photo?.position === 'right' && photo}
         </div>

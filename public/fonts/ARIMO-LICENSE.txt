@@ -1,0 +1,3 @@
+Arimo Regular / Bold — static instances (wght 400 / 700) generated with fontTools from the Arimo variable font.
+Copyright 2020 The Arimo Project Authors (https://github.com/googlefonts/arimo)
+Licensed under the SIL Open Font License, Version 1.1 — https://openfontlicense.org

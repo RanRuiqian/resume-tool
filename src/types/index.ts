@@ -158,12 +158,14 @@ export interface ProfileDoc {
 }
 export interface SourceText { id: string; at: string; files: string[]; text: string }
 
-export type ModuleKey = 'summary' | 'work' | 'projects' | 'education' | 'skills' | 'certificates' | 'awards';
-export const MODULE_KEYS: ModuleKey[] = ['summary', 'work', 'projects', 'education', 'skills', 'certificates', 'awards'];
+/** campus（v1.7）：校园经历，由 work.kind = club / volunteer 派生；只有模板顺序里包含 campus 时才单列，否则仍归入 work（兼容旧模板） */
+export type ModuleKey = 'summary' | 'work' | 'projects' | 'education' | 'skills' | 'campus' | 'certificates' | 'awards';
+export const MODULE_KEYS: ModuleKey[] = ['summary', 'work', 'projects', 'education', 'skills', 'campus', 'certificates', 'awards'];
 
 export type PhotoPosition = 'left' | 'right' | 'none';
 export interface Typography { fontFamily: string; nameSizePt: number; bodySizePt: number; lineHeight: number }
 export interface TemplateLocale {
+  /** 旧模板 JSON 可能缺少 campus，渲染时回退到默认标题 */
   sectionTitles: Record<ModuleKey, string>;
   dateFormat: 'YYYY.MM' | 'MMM YYYY' | 'YYYY-MM' | 'MM/YYYY';
   presentLabel: string;
@@ -177,8 +179,17 @@ export interface TemplateConfig {
   name: { zh: string; en: string };
   version: string;
   builtin?: boolean;
-  page: { size: 'A4' | 'LETTER'; marginMm: { top: number; right: number; bottom: number; left: number }; targetPages: number; autoFit?: boolean };
-  layout: { columns: 1 | 2; sidebarWidthPercent: number; sidebarModules: ModuleKey[]; headerStyle: 'band' | 'plain'; titleStyle?: 'underline' | 'bar' | 'band'; headerAlign?: 'left' | 'center' };
+  page: { size: 'A4' | 'LETTER'; marginMm: { top: number; right: number; bottom: number; left: number }; targetPages: number; autoFit?: boolean;
+    /** 自动适配时正文字号下限（pt）；缺省 8.5。工科正式版为 9.5：优先收紧间距，不无限缩小字号 */
+    minBodyPt?: number };
+  layout: {
+    columns: 1 | 2; sidebarWidthPercent: number; sidebarModules: ModuleKey[]; headerStyle: 'band' | 'plain';
+    /** rule（v1.7）：标题下极细灰黑线，标题文字为正文色 */
+    titleStyle?: 'underline' | 'bar' | 'band' | 'rule';
+    headerAlign?: 'left' | 'center';
+    /** engineering（v1.7）：副标题另起一行、证书与奖项合并、不显示技术标签、项目性质（课程实验等）随角色显示；缺省 = 旧版行为 */
+    style?: 'default' | 'engineering';
+  };
   moduleOrder: ModuleKey[];
   colors: { primary: string; text: string; muted: string; accent: string };
   spacing: { sectionGapMm: number; itemGapMm: number };
@@ -232,7 +243,7 @@ export interface ResumeDoc {
   matchScore: number;
   gaps: string[];
   /** 选中的资料库条目 id（按顺序） */
-  selection: Record<Exclude<ModuleKey, 'summary'>, string[]>;
+  selection: Record<Exclude<ModuleKey, 'summary' | 'campus'>, string[]>;
   /** 改写后的条目：summary / bullet / highlight，按 sourceId 对应资料库 */
   items: GenItem[];
   consistency: { checkedAt: string; issues: ConsistencyIssue[] };

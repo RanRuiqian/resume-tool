@@ -4,7 +4,7 @@ import { db, DEFAULT_SETTINGS } from './storage/db';
 import { loadSettings } from './storage/settingsLoad';
 import { applyActive, activateProfile as activateP, deleteProfile as deleteP, migrateToProfiles, upsertProfile, type ProfileDraft } from './storage/apiProfiles';
 import { emptyProfile, normalizeProfile } from './storage/profileIO';
-import { BUILTIN_TEMPLATES, ALL_TEMPLATES } from './templates';
+import { BUILTIN_TEMPLATES, ALL_TEMPLATES, ENG_DEFAULT_ID, initialTemplateId, normalizeTemplate } from './templates';
 import { snapshotProfile, type BackupRow } from './storage/db';
 import { seedDemo } from './storage/demo';
 import { IS_DEMO, uiStorage } from './storage/mode';
@@ -39,7 +39,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [settings, setSettingsS] = useState<Settings>(DEFAULT_SETTINGS);
   const settingsRef = useRef<Settings>(DEFAULT_SETTINGS);
   const [custom, setCustom] = useState<TemplateConfig[]>([]);
-  const [templateId, setTemplateIdS] = useState(BUILTIN_TEMPLATES[0].id);
+  const [templateId, setTemplateIdS] = useState(ENG_DEFAULT_ID);
   const [job, setJobS] = useState<JobParse | null>(null);
   const [resume, setResumeS] = useState<ResumeDoc | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -51,9 +51,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       const [p, s, ts, st] = await Promise.all([db.profile.get('me'), db.settings.get('settings'), db.templates.toArray(), db.state.toArray()]);
       if (p) { const doc = normalizeProfile(p.doc); setProfileS(doc); latest.current = doc; }
       if (s) { const ls = await loadSettings(db); if (ls) { settingsRef.current = ls; setSettingsS(ls); } }
-      setCustom(ts);
+      setCustom(ts.map(normalizeTemplate));
       const get = (k: string) => st.find((x) => x.id === k)?.value;
-      if (get('templateId')) setTemplateIdS(get('templateId') as string);
+      const savedTpl = get('templateId') as string | undefined;
+      const tid = initialTemplateId(savedTpl, !!p);
+      setTemplateIdS(tid);
+      // 首次确定的默认模板写入本机，之后导入资料也不会再变（演示模式写入的是独立演示库）
+      if (!savedTpl) db.state.put({ id: 'templateId', value: tid });
       const jid = get('jobId') as string | undefined, rid = get('resumeId') as string | undefined;
       if (jid) setJobS((await db.jobs.get(jid)) ?? null);
       if (rid) setResumeS((await db.resumes.get(rid)) ?? null);

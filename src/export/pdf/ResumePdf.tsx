@@ -1,28 +1,25 @@
 import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer';
 import type { LayoutModel, LSection } from '../../render/layout';
 import { MM } from '../../render/layout';
-import { hasCJK } from './fonts';
-
-function fontFor(m: LayoutModel, s: string) {
-  const f = m.typography.fontFamily;
-  if (m.lang === 'zh' || hasCJK(s) || f === 'Noto Sans SC') return 'NotoSansSC';
-  return f;
-}
+import { fontFor } from './fonts';
 
 export function ResumePdf({ m }: { m: LayoutModel }) {
   const ty = m.typography;
   const body = ty.bodySizePt;
   const F = (s: string) => ({ fontFamily: fontFor(m, s) });
+  const eng = m.style === 'engineering';
   const st = StyleSheet.create({
     page: { paddingTop: m.marginMm.top * MM, paddingBottom: m.marginMm.bottom * MM, paddingLeft: m.marginMm.left * MM, paddingRight: m.marginMm.right * MM, fontSize: body, color: m.colors.text, lineHeight: ty.lineHeight },
-    header: { flexDirection: 'row', alignItems: 'center', marginBottom: m.spacing.sectionGapMm * MM, paddingBottom: 4, borderBottomWidth: m.headerStyle === 'band' ? 2 : 0.8, borderBottomColor: m.headerStyle === 'band' ? m.colors.accent : m.colors.primary },
+    header: eng ? { flexDirection: 'row', alignItems: 'flex-start', marginBottom: m.spacing.sectionGapMm * MM * 0.8, paddingBottom: 1 } : { flexDirection: 'row', alignItems: 'center', marginBottom: m.spacing.sectionGapMm * MM, paddingBottom: 4, borderBottomWidth: m.headerStyle === 'band' ? 2 : 0.8, borderBottomColor: m.headerStyle === 'band' ? m.colors.accent : m.colors.primary },
     name: { fontSize: ty.nameSizePt, fontWeight: 700, color: m.colors.primary, lineHeight: 1.2 },
-    headline: { fontSize: body + 1.5, color: m.colors.accent, marginTop: 2 },
+    headline: { fontSize: body + (eng ? 0.5 : 1.5), color: m.colors.accent, marginTop: 2 },
     contact: { fontSize: body - 0.5, color: m.colors.muted, marginTop: 3 },
     secTitle: m.titleStyle === 'band'
       ? { fontSize: body + 1.5, fontWeight: 700, color: '#ffffff', backgroundColor: m.colors.primary, paddingTop: 2, paddingBottom: 2, paddingLeft: 6, marginBottom: 4 }
       : m.titleStyle === 'bar'
         ? { fontSize: body + 2, fontWeight: 700, color: m.colors.primary, borderLeftWidth: 3, borderLeftColor: m.colors.accent, paddingLeft: 6, marginBottom: 4 }
+        : m.titleStyle === 'rule'
+          ? { fontSize: body + 1.5, fontWeight: 700, color: m.colors.primary, borderBottomWidth: 0.5, borderBottomColor: m.colors.muted, paddingBottom: 1, marginBottom: 3, letterSpacing: m.lang === 'en' ? 0.3 : 0 }
         : { fontSize: body + 2, fontWeight: 700, color: m.colors.primary, borderBottomWidth: 0.6, borderBottomColor: m.colors.primary, paddingBottom: 1.5, marginBottom: 3 },
     section: { marginBottom: m.spacing.sectionGapMm * MM },
     block: { marginBottom: m.spacing.itemGapMm * MM },
@@ -34,13 +31,10 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
   });
   const photoPt = (m.photo?.sizeMm ?? 28) * MM;
   const photoEl = m.photo ? <Image src={m.photo.dataUrl} style={{ width: photoPt * (m.photo?.aspect ?? 0.8), height: photoPt, objectFit: 'cover' }} /> : null;
-  const contactLine = [...m.header.contacts, ...m.header.personal].join('  |  ');
+  const contactLine = [...m.header.contacts, ...m.header.personal].join(eng ? '  ·  ' : '  |  ');
   const twoCol = m.columns === 2 && m.side.length > 0;
 
-  const renderSection = (s: LSection, narrow = false) => (
-    <View key={s.key} style={st.section}>
-      <Text style={[st.secTitle, F(s.title)]} minPresenceAhead={36}>{s.title}</Text>
-      {s.blocks.map((b, i) => (!narrow && s.key === 'skills' && b.text ? (
+  const renderBlock = (s: LSection, b: LSection['blocks'][number], i: number, narrow: boolean) => (!narrow && s.key === 'skills' && b.text ? (
         <Text key={i} style={[F((b.title ?? '') + b.text), { marginBottom: 2 }]}>{b.title ? <Text style={{ fontWeight: 700 }}>{b.title + (m.lang === 'zh' ? '：' : ': ')}</Text> : null}{b.text}</Text>
       ) : (
         <View key={i} style={st.block} wrap={b.bullets.length > 3}>
@@ -48,6 +42,14 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
             <View>
               {b.title && <Text style={[st.bTitle, F(b.title)]}>{b.title}</Text>}
               {b.date && <Text style={[st.muted, F(b.date), { fontSize: body - 1 }]}>{b.date}</Text>}
+            </View>
+          ) : eng ? (
+            <View>
+              <View style={st.row}>
+                <Text style={[st.bTitle, F(b.title ?? ''), { flex: 1 }]}>{b.title}</Text>
+                {b.date && <Text style={[st.muted, F(b.date), { marginLeft: 10 }]}>{b.date}</Text>}
+              </View>
+              {b.subtitle ? <Text style={[st.muted, F(b.subtitle)]}>{b.subtitle}</Text> : null}
             </View>
           ) : (
             <View style={st.row}>
@@ -65,7 +67,15 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
           ))}
           {b.tags && b.tags.length > 0 && <Text style={[st.muted, F(b.tags.join(' ')), { fontSize: body - 1 }]}>{b.tags.join(' · ')}</Text>}
         </View>
-      )))}
+      ));
+  /** 标题与第一个条目放在同一个不可分割的 View 中：模块标题不会单独留在页底 */
+  const renderSection = (s: LSection, narrow = false) => (
+    <View key={s.key} style={st.section}>
+      <View wrap={false}>
+        <Text style={[st.secTitle, F(s.title)]}>{s.title}</Text>
+        {s.blocks.length > 0 && renderBlock(s, s.blocks[0], 0, narrow)}
+      </View>
+      {s.blocks.slice(1).map((b, i) => renderBlock(s, b, i + 1, narrow))}
     </View>
   );
 

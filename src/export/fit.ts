@@ -6,14 +6,16 @@ export function fitTemplate(tpl: TemplateConfig, lang: Lang, level: number): Tem
   if (level <= 0) return tpl;
   const t = structuredClone(tpl);
   const ty = t.locales[lang].typography;
-  ty.bodySizePt = Math.max(8.5, ty.bodySizePt - 0.25 * level);
-  ty.nameSizePt = Math.max(15, ty.nameSizePt - 0.5 * level);
-  ty.lineHeight = Math.max(1.15, ty.lineHeight - 0.035 * level);
+  const minBody = t.page.minBodyPt ?? 8.5;
+  ty.bodySizePt = Math.max(Math.min(minBody, ty.bodySizePt), ty.bodySizePt - 0.25 * level);
+  ty.nameSizePt = Math.max(t.page.minBodyPt ? 18 : 15, ty.nameSizePt - 0.5 * level);
+  ty.lineHeight = Math.max(t.page.minBodyPt ? 1.25 : 1.15, ty.lineHeight - 0.035 * level);
   const k = Math.pow(0.85, level);
   t.spacing = { sectionGapMm: Math.max(1.5, t.spacing.sectionGapMm * k), itemGapMm: Math.max(0.8, t.spacing.itemGapMm * k) };
   const mk = Math.pow(0.92, level);
   const m = t.page.marginMm;
-  t.page.marginMm = { top: Math.max(8, m.top * mk), right: Math.max(9, m.right * mk), bottom: Math.max(8, m.bottom * mk), left: Math.max(9, m.left * mk) };
+  const mf = t.page.minBodyPt ? 3 : 0; // 工科正式版：页边距不低于约 11–12mm
+  t.page.marginMm = { top: Math.max(8 + mf, m.top * mk), right: Math.max(9 + mf, m.right * mk), bottom: Math.max(8 + mf, m.bottom * mk), left: Math.max(9 + mf, m.left * mk) };
   return t;
 }
 
