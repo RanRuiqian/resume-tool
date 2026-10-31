@@ -1,7 +1,7 @@
 import type { Bi, GenItem, JobParse, Lang, LocalizedText, ProfileDoc, ResumeDoc, Settings } from '../types';
 import { chatJson } from './provider';
 import { GENERATE_PROMPT, LOCALIZE_PROMPT, SYS_FACTS } from './prompts';
-import { checkConsistency, numberTokens } from './consistency';
+import { checkConsistency, compareFacts, numberTokens } from './consistency';
 import { lt, other, uid } from '../locale/text';
 import { mockTranslate } from './translate';
 
@@ -67,9 +67,15 @@ function fillSecondaryFromProfile(p: ProfileDoc, r: ResumeDoc, demo: boolean) {
   }
 }
 
-function validateNumbers(items: GenItem[]) { return items.filter((i) => numberTokens(i.zh).join() !== numberTokens(i.en).join()).map((i) => i.sourceId); }
 
 export function runConsistency(r: ResumeDoc): ResumeDoc {
+  // 兜底（A2）：两种语言关键事实不一致的条目，任何路径都不能保持 in-sync
+  const items = r.items.map((i): GenItem => {
+    if (i.syncStatus !== 'in-sync' || !i.zh.trim() || !i.en.trim()) return i;
+    const f = compareFacts(i[r.primaryLanguage], i[other(r.primaryLanguage)]);
+    return f.length ? { ...i, syncStatus: 'needs-review', translation: { source: i.translation?.source ?? 'profile', aiText: i.translation?.aiText, factIssues: f, checkedAt: new Date().toISOString() } } : i;
+  });
+  r = { ...r, items };
   return { ...r, consistency: { checkedAt: new Date().toISOString(), issues: checkConsistency(r.items) } };
 }
 
@@ -133,28 +139,52 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   };
 }
 
-/** 基于主版本本地化副版本（F5.6 第二步）；校验失败重试 1 次，仍失败用资料库译文 */
+/**
+ * 判定一条副版本（A2）：
+ * 1) AI 译文与主版本关键事实一致 → in-sync；
+ * 2) 否则若资料库有「已确认」历史译文且事实一致 → 用它，in-sync；
+ * 3) 否则 needs-review：保留 AI 译文（或资料库译文）供人工核对，绝不标记为已同步，也不删除数字。
+ */
+export function decideTranslation(pri: string, aiText: string | undefined, confirmedPrior: string | undefined, profileText: string | undefined): { text: string; syncStatus: GenItem['syncStatus']; translation: NonNullable<GenItem['translation']> } {
+  const checkedAt = new Date().toISOString();
+  const ai = aiText?.trim() || undefined;
+  const aiIssues = ai ? compareFacts(pri, ai) : ['AI 未返回译文'];
+  if (ai && !aiIssues.length) return { text: ai, syncStatus: 'in-sync', translation: { source: 'ai', factIssues: [], checkedAt } };
+  if (confirmedPrior && !compareFacts(pri, confirmedPrior).length) return { text: confirmedPrior, syncStatus: 'in-sync', translation: { source: 'confirmed', aiText: ai, factIssues: aiIssues, checkedAt } };
+  if (ai) return { text: ai, syncStatus: 'needs-review', translation: { source: 'ai', aiText: ai, factIssues: aiIssues, checkedAt } };
+  if (profileText) return { text: profileText, syncStatus: 'needs-review', translation: { source: 'profile', factIssues: [...aiIssues, ...compareFacts(pri, profileText)], checkedAt } };
+  return { text: '', syncStatus: 'needs-review', translation: { source: 'none', factIssues: aiIssues, checkedAt } };
+}
+
+/** 基于主版本本地化副版本（F5.6 第二步）；校验失败重试 1 次，仍失败按 decideTranslation 回退 */
 export async function localizeAi(s: Settings, p: ProfileDoc, job: JobParse | null, r: ResumeDoc, onlyIds?: string[]): Promise<ResumeDoc> {
   const pri = r.primaryLanguage, sec = other(pri), idx = textIndex(p);
-  const target = r.items.filter((i) => !onlyIds || onlyIds.includes(i.sourceId));
+  // 用户人工确认过的副版本优先保留，不再重译（B6）
+  const target = r.items.filter((i) => (!onlyIds || onlyIds.includes(i.sourceId)) && !i.confirmedLangs?.includes(sec));
   const payload = {
     glossary: p.glossary, keywords: (job?.keywords ?? []).map((k) => ({ [pri]: k[pri], [sec]: k[sec] })),
     reference: target.map((i) => { const t = idx.get(i.sourceId)?.t; return t && t.status?.[sec] === 'confirmed' ? { sourceId: i.sourceId, [pri]: lt(t, pri, false), [sec]: lt(t, sec, false) } : null; }).filter(Boolean),
     items: target.map((i) => ({ sourceId: i.sourceId, text: i[pri] })),
   };
-  let got = new Map<string, string>();
-  for (let attempt = 0; attempt < 2; attempt++) {
+  // 两次尝试中，每条保留第一份通过事实校验的译文；都没通过时保留最后一份 AI 译文供核对
+  const best = new Map<string, string>(); const passed = new Set<string>();
+  for (let attempt = 0; attempt < 2 && target.length; attempt++) {
     const out = await chatJson<{ items?: { sourceId: string; text: string }[] }>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content: `${LOCALIZE_PROMPT(NAME[pri], NAME[sec])}\n\n${JSON.stringify(payload)}` }], { model: s.translateModel || s.model });
-    got = new Map((out.items ?? []).filter((x) => x.sourceId && x.text).map((x) => [x.sourceId, x.text.trim()]));
-    const trial = target.map((i) => ({ ...i, [sec]: got.get(i.sourceId) ?? '' }));
-    const okIds = target.every((i) => got.has(i.sourceId)) && got.size === target.length;
-    if (okIds && validateNumbers(trial).length === 0) break;
+    for (const x of out.items ?? []) {
+      if (!x?.sourceId || !x.text?.trim() || passed.has(x.sourceId)) continue;
+      const it = target.find((i) => i.sourceId === x.sourceId); if (!it) continue;
+      best.set(x.sourceId, x.text.trim());
+      if (!compareFacts(it[pri], x.text).length) passed.add(x.sourceId);
+    }
+    if (target.every((i) => passed.has(i.sourceId))) break;
   }
-  const items = r.items.map((i) => {
-    if (onlyIds && !onlyIds.includes(i.sourceId)) return i;
-    const v = got.get(i.sourceId);
-    const ok = v && numberTokens(v).join() === numberTokens(i[pri]).join();
-    return { ...i, [sec]: ok ? v : (v || ''), syncStatus: 'in-sync' as const };
+  const targetIds = new Set(target.map((i) => i.sourceId));
+  const items = r.items.map((i): GenItem => {
+    if (!targetIds.has(i.sourceId)) return i;
+    const t = idx.get(i.sourceId)?.t;
+    const confirmedPrior = t && t.status?.[sec] === 'confirmed' && lt(t, pri, false) === i[pri] ? lt(t, sec, false) : undefined;
+    const d = decideTranslation(i[pri], best.get(i.sourceId), confirmedPrior, t ? lt(t, sec, false) || undefined : undefined);
+    return { ...i, [sec]: d.text, syncStatus: d.syncStatus, translation: d.translation };
   });
   const next = { ...r, items };
   fillSecondaryFromProfile(p, next, false);

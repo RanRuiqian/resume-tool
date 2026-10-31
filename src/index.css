@@ -193,3 +193,6 @@ details.df > summary { font-weight: 500; color: #2d3748; padding: 6px 0; }
 .backups summary { font-weight: 500; }
 .import-plan td { vertical-align: top; } .import-plan .old { color: #9b2c2c; text-decoration: line-through; } .import-plan .new { color: #276749; }
 .import-plan tr.skip { opacity: .5; }
+.import-plan tr.undecided td { background: #fff8e6; }
+.ai-disclosure { margin: 6px 0; }
+.ai-disclosure summary { cursor: pointer; }

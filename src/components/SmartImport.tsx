@@ -6,7 +6,7 @@ import { translateProfile } from '../ai/translate';
 import { fileToText } from '../ai/fileText';
 import { ProgressNote } from './ProgressNote';
 import type { ProfileDoc } from '../types';
-import { applyImportPlan, buildImportPlan, sectionLabel, type ImportPlan, type PlanAction } from '../ai/importPlan';
+import { applyImportPlan, buildImportPlan, sectionLabel, undecidedCount, type ImportPlan, type PlanAction } from '../ai/importPlan';
 import { normalizeProfile } from '../storage/profileIO';
 
 const PLACEHOLDER = `随便写，不用管顺序和格式，例如：
@@ -97,8 +97,9 @@ export function SmartImport() {
         <label className="filebtn">📎 {L('或选择文件（PDF / Word / 图片 / txt）', 'or choose a file (PDF / Word / image / txt)')}<input type="file" hidden accept=".pdf,.docx,.txt,.md,image/png,image/jpeg,image/webp" onChange={(e) => { const f = e.target.files?.[0]; if (f) loadFile(f); e.target.value = ''; }} /></label>
         <span className="muted small">{text.length ? L(`${text.length} 字`, `${text.length} chars`) : ''}</span>
         <span className="spacer" />
-        <button className="primary big" disabled={!text.trim() || !!prog} onClick={run}>✨ {L('智能识别并填入', 'Recognize & fill')}</button>
+        <button className="primary big" disabled={!text.trim() || !!prog} onClick={run} title={L('会把上面这段文字发送给外部 AI 模型', 'Sends the text above to the external AI model')}>✨ {L('智能识别并填入', 'Recognize & fill')}</button>
       </div>
+      {!settings.demoMode && <div className="muted small" data-testid="ai-disclosure">🔒 {L(`点击后，上面文本框里的文字（含其中的姓名、联系方式、本地路径等）会发送给外部 AI 模型（${settings.baseUrl || 'DeepSeek'}）用于识别；照片、证据文件本身不会发送。`, `Clicking sends the text above to the external AI model; photos and evidence files are never sent.`)}</div>}
       {prog && <ProgressNote msg={prog.m} pct={prog.p} />}
       {err && <div className="notice error">{err}</div>}
       {done && <div className="notice ok">✓ {done}{undoDoc && <button className="link" onClick={undoImport}>{L('撤销本次导入', 'Undo import')}</button>}</div>}
@@ -111,23 +112,23 @@ export function SmartImport() {
               <tr key={k} className={n === 0 ? 'empty-row' : ''}>
                 <td><b>{label}</b></td><td className="num">{n}</td>
                 <td className="small">{sum || <span className="muted">{L('未识别到（保持空白）', 'none found (left empty)')}</span>}
-                  {u.map((x, i) => <div key={i} className="uncertain">⚠ {x.field}：{x.note}</div>)}</td>
+                  {u.map((x, i) => <div key={i} className="uncertain">⚠ {x.segment ? L(`第 ${x.segment} 段 · `, `part ${x.segment} · `) : ''}{x.note}</div>)}</td>
               </tr>);
           })}</tbody></table>
-          {res.u.filter((x) => !rows.some(([k]) => x.field.toLowerCase().startsWith(k === 'basic' ? 'name' : k))).map((x, i) => <div key={i} className="uncertain small">⚠ {x.field}：{x.note}</div>)}
+          {(plan?.otherUncertain.length ?? 0) > 0 && <div className="uncertain small" data-testid="unassigned">⚠ {L('未分配的待核对问题（无法确定属于哪一条）：', 'Unassigned items to review: ')}{plan!.otherUncertain.map((x) => `${x.field ? x.field + '：' : ''}${x.note}`).join('；')}</div>}
           {missingDates > 0 && <div className="uncertain small">⚠ {L(`${missingDates} 段经历没有识别到开始时间，请在下方补上`, `${missingDates} entries have no start date — please fill in below`)}</div>}
           <div className="muted small">{L('另一种语言为机翻，已标记「机翻待校对」。', 'The other language is machine-translated and marked for review.')}</div>
           {hasExisting && plan && (plan.items.length > 0 || plan.basics.length > 0) && (
             <div className="import-plan" data-testid="import-plan">
               <h4>{L('和现有资料对照（逐条选择怎么处理）', 'Compare with your profile')}</h4>
-              <p className="muted small">{L('「合并」只会追加新要点、补空白字段；有冲突的字段默认保留你原来的值。', 'Merge only appends new points and fills blanks; conflicting fields keep your old value by default.')}</p>
+              <p className="muted small">{L('完全重复的条目默认合并；可能重复或有冲突的需要你选择「合并 / 作为新条目 / 不导入」。「合并」只会追加新要点、补空白字段，并保留合并记录；有冲突的字段默认保留你原来的值。', 'Merge only appends new points and fills blanks; conflicting fields keep your old value by default.')}</p>
               <table><tbody>
                 {plan.basics.map((b) => (
                   <tr key={b.path} className={b.useNew ? '' : 'skip'}><td>{L('基本信息', 'Basic')}</td><td><b>{b.label}</b></td>
                     <td className="small">{b.old ? <><span className="old">{b.old}</span> → </> : null}<span className="new">{b.new}</span>{b.old && <div className="uncertain">⚠ {L('与现有值不同', 'differs from current value')}</div>}</td>
                     <td><label className="check"><input type="checkbox" checked={b.useNew} onChange={(e) => setBasic(b.path, e.target.checked)} /> {b.old ? L('用新值', 'use new') : L('填入', 'fill')}</label></td></tr>))}
                 {plan.items.map((it) => (
-                  <tr key={it.key} className={it.action === 'skip' ? 'skip' : ''}>
+                  <tr key={it.key} className={it.action === 'skip' ? 'skip' : it.action === 'undecided' ? 'undecided' : ''}>
                     <td>{sectionLabel(it.section)}</td>
                     <td><b>{it.title}</b><div>{it.status === 'new' ? <span className="badge st-confirmed">{L('新增', 'new')}</span>
                       : it.status === 'duplicate' ? <span className="badge st-manual">{L('重复', 'duplicate')}</span>
@@ -137,9 +138,12 @@ export function SmartImport() {
                       {it.newPoints.map((x, i) => <div key={i} className="new">＋ {x}</div>)}
                       {it.conflicts.map((c) => <div key={c.field} className="uncertain">⚠ {c.label}：<span className={c.useNew ? 'old' : ''}>{c.old}</span> / <span className={c.useNew ? 'new' : 'old'}>{c.new}</span>
                         <label className="check"><input type="checkbox" checked={c.useNew} onChange={(e) => setConflict(it.key, c.field, e.target.checked)} /> {L('用新值', 'use new')}</label></div>)}
+                      {it.relatedNote && <div className="muted">🔗 {it.relatedNote}</div>}
                       {it.uncertain.map((x, i) => <div key={i} className="uncertain">⚠ {x}</div>)}
+                      {it.conflicts.some((c) => c.oldConfirmed && c.useNew) && <label className="check uncertain"><input type="checkbox" checked={it.conflicts.every((c) => !c.oldConfirmed || !c.useNew || (c as { overrideConfirmed?: boolean }).overrideConfirmed)} onChange={(e) => setPlan((pl) => pl && { ...pl, items: pl.items.map((x) => (x.key === it.key ? { ...x, conflicts: x.conflicts.map((c) => (c.oldConfirmed ? { ...c, overrideConfirmed: e.target.checked } : c)) } : x)) })} /> {L('该字段你已确认过，仍要用新值覆盖', 'This field was confirmed; override anyway')}</label>}
                     </td>
-                    <td><select value={it.action} onChange={(e) => setAction(it.key, e.target.value as PlanAction)}>
+                    <td><select value={it.action} onChange={(e) => setAction(it.key, e.target.value as PlanAction)} aria-label={L('处理方式', 'Action')}>
+                      {it.action === 'undecided' && <option value="undecided" disabled>{L('请选择…', 'Choose…')}</option>}
                       {it.matchId && <option value="merge">{L('合并', 'Merge')}</option>}
                       <option value="add">{L('作为新条目', 'Add new')}</option>
                       <option value="skip">{L('不导入', 'Skip')}</option>
@@ -151,7 +155,8 @@ export function SmartImport() {
           <div className="row end">
             <button onClick={() => { setRes(null); setPlan(null); }}>{L('取消', 'Cancel')}</button>
             {hasExisting && <button className="danger" onClick={() => apply('replace')}>{L('替换现有资料', 'Replace profile')}</button>}
-            <button className="primary" onClick={() => apply('merge')}>{hasExisting ? L('按以上选择导入', 'Import as selected') : L('填入资料', 'Fill profile')}</button>
+            {plan && undecidedCount(plan) > 0 && <span className="uncertain small">⚠ {L(`还有 ${undecidedCount(plan)} 条可能重复 / 有冲突，请先选择处理方式`, `${undecidedCount(plan)} items need a decision`)}</span>}
+            <button className="primary" disabled={!!plan && undecidedCount(plan) > 0} onClick={() => apply('merge')}>{hasExisting ? L('按以上选择导入', 'Import as selected') : L('填入资料', 'Fill profile')}</button>
           </div>
         </div>
       )}

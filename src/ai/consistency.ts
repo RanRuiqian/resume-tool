@@ -5,8 +5,13 @@ const UNIT: Record<string, number> = { 万: 1e4, 亿: 1e8, k: 1e3, K: 1e3, thous
  * 抽取数字 token 并做单位归一：全角转半角、去千分位、"20 万" = "200K" = "200,000"、"1200 万" = "12 million"。
  * 字母中间的数字（B2B、H5）不计。
  */
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+/** 英文月份 + 年份 → "YYYY-M"，使 "Mar 2024" 与 "2024年3月" 的数字一致 */
+function normMonths(s: string): string {
+  return s.replace(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?\s+(\d{4})\b/gi, (_m, mo: string, y: string) => `${y}-${MONTHS.indexOf(mo.toLowerCase().slice(0, 3)) + 1}`);
+}
 export function numberTokens(s: string): string[] {
-  const norm = s.replace(/[\uff10-\uff19]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/(\d),(?=\d{3}\b)/g, '$1');
+  const norm = normMonths(s).replace(/[\uff10-\uff19]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0xfee0)).replace(/(\d),(?=\d{3}\b)/g, '$1');
   const re = /(?<![A-Za-z\d.])(\d+(?:\.\d+)?)(?:\s*(万|亿|thousand|million|billion|mn|bn|[kKmMbB])(?![A-Za-z]))?/g;
   const out: string[] = [];
   for (const m of norm.matchAll(re)) {
@@ -44,4 +49,21 @@ export function checkConsistency(items: GenItem[], expectedIds?: string[]): Cons
     for (const id of seen) if (!exp.has(id)) issues.push({ sourceId: id, type: 'extra', message: `多出条目（不在资料库中）：${id}` });
   }
   return issues;
+}
+
+const CUR: [RegExp, string][] = [[/[¥￥]|元|人民币|\bRMB\b|\bCNY\b/gi, 'CNY'], [/\$|美元|\bUSD\b/gi, 'USD'], [/€|欧元|\bEUR\b/gi, 'EUR']];
+const PCT = /(\d+(?:\.\d+)?)\s*(?:%|％|percent\b|个百分点|percentage points?)|百分之\s*(\d+(?:\.\d+)?)/gi;
+/** 需要跨语言保持一致的事实：数字（含单位归一、日期）、百分比、币种 */
+export function factTokens(s: string): { nums: string[]; pct: string[]; cur: string[] } {
+  const pct = [...s.matchAll(PCT)].map((m) => String(parseFloat(m[1] ?? m[2]))).sort();
+  const cur = [...new Set(CUR.filter(([re]) => { re.lastIndex = 0; return re.test(s); }).map(([, c]) => c))].sort();
+  return { nums: numberTokens(s), pct, cur };
+}
+/** 比较原文与译文的关键事实；返回差异说明（为空 = 只是措辞变化）。不会通过删除数字"修复" */
+export function compareFacts(a: string, b: string): string[] {
+  const x = factTokens(a), y = factTokens(b); const out: string[] = [];
+  if (x.nums.join('|') !== y.nums.join('|')) out.push(`数字/日期不同：[${x.nums.join(', ')}] vs [${y.nums.join(', ')}]`);
+  if (x.pct.join('|') !== y.pct.join('|')) out.push(`百分比不同：[${x.pct.join(', ')}] vs [${y.pct.join(', ')}]`);
+  if (x.cur.join('|') !== y.cur.join('|')) out.push(`金额币种不同：[${x.cur.join(', ')}] vs [${y.cur.join(', ')}]`);
+  return out;
 }

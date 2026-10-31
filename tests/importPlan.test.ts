@@ -45,6 +45,11 @@ describe('import plan', () => {
     const b = base(); const i = inc();
     const plan = buildImportPlan(b, i, [{ field: 'projects[0].start', note: '原文未写时间' }]);
     plan.items.find((x) => x.title === 'ROS2')!.action = 'skip';
+    // 有冲突的条目默认「未选择」，未选择时拒绝导入（A1）
+    const w = plan.items.find((x) => x.section === 'work')!;
+    expect(w.action).toBe('undecided');
+    expect(() => applyImportPlan(b, i, plan)).toThrow(/未选择/);
+    w.action = 'merge';
     const out = normalizeProfile(applyImportPlan(b, i, plan));
     expect(out.work.length).toBe(1);
     expect(out.work[0].end).toBe('2025-08');

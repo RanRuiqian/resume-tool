@@ -30,6 +30,12 @@ export interface BaseEntry {
   id: string; enabled: boolean;
   /** 智能导入时 AI 不确定的地方，需人工核对（v1.3） */
   uncertain?: string[];
+  /** 相关但独立的条目（同公司其它职位 / 同项目其它阶段）（v1.4） */
+  relatedIds?: string[];
+  /** 智能导入新增时的来源记录（v1.4） */
+  importedFrom?: { importTag: string; incomingId: string; at: string };
+  /** 智能导入合并记录：被合并内容快照、覆盖字段、追加要点 id（v1.4） */
+  mergeHistory?: { at: string; importTag: string; incomingId: string; incomingTitle: string; fieldsOverwritten: { field: string; old: string; new: string }[]; pointsAdded: string[]; incomingSnapshot: string }[];
 }
 
 /** 学位证明状态 */
@@ -179,7 +185,23 @@ export interface JobParse {
   summary: string;
 }
 
-export interface GenItem { sourceId: string; zh: string; en: string; syncStatus: 'in-sync' | 'pending' }
+/** needs-review：副版本未通过数字 / 事实一致性校验，需要人工核对（A2） */
+export type SyncStatus = 'in-sync' | 'pending' | 'needs-review';
+export interface TranslationCheck {
+  /** 副版本来自：ai 新译文 / 已确认的历史译文 / 资料库译文 / 无 */
+  source: 'ai' | 'confirmed' | 'profile' | 'none';
+  /** AI 原始译文（未通过校验时保留，便于人工核对） */
+  aiText?: string;
+  /** 事实差异（数字、百分比、单位、日期、金额）；为空表示只是措辞变化 */
+  factIssues: string[];
+  checkedAt: string;
+}
+export interface GenItem {
+  sourceId: string; zh: string; en: string; syncStatus: SyncStatus;
+  translation?: TranslationCheck;
+  /** 用户人工确认过的语言版本：重新本地化时优先保留（B6） */
+  confirmedLangs?: Lang[];
+}
 export interface ConsistencyIssue { sourceId?: string; type: 'missing' | 'extra' | 'number' | 'empty' | 'count'; message: string }
 export interface ResumeDoc {
   id: string;

@@ -25,7 +25,8 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 "evidence":[{"fileName":"","type":"other","location":"","proves":"","project":"","skill":""}]}`;
 
 type S = string | undefined;
-export interface Uncertain { field: string; note: string }
+/** entryId：分段导入时解析出的稳定条目 id（A3）；segment：来自第几段；都无法解析的进入「未分配」 */
+export interface Uncertain { field: string; note: string; entryId?: string; segment?: number }
 export interface Raw {
   lang?: Lang; name?: S; birth?: S; gender?: S; hometown?: S; politics?: S; uncertain?: { field?: S; note?: S }[]; headline?: S; summary?: S; email?: S; phone?: S; location?: S; github?: S; linkedin?: S; website?: S;
   education?: { school?: S; degree?: S; major?: S; start?: S; end?: S; highlights?: S[]; courseCompletionDate?: S; expectedConferralDate?: S; actualConferralDate?: S; availableFullTimeDate?: S; courses?: S[] }[];
@@ -86,9 +87,13 @@ export async function importProfileDetailed(s: Settings, text: string, onProgres
     onProgress?.(i + 1, chunks.length);
     const hint = chunks.length > 1 ? `（这是全部资料的第 ${i + 1}/${chunks.length} 段，可能只含部分信息）` : '';
     const r = await chatJson<Raw>(s, [{ role: 'system', content: '你是严谨的简历整理助手，只输出 JSON。' }, { role: 'user', content: `${PROMPT}${hint}\n\n原文：\n"""\n${chunks[i]}\n"""` }]);
-    for (const u of Array.isArray(r.uncertain) ? r.uncertain : []) if (u?.field || u?.note) uncertain.push({ field: (u.field ?? '').trim(), note: (u.note ?? '').trim() });
     const p = rawToProfile(r);
-    acc = acc ? mergeProfiles(acc, p) : p;
+    // 先在「本段」内用本段下标解析成稳定 id，再随合并映射到最终条目（A3：不依赖跨段会错位的局部下标）
+    const segU: Uncertain[] = [];
+    for (const u of Array.isArray(r.uncertain) ? r.uncertain : []) if (u?.field || u?.note) segU.push(resolveUncertain({ field: (u.field ?? '').trim(), note: (u.note ?? '').trim() }, p, i + 1));
+    const idMap = new Map<string, string>();
+    acc = acc ? mergeProfiles(acc, p, idMap) : p;
+    for (const u of segU) uncertain.push(u.entryId ? { ...u, entryId: idMap.get(u.entryId) ?? u.entryId } : u);
   }
   return { profile: acc ?? rawToProfile({}), uncertain };
 }
@@ -97,13 +102,22 @@ export async function importProfileFromText(s: Settings, text: string): Promise<
   return (await importProfileDetailed(s, text)).profile;
 }
 
+/** 把单段内 "work[0].end" 解析成该段资料里的条目 id；越界 / 无法识别时不设 entryId（留作未分配） */
+export function resolveUncertain(u: Uncertain, seg: ProfileDoc, segment: number): Uncertain {
+  const m = /^(education|work|projects?|skills?|certificates?|awards?|evidence)\s*\[(\d+)\]/i.exec(u.field);
+  if (!m) return { ...u, segment };
+  let sec = m[1].toLowerCase(); if (!sec.endsWith('s') && sec !== 'work' && sec !== 'education' && sec !== 'evidence') sec += 's';
+  const list = (seg as unknown as Record<string, { id: string }[]>)[sec] ?? [];
+  const e = list[Number(m[2])];
+  return e ? { ...u, entryId: e.id, segment } : { ...u, segment };
+}
 const nk = (...v: (string | undefined)[]) => v.map((x) => (x ?? '').toLowerCase().replace(/[\s·,，.。()（）-]/g, '')).join('|');
 const ltk = (t: LocalizedText) => t.zh || t.en || '';
 
 /** 合并（去重）：基本信息只补空白；同一段经历（公司+职位 / 学校+专业 / 项目名 / 技能名 / 证书名）合并要点，不重复追加 */
-export function mergeProfiles(base: ProfileDoc, add: ProfileDoc): ProfileDoc {
+export function mergeProfiles(base: ProfileDoc, add: ProfileDoc, idMap?: Map<string, string>): ProfileDoc {
   const isEmpty = !base.profile.name.zh && !base.profile.name.en && !base.work.length && !base.education.length && !base.projects.length && !base.skills.length;
-  if (isEmpty) return { ...add, glossary: base.glossary };
+  if (isEmpty) { for (const k of ['education', 'work', 'projects', 'skills', 'certificates', 'awards', 'evidence'] as const) for (const e of (add[k] ?? []) as { id: string }[]) idMap?.set(e.id, e.id); return { ...add, glossary: base.glossary }; }
   const out = structuredClone(base);
   const tag = `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const fill = (a: LocalizedText, b: LocalizedText) => (a.zh || a.en ? a : b);
@@ -119,7 +133,8 @@ export function mergeProfiles(base: ProfileDoc, add: ProfileDoc): ProfileDoc {
   const mergeList = <T extends WithList>(dst: T[], src: T[], key: (e: T) => string) => {
     for (const e of src) {
       const k = key(e); const hit = k.replace(/\|/g, '') ? dst.find((d) => key(d) === k) : undefined;
-      if (!hit) { dst.push(re(e)); continue; }
+      if (!hit) { const n = re(e); idMap?.set(e.id, n.id); dst.push(n); continue; }
+      idMap?.set(e.id, hit.id);
       for (const f of ['bullets', 'highlights'] as const) {
         const a = hit[f], b = e[f]; if (!a || !b) continue;
         const seen = new Set(a.map((x) => nk(ltk(x))));
@@ -140,7 +155,9 @@ export function mergeProfiles(base: ProfileDoc, add: ProfileDoc): ProfileDoc {
   const remap = <T extends { id: string; name: LocalizedText }>(ids: string[], from: T[], to: T[]) => ids.map((pid) => { const n = from.find((x) => x.id === pid); return n ? to.find((x) => nk(ltk(x.name)) === nk(ltk(n.name)))?.id : undefined; }).filter((x): x is string => !!x);
   out.evidence = out.evidence ?? [];
   for (const ev of add.evidence ?? []) {
-    if (out.evidence.some((x) => nk(x.fileName, x.location) === nk(ev.fileName, ev.location))) continue;
+    const dupEv = out.evidence.find((x) => nk(x.fileName, x.location) === nk(ev.fileName, ev.location));
+    if (dupEv) { idMap?.set(ev.id, dupEv.id); continue; }
+    idMap?.set(ev.id, `${tag}-${ev.id}`);
     out.evidence.push({ ...ev, id: `${tag}-${ev.id}`, projectIds: remap(ev.projectIds, add.projects, out.projects), skillIds: remap(ev.skillIds, add.skills, out.skills) });
   }
   return out;

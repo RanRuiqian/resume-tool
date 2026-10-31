@@ -1,3 +1,4 @@
+import { AiDisclosure } from '../components/AiDisclosure';
 import { uiStorage } from '../storage/mode';
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store';
@@ -282,12 +283,12 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
 
   const resync = async () => {
     if (!resume) return;
-    const ids = resume.items.filter((i) => i.syncStatus === 'pending').map((i) => i.sourceId);
+    const ids = resume.items.filter((i) => i.syncStatus !== 'in-sync').map((i) => i.sourceId);
     if (settings.demoMode) { setResume(runConsistency({ ...resume, items: resume.items.map((i) => ({ ...i, syncStatus: 'in-sync' })) })); return; }
     setBusy('重新翻译修改过的条目…');
     try { setResume(await localizeAi(settings, profile, job, resume, ids)); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
-  const pending = resume?.items.filter((i) => i.syncStatus === 'pending').length ?? 0;
+  const pending = resume?.items.filter((i) => i.syncStatus !== 'in-sync').length ?? 0;
   const photoPos = template.locales.zh.photo.enabled ? template.locales.zh.photo.position : 'none';
   const baseOf = (id: string) => ALL_TEMPLATES.find((b) => id === b.id || id.startsWith(b.id + '-custom'))?.id;
   const pageText = (l: Lang) => pages === 'error' ? '—' : pages ? `${pages[l].pages} 页${pages[l].level ? '（已自动缩排）' : ''}${pages[l].overflow ? ' ⚠ 超出目标页数' : ''}` : '计算中…';
@@ -295,6 +296,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
   return (
     <div className="step">
       <h2>③ 生成并预览</h2>
+      <AiDisclosure />
       {busy && <div className="notice"><span className="spinner" /> {busy}</div>}
       {err && <div className="notice error">{err}</div>}
       {resume && (
