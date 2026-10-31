@@ -76,7 +76,7 @@ export function ApplicationsPage({ sub, go }: { sub: string; go: (p: string) => 
           <span className="muted small">{list.length} / {postings.length}</span>
         </div>
         {postings.length === 0 ? <div className="card empty" data-testid="empty">{L('还没有岗位。点「新增岗位」手动添加，或在「导入记录」导入以前的投递表格。', 'No jobs yet. Add one or import a spreadsheet.')}</div> : (
-          <table className="items tracker-list" data-testid="posting-list"><thead><tr><th>{L('企业 / 岗位', 'Company / title')}</th><th>{L('城市', 'City')}</th><th>{L('类型', 'Type')}</th><th>{L('状态', 'Status')}</th><th>{L('截止', 'Deadline')}</th><th>{L('优先级', 'Priority')}</th><th>{L('链接', 'Link')}</th><th /></tr></thead><tbody>
+          <div className="scroll-x"><table className="items tracker-list" data-testid="posting-list"><thead><tr><th>{L('企业 / 岗位', 'Company / title')}</th><th>{L('城市', 'City')}</th><th>{L('类型', 'Type')}</th><th>{L('状态', 'Status')}</th><th>{L('截止', 'Deadline')}</th><th>{L('优先级', 'Priority')}</th><th>{L('链接', 'Link')}</th><th /></tr></thead><tbody>
             {list.map((p) => { const a = latest.get(p.id); return (
               <tr key={p.id} data-testid="posting-row">
                 <td><button className="link strong" data-testid="open-posting" onClick={() => go(`applications/${p.id}`)}>{p.company} · {p.title}</button>{p.category && <div className="muted small">{p.category}</div>}</td>
@@ -85,7 +85,7 @@ export function ApplicationsPage({ sub, go }: { sub: string; go: (p: string) => 
                 <td>{p.deadline || '—'}</td><td>{PRIORITY_LABEL[p.priority]}</td><td><ExtLink url={p.applyUrl || p.officialUrl} label={L('打开', 'Open')} /></td>
                 <td className="nowrap">{!a && <button className="link" data-testid="quick-save" onClick={async () => { await createApplication(db, p.id, 'saved' as AppStatus); await reload(); }}>⭐ {L('收藏', 'Save')}</button>}<button className="link" onClick={async () => { const n = await copyPosting(db, p.id); await reload(); go(`applications/${n.id}/edit`); }}>{L('复制', 'Copy')}</button><button className="link danger" onClick={() => del(p.id)}>{L('删除', 'Delete')}</button></td>
               </tr>); })}
-          </tbody></table>)}
+          </tbody></table></div>)}
       </>)}
     </div>
   );

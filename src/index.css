@@ -232,3 +232,15 @@ pre.jd { white-space: pre-wrap; background: #f7fafc; padding: 10px; border-radiu
 .scroll-x { overflow-x: auto; } .chip.kind-new { background: #f0fff4; } .chip.kind-conflict { background: #fffaf0; } .chip.kind-invalid { background: #fff5f5; }
 .tracker-return { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; } .card.empty { text-align: center; padding: 30px; color: #718096; }
 button.danger, .link.danger { color: #c53030; }
+
+/* 第三阶段验收：窄屏布局修正（不改设计，只避免溢出与遮挡） */
+.layout-grid > *, .grid2 > *, .pool-layout > * { min-width: 0; }
+.layout-grid .preview, .layout-grid .previews { overflow-x: auto; }
+.grid2 select, .grid2 input:not([type=checkbox]):not([type=radio]):not([type=color]) { max-width: 100%; }
+@media (max-width: 640px) {
+  .tracker-list th:nth-child(3), .tracker-list td:nth-child(3),
+  .tracker-list th:nth-child(5), .tracker-list td:nth-child(5),
+  .tracker-list th:nth-child(6), .tracker-list td:nth-child(6) { display: none; }
+  .tracker-list td, .tracker-list th { padding: 6px 4px; }
+  .row { flex-wrap: wrap; }
+}
