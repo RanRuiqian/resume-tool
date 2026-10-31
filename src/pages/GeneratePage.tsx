@@ -1,4 +1,5 @@
 import { AiDisclosure } from '../components/AiDisclosure';
+import { AuditBadge, FactAudit } from '../components/FactAudit';
 import { useState } from 'react';
 import { useApp } from '../store';
 import { useT } from '../i18n';
@@ -14,6 +15,7 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
   const t = useT();
   const [primary, setPrimary] = useState<Lang>(job?.jdLanguage ?? 'zh');
   const [busy, setBusy] = useState('');
+  const [showAudit, setShowAudit] = useState(false);
   const [err, setErr] = useState('');
   const [view, setView] = useState<'zh' | 'en' | 'both'>('both');
   const [showExport, setShowExport] = useState(false);
@@ -63,6 +65,7 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
                 <div><b>缺口：</b>{resume.gaps.length ? resume.gaps.map((g) => <span key={g} className="badge st-stale">{g}</span>) : '无'}</div>
                 <div className="muted small">生成方式：{resume.generatedBy === 'ai' ? 'AI 改写' : '规则匹配'} · 主版本 {resume.primaryLanguage === 'zh' ? '中文' : 'English'} · 共 {resume.items.length} 条，均可追溯到资料库 sourceId</div>
                 {resume.notes?.map((n, i) => <div key={i} className="muted small">· {n}</div>)}
+                <AuditBadge onOpen={() => setShowAudit(true)} />
               </div>
             </div>
             <div className={`notice ${resume.consistency.issues.length ? 'error' : 'ok'}`}>
@@ -71,6 +74,7 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
             </div>
             {pending > 0 && <div className="notice warn">{pending} 条主版本已修改，副版本待同步。<button onClick={resync}>重新本地化</button></div>}
           </div>
+          {showAudit && <FactAudit onClose={() => setShowAudit(false)} />}
           <div className="card"><h4>逐条微调（左：中文，右：English）</h4><ItemsEditor /></div>
         </>
       )}

@@ -1,3 +1,4 @@
+import { useAuditSummary } from '../audit/useAudit';
 import { useEffect, useState } from 'react';
 import { useApp } from '../store';
 import { buildExportNames, formatDateStamp } from '../export/naming';
@@ -9,6 +10,7 @@ import type { Lang } from '../types';
 
 /** 导出前确认公司名 / 岗位缩写，预览 zip 与 4 个文件名（F6.6–F6.9） */
 export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?: boolean }) {
+  const auditSum = useAuditSummary();
   const { profile, template, resume, job } = useApp();
   const [company, setCompany] = useState(job?.company.short ?? '');
   const [abbr, setAbbr] = useState(job?.roleAbbr ?? '');
@@ -74,6 +76,7 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
         </div>
         {hasKit && <label className="check"><input type="checkbox" checked={withKit} onChange={(e) => { setWithKit(e.target.checked); localStorage.setItem('zipKit', e.target.checked ? '1' : '0'); }} /> 同时打包求职信 / 自我介绍 / 备考方向（Word）</label>}
         <div className="muted small">PDF 直接投递；Word 版方便你再微调。文件名不含姓名，投递前可自行改名。</div>
+        {auditSum && auditSum.unconfirmedRed > 0 && <div className="notice error" data-testid="export-audit-warn">⚠ 事实审查还有 {auditSum.unconfirmedRed} 处高风险改写未确认，导出的简历可能包含无法追溯到你资料的内容。仍可导出，但建议先处理。</div>}
         {warnings.map((w) => <div key={w} className="notice warn">⚠ {w}</div>)}
         {busy && <div className="notice">{busy}</div>}
         {done && <div className="notice ok">✓ {done}</div>}

@@ -33,6 +33,12 @@ export class ResumeDB extends Dexie {
         row.doc = normalizeProfile(before);
       });
     });
+    // v3（第二阶段）：历史简历补齐条目同步状态；事实审查记录 audit 为可选字段，旧简历保持原样即可读取
+    this.version(3).stores({}).upgrade(async (tx) => {
+      await tx.table('resumes').toCollection().modify((r: ResumeDoc) => {
+        r.items = (r.items ?? []).map((i) => ({ ...i, syncStatus: i.syncStatus ?? 'in-sync' }));
+      });
+    });
   }
 }
 

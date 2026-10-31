@@ -196,3 +196,22 @@ details.df > summary { font-weight: 500; color: #2d3748; padding: 6px 0; }
 .import-plan tr.undecided td { background: #fff8e6; }
 .ai-disclosure { margin: 6px 0; }
 .ai-disclosure summary { cursor: pointer; }
+/* 事实审查（第二阶段） */
+.fact-audit .seg { display: inline-flex; gap: 0; margin-left: 10px; }
+.fact-audit .seg button { border-radius: 0; } .fact-audit .seg button:first-child { border-radius: 6px 0 0 6px; } .fact-audit .seg button:last-child { border-radius: 0 6px 6px 0; }
+.fact-audit .seg button.active { background: var(--c); color: #fff; }
+.audit-summary { display: flex; flex-wrap: wrap; gap: 14px; margin: 10px 0; font-size: 13px; }
+.lv { display: inline-block; padding: 1px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
+.lv.red { background: #fff5f5; color: #c53030; } .lv.yellow { background: #fffbea; color: #975a16; } .lv.green { background: #f0fff4; color: #276749; } .lv.gray { background: #edf2f7; color: #4a5568; }
+.audit-item { border: 1px solid var(--line); border-left: 4px solid #cbd5e0; border-radius: 8px; padding: 10px 12px; margin: 10px 0; background: #fff; }
+.audit-item.lv-red { border-left-color: #e53e3e; } .audit-item.lv-yellow { border-left-color: #d69e2e; } .audit-item.lv-green { border-left-color: #38a169; }
+.audit-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.audit-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 8px 0; }
+.audit-cols textarea { width: 100%; }
+.audit-text { background: #f8fafc; border-radius: 6px; padding: 6px 8px; line-height: 1.6; }
+mark.diff-add { background: #c6f6d5; padding: 0 1px; } del.diff-del { background: #fed7d7; color: #9b2c2c; }
+.audit-checks { display: flex; flex-wrap: wrap; gap: 4px 14px; list-style: none; padding: 0; margin: 4px 0; }
+.audit-checks .ok { color: #276749; } .audit-checks .bad { color: #c53030; }
+.finding { font-size: 12.5px; padding: 4px 8px; border-radius: 6px; margin: 4px 0; }
+.finding.red { background: #fff5f5; } .finding.yellow { background: #fffbea; } .finding.gray { background: #f7fafc; } .finding.green { background: #f0fff4; }
+@media (max-width: 760px) { .audit-cols { grid-template-columns: 1fr; } }
