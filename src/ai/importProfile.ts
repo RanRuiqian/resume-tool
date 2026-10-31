@@ -1,6 +1,6 @@
 import type { Lang, LocalizedText, ProfileDoc, Settings } from '../types';
 import { chatJson } from './provider';
-import { emptyProfile, normalizeProfile } from '../storage/profileIO';
+import { emptyProfile, normalizeEvidence, normalizeProfile } from '../storage/profileIO';
 
 const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 JSON。规则：
 - 只整理原文中出现的信息，严禁补充、推测或美化；原文没有的字段留空字符串或空数组。
@@ -10,7 +10,8 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 - headline 只写职位名称本身（如「数据分析师」），不要带「求职意向：」等前缀；education.highlights 只写成绩/奖项等亮点，不要重复学校、专业、学位。
 - 文字可能杂乱无序、混合口语，请自行归类；birth（出生年月 YYYY-MM）、gender、hometown（籍贯）、politics（政治面貌）只在原文明确写出时填写。
 - uncertain：列出你不确定的归类或字段（如日期只给了大概、无法判断是工作还是项目、学位不明），每项 {"field":"如 work[0].end","note":"原因"}；确定的不要列。
-- skills 每个技能一项，category 为分类（如 前端 / 后端 / 语言 / 工具），没有则空。
+- skills 每个技能一项，category 为分类（如 前端 / 后端 / 语言 / 工具），没有则空。只列原文明确写出会用/用过的技能，严禁根据专业、课程或岗位名称推断技能。
+- evidence：原文提到的证明材料（论文、专利、证书、成绩单、代码仓库链接、报告、获奖证书、照片等）各一项：fileName 名称，type 取 paper/patent/certificate/transcript/code/report/photo/video/award/other，location 原文给出的链接或存放位置（没有就空），proves 它证明的具体事实，project/skill 填它关联的项目名/技能名（原文看得出才填）。没有提到就输出空数组。
 输出 JSON：
 {"lang":"zh","name":"","headline":"","summary":"","email":"","phone":"","location":"","github":"","linkedin":"","website":"",
 "birth":"","gender":"","hometown":"","politics":"","uncertain":[{"field":"","note":""}],
@@ -19,7 +20,8 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 "projects":[{"name":"","role":"","start":"","end":"","bullets":[""],"tags":[""],"link":""}],
 "skills":[{"name":"","category":""}],
 "certificates":[{"name":"","issuer":"","date":""}],
-"awards":[{"name":"","issuer":"","date":""}]}`;
+"awards":[{"name":"","issuer":"","date":""}],
+"evidence":[{"fileName":"","type":"other","location":"","proves":"","project":"","skill":""}]}`;
 
 type S = string | undefined;
 export interface Uncertain { field: string; note: string }
@@ -31,6 +33,7 @@ export interface Raw {
   skills?: { name?: S; category?: S }[];
   certificates?: { name?: S; issuer?: S; date?: S }[];
   awards?: { name?: S; issuer?: S; date?: S }[];
+  evidence?: { fileName?: S; type?: S; location?: S; proves?: S; project?: S; skill?: S }[];
 }
 
 /** 把 AI 输出的单语结构转为双语资料库（另一语言留空，后续补译） */
@@ -53,6 +56,11 @@ export function rawToProfile(r: Raw): ProfileDoc {
   p.skills = arr(r.skills).filter((e) => e.name).map((e) => ({ id: id('sk'), enabled: true, name: L(e.name), category: L(e.category) }));
   p.certificates = arr(r.certificates).filter((e) => e.name).map((e) => ({ id: id('cert'), enabled: true, name: L(e.name), issuer: L(e.issuer), date: d(e.date) }));
   p.awards = arr(r.awards).filter((e) => e.name).map((e) => ({ id: id('award'), enabled: true, name: L(e.name), issuer: L(e.issuer), date: d(e.date) }));
+  const byName = <T extends { id: string; name: LocalizedText }>(list: T[], name: S) => { const n = (name ?? '').trim().toLowerCase(); return n ? list.filter((x) => (x.name.zh || x.name.en || '').toLowerCase() === n).map((x) => x.id) : []; };
+  p.evidence = arr(r.evidence).filter((e) => e.fileName || e.location || e.proves).map((e) => normalizeEvidence({
+    id: id('ev'), fileName: d(e.fileName), type: d(e.type), location: d(e.location), proves: d(e.proves),
+    projectIds: byName(p.projects, e.project), skillIds: byName(p.skills, e.skill), confirmed: false, publicOk: false,
+  }));
   return normalizeProfile(p);
 }
 
@@ -126,5 +134,12 @@ export function mergeProfiles(base: ProfileDoc, add: ProfileDoc): ProfileDoc {
   mergeList(out.skills as WithList[], add.skills as WithList[], (e) => nk(ltk((e as unknown as { name: LocalizedText }).name)));
   mergeList(out.certificates as WithList[], add.certificates as WithList[], (e) => nk(ltk((e as unknown as { name: LocalizedText }).name)));
   mergeList(out.awards as WithList[], add.awards as WithList[], (e) => nk(ltk((e as unknown as { name: LocalizedText }).name)));
+  // 证据：追加，并按名称把关联的项目/技能指到合并后的条目
+  const remap = <T extends { id: string; name: LocalizedText }>(ids: string[], from: T[], to: T[]) => ids.map((pid) => { const n = from.find((x) => x.id === pid); return n ? to.find((x) => nk(ltk(x.name)) === nk(ltk(n.name)))?.id : undefined; }).filter((x): x is string => !!x);
+  out.evidence = out.evidence ?? [];
+  for (const ev of add.evidence ?? []) {
+    if (out.evidence.some((x) => nk(x.fileName, x.location) === nk(ev.fileName, ev.location))) continue;
+    out.evidence.push({ ...ev, id: `${tag}-${ev.id}`, projectIds: remap(ev.projectIds, add.projects, out.projects), skillIds: remap(ev.skillIds, add.skills, out.skills) });
+  }
   return out;
 }
