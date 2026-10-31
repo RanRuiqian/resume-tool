@@ -8,12 +8,13 @@ import { LayoutPage } from './pages/LayoutPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { WizardPage } from './pages/WizardPage';
 import { FEATURES } from './features';
+import { exitDemoUrl } from './storage/mode';
 
 const NAV: [string, MsgKey][] = [['profile', 'navProfile'], ['layout', 'navLayout'], ['settings', 'navSettings']];
 const ADV: [string, MsgKey][] = [['job', 'navJob'], ['generate', 'navGenerate']];
 
 function Shell() {
-  const { ready, settings, setSettings } = useApp();
+  const { ready, settings, setSettings, isDemo } = useApp();
   const t = useT();
   const [page, setPageS] = useState(() => location.hash.slice(1) || 'wizard');
   const go = (p: string) => { setPageS(p); window.history.replaceState(null, '', `#${p}`); };
@@ -29,6 +30,7 @@ function Shell() {
         {FEATURES.uiLangSwitch && <button className="lang-switch" title="中文 / English" onClick={() => setSettings({ ...settings, uiLang: settings.uiLang === 'en' ? 'zh' : 'en' })}>{settings.uiLang === 'en' ? '中文' : 'EN'}</button>}
         {settings.demoMode && <button className="badge st-machine" onClick={() => go('settings')}>{t('demoBadge')}</button>}
       </nav>
+      {isDemo && <div className="notice warn demo-banner" data-testid="demo-banner">演示模式：这里的资料是示例，保存在独立的演示数据库里，<b>不会改动你的真实资料</b>。<a href={exitDemoUrl()}>退出演示 →</a></div>}
       <main>
         {page === 'wizard' && <WizardPage go={go} />}
         {page === 'profile' && <ProfilePage />}

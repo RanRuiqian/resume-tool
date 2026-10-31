@@ -1,3 +1,4 @@
+import { uiStorage } from '../storage/mode';
 import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store';
 import type { Lang, PhotoPosition } from '../types';
@@ -37,8 +38,8 @@ export function WizardPage({ go }: { go: (p: string) => void }) {
   const L = useL();
   const { settings, profile, job, resume } = app;
   const hasProfile = !!(profile.profile.name.zh || profile.profile.name.en || profile.work.length || profile.education.length);
-  const [step, setStepS] = useState(() => Number(localStorage.getItem('wizardStep')) || (resume ? 3 : job ? 2 : hasProfile ? 2 : 1));
-  const setStep = (n: number) => { setStepS(n); localStorage.setItem('wizardStep', String(n)); window.scrollTo(0, 0); };
+  const [step, setStepS] = useState(() => Number(uiStorage.getItem('wizardStep')) || (resume ? 3 : job ? 2 : hasProfile ? 2 : 1));
+  const setStep = (n: number) => { setStepS(n); uiStorage.setItem('wizardStep', String(n)); window.scrollTo(0, 0); };
   const can = [true, hasProfile, hasProfile && !!job, !!resume];
   const cur = can[step - 1] ? step : Math.max(1, can.lastIndexOf(true) + 1 > 3 ? 3 : can.lastIndexOf(true) + 1);
 
@@ -73,7 +74,7 @@ function Hero() {
 }
 
 function Step1({ next, go, hasProfile }: { next: () => void; go: (p: string) => void; hasProfile: boolean }) {
-  const { profile, setProfile, settings } = useApp();
+  const { profile, setProfile, settings, replaceProfile } = useApp();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState('');
   const [msg, setMsg] = useState<{ t: 'ok' | 'error'; m: string } | null>(null);
@@ -92,7 +93,7 @@ function Step1({ next, go, hasProfile }: { next: () => void; go: (p: string) => 
       let p = mergeProfiles(profile, await importProfileFromText(settings, text));
       setBusy('正在自动翻译成英文…');
       try { p = (await translateProfile(settings, p, p.primaryLanguage === 'zh' ? 'en' : 'zh')).profile; } catch { /* 翻译失败不影响导入 */ }
-      setProfile(p); setText(''); setAdding(false);
+      await replaceProfile(p, 'AI 整理经历前'); setText(''); setAdding(false);
       setMsg({ t: 'ok', m: `已整理：${p.work.length} 段工作、${p.projects.length} 个项目、${p.education.length} 段教育、${p.skills.length} 项技能。请核对下面的信息。` });
     } catch (e) { setMsg({ t: 'error', m: '整理失败：' + (e as Error).message }); }
     finally { setBusy(''); }

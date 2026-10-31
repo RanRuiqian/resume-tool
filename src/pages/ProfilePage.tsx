@@ -9,6 +9,7 @@ import { normalizeProfile, exportProfileJson } from '../storage/profileIO';
 import { translateProfile } from '../ai/translate';
 import sample from '../sample/sample-profile.json';
 import { downloadBytes, fileToDataUrl } from '../utils/download';
+import type { BackupRow } from '../storage/db';
 
 type ListKey = 'education' | 'work' | 'projects' | 'skills' | 'certificates' | 'awards';
 const TABS: { key: 'basic' | ListKey | 'glossary'; label: string }[] = [
@@ -37,7 +38,8 @@ function newEntry(k: ListKey): Record<string, unknown> {
 }
 
 export function ProfilePage() {
-  const { profile, setProfile, settings } = useApp();
+  const { profile, setProfile, settings, replaceProfile, listBackups, restoreBackup } = useApp();
+  const hasData = !!(profile.profile.name.zh || profile.profile.name.en || profile.work.length || profile.education.length || profile.projects.length || profile.skills.length);
   const t = useT();
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('basic');
   const [busy, setBusy] = useState('');
@@ -55,7 +57,10 @@ export function ProfilePage() {
     finally { setBusy(''); }
   };
   const doImport = async (f: File) => {
-    try { setProfile(normalizeProfile(JSON.parse(await f.text()))); setMsg('导入成功'); } catch (e) { setMsg('导入失败：' + (e as Error).message); }
+    let next: ProfileDoc;
+    try { next = normalizeProfile(JSON.parse(await f.text())); } catch (e) { setMsg('导入失败（现有资料未改动）：' + (e as Error).message); return; }
+    if (hasData && !confirm(`导入「${f.name}」会用备份文件整体替换当前资料。\n当前资料会先自动存一份快照，可在「资料快照」里恢复。确定替换吗？`)) return;
+    await replaceProfile(next, `导入 ${f.name} 前`); setMsg('导入成功。替换前的资料已存为快照，可随时恢复。');
   };
 
   const list = (k: ListKey) => {
@@ -107,7 +112,7 @@ export function ProfilePage() {
       <div className="toolbar">
         <h2>{t('navProfile')}</h2>
         <span className="spacer" />
-        <button onClick={() => { setProfile(normalizeProfile(sample)); setMsg('已载入示例资料（李明）'); }}>{t('loadSample')}</button>
+        <button onClick={async () => { if (hasData && !confirm('载入示例会替换你当前的资料（会先自动存快照，可恢复）。只是想看看效果的话，建议用演示模式（地址后加 ?demo），不影响真实资料。确定替换吗？')) return; await replaceProfile(normalizeProfile(structuredClone(sample)), '载入示例前'); setMsg('已载入示例资料（李明）。原资料已存为快照。'); }}>{t('loadSample')}</button>
         <button onClick={() => fileRef.current?.click()}>{t('importJson')}</button>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && doImport(e.target.files[0])} />
         <button onClick={() => downloadBytes(new TextEncoder().encode(exportProfileJson(profile)), 'resume-profile-backup.json', 'application/json')}>{t('exportJson')}</button>
@@ -115,6 +120,7 @@ export function ProfilePage() {
         <button disabled={!!busy} onClick={() => doTranslate('zh')}>{t('translateToZh')}（{pending.zh}）</button>
       </div>
       <SmartImport />
+      <BackupPanel list={listBackups} restore={async (id) => { if (!confirm('恢复这份快照会替换当前资料（当前资料也会先存一份快照）。确定吗？')) return; if (await restoreBackup(id)) setMsg('已恢复快照。'); }} />
       {(busy || msg) && <div className="notice">{busy || msg}</div>}
       {machine > 0 && <div className="notice warn">有 {machine} 个字段为「机翻待校对」，导出前建议逐条确认。</div>}
       <div className="tabs">{TABS.map((x) => <button key={x.key} className={tab === x.key ? 'active' : ''} onClick={() => setTab(x.key)}>{x.label}{x.key !== 'basic' && x.key !== 'glossary' ? `（${profile[x.key].length}）` : ''}</button>)}</div>
@@ -165,3 +171,18 @@ export function ProfilePage() {
   );
 }
 
+
+function BackupPanel({ list, restore }: { list: () => Promise<BackupRow[]>; restore: (id: string) => void }) {
+  const [rows, setRows] = useState<BackupRow[] | null>(null);
+  return (
+    <details className="card backups" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) list().then(setRows); }}>
+      <summary>🕘 资料快照（每次替换 / 导入前自动保存，最多 20 份）</summary>
+      {rows === null ? <p className="muted small">加载中…</p> : rows.length === 0 ? <p className="muted small">还没有快照。</p> : (
+        <table><tbody>{rows.map((b) => (
+          <tr key={b.id}><td className="small">{new Date(b.createdAt).toLocaleString('zh-CN')}</td><td className="small">{b.reason}</td>
+            <td className="small muted">{b.doc.profile.name.zh || b.doc.profile.name.en || '（无姓名）'} · {b.doc.work.length} 工作 · {b.doc.projects.length} 项目</td>
+            <td><button onClick={() => restore(b.id)}>恢复</button></td></tr>))}</tbody></table>
+      )}
+    </details>
+  );
+}
