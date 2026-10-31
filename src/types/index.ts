@@ -220,6 +220,8 @@ export interface ResumeDoc {
   notes?: string[];
   /** 求职信 / 自我介绍 / 面试准备（可选功能） */
   extras?: { coverLetter?: Bi; selfIntro?: Bi; prep?: PrepDirection[] };
+  /** 事实审查记录（v1.4，第二阶段）：逐条逐语言的接受 / 恢复 / 编辑；不影响资料库 */
+  audit?: { decisions: Record<string, Partial<Record<Lang, { decision: 'pending' | 'accepted' | 'restored' | 'edited'; at: string; aiText: string; editedText?: string; recheck?: boolean; recheckReason?: string }>>>; updatedAt: string };
 }
 
 export interface ExportRecord {

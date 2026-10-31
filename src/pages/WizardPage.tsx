@@ -5,6 +5,7 @@ import { useApp } from '../store';
 import type { Lang, PhotoPosition } from '../types';
 import { SetupCard } from '../components/SetupCard';
 import { ItemsEditor } from '../components/ItemsEditor';
+import { AuditBadge, FactAudit } from '../components/FactAudit';
 import { MaterialPool } from '../components/MaterialPool';
 import { ExportPanel } from '../components/ExportDialog';
 import { importProfileFromText, mergeProfiles } from '../ai/importProfile';
@@ -262,6 +263,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
   const [err, setErr] = useState('');
   const [view, setView] = useState<'zh' | 'en' | 'both'>('zh');
   const [showItems, setShowItems] = useState(false);
+  const [showAudit, setShowAudit] = useState(false);
   const [pages, setPages] = useState<PageInfo | null | 'error'>(null);
   const started = useRef(false);
   const primary: Lang = job?.jdLanguage ?? 'zh';
@@ -307,12 +309,14 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
             <div className={`small ${resume.consistency.issues.length ? 'err-text' : 'ok-text'}`}>
               {resume.consistency.issues.length ? `⚠ 中英文有 ${resume.consistency.issues.length} 处数字/内容对不上，请在「逐条修改」里检查（标红行）` : '✓ 中英文两版条目和数字完全一致'}
             </div>
-            <div className="muted small">所有内容都来自你的资料库，AI 只调整措辞和顺序，不会编造。</div>
+            <div className="muted small">AI 只应调整措辞和顺序；请用「事实审查」逐条确认改写都能追溯到你的资料。</div>
+            <AuditBadge onOpen={() => setShowAudit(true)} />
           </div>
           <button disabled={!!busy} onClick={run}>🔄 重新生成</button>
         </div>
       )}
       {moved.length > 0 && <div className="notice warn" data-testid="side-warn">⚠ 侧栏放不下，已把「{[...new Set(moved.map((x) => template.locales.zh.sectionTitles?.[x.m] ?? x.m))].join('、')}」移到主栏末尾显示（{[...new Set(moved.map((x) => x.l === 'zh' ? '中文版' : '英文版'))].join('、')}），内容没有被截断。想放回侧栏可以在左侧清单减少条目，或换单栏样式。</div>}
+      {resume && showAudit && <FactAudit onClose={() => setShowAudit(false)} />}
       {pending > 0 && <div className="notice warn">你改了 {pending} 条，另一种语言还没同步。<button onClick={resync}>同步翻译</button></div>}
 
       <div className="card quick-layout">

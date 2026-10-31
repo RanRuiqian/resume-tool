@@ -50,10 +50,15 @@ describe('migration v1 → v2', () => {
       projects: [{ id: 'p1', name: '视觉检测平台', role: '负责人', bullets: ['漏检率降低 40%'], tags: ['OpenCV'] }],
       skills: [{ id: 's1', name: 'Python', level: '熟练' }] } });
     await old.table('jobs').put({ id: 'j1', createdAt: '2026-01-01' });
+    // 旧历史简历：条目没有 syncStatus，也没有审查记录
+    await old.table('resumes').put({ id: 'r-old', jobId: 'j1', createdAt: '2026-01-02', primaryLanguage: 'zh', items: [{ sourceId: 'p1-b1', zh: '漏检率降低 40%', en: 'Cut miss rate by 40%' }] });
     old.close();
     const db = new ResumeDB('mig-test');
     await db.open();
-    expect(db.verno).toBe(2);
+    expect(db.verno).toBe(3);
+    const r = (await db.resumes.get('r-old'))!;
+    expect(r.items[0]).toMatchObject({ sourceId: 'p1-b1', zh: '漏检率降低 40%', syncStatus: 'in-sync' });
+    expect(r.audit).toBeUndefined();
     const doc = (await db.profile.get('me'))!.doc;
     expect(doc.profile.name.zh).toBe('测试用户乙');
     expect(doc.education[0].end).toBe('2026-06');
