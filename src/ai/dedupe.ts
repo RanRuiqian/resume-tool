@@ -68,13 +68,20 @@ export function dupMatch(sec: DedupeSection, a: AnyEntry, b: AnyEntry): DupMatch
   if (sec === 'education') {
     const la = degreeLevel(a), lb = degreeLevel(b);
     if (la && lb && la !== lb) return { score: 0, strong: false, reasons: ['学历层次不同'] };
+    // 同校同层次但学位名 / 专业明显不同（如双学位、第二专业）→ 不同的学历，不合并
+    const fieldSim = (f: string) => { const x = (a[f] ?? {}) as LocalizedText, y = (b[f] ?? {}) as LocalizedText; return bestNameSim([x.zh, x.en].filter(Boolean) as string[], [y.zh, y.en].filter(Boolean) as string[]); };
+    const dg = fieldSim('degree'), mj = fieldSim('major');
+    const sameDegree = !dg.comparable || dg.sim >= 0.6, sameMajor = !mj.comparable || mj.sim >= 0.6;
+    if (sim >= 0.8 && (!sameDegree || !sameMajor)) return { score: 0.3, strong: false, reasons: ['同一学校的不同学位 / 专业'] };
     if (sim >= 0.8) reasons.push('学校名称一致');
     if (rel === 'same') reasons.push('起止时间相同');
     if (la && la === lb) reasons.push('学历层次相同');
+    // 可靠的自动去重：学校名同语言一致（含别名）+ 学位 / 专业不冲突 + 时间吻合
     if (sim >= 0.8 && rel !== 'unknown') return { score: 0.95, strong: true, reasons };
-    if (rel === 'same' && (sim >= 0.5 || !comparable)) return { score: 0.9, strong: true, reasons: [...reasons, ...(comparable ? [] : ['学校名为不同语言写法'])] };
     if (sim >= 0.8) return { score: 0.75, strong: false, reasons: [...reasons, '缺少日期，无法确认'] };
-    return { score: rel === 'overlap' && la && la === lb ? 0.6 : 0, strong: false, reasons: rel === 'overlap' && la && la === lb ? [...reasons, '同层次学历时间重叠'] : reasons };
+    // 中英文校名无法可靠对应：即使日期相同也只提示「可能重复」，由用户确认
+    if ((rel === 'same' || (rel === 'overlap' && ym(a.start) === ym(b.start))) && !comparable && sameDegree && sameMajor) return { score: 0.7, strong: false, reasons: [...reasons, '学校名为不同语言写法，无法自动确认是同一学校'] };
+    return { score: 0, strong: false, reasons: [...reasons, ...(comparable && sim < 0.8 ? ['学校名称不同'] : [])] };
   }
   if (sec === 'work') {
     const ta = (a.title as LocalizedText) ?? {}, tb = (b.title as LocalizedText) ?? {};
@@ -88,6 +95,9 @@ export function dupMatch(sec: DedupeSection, a: AnyEntry, b: AnyEntry): DupMatch
     if (sim >= 0.8 && rel === 'same') return { score: 0.95, strong: true, reasons };
     if (sim >= 0.8 && rel === 'overlap' && (titleSim >= 0.6 || !t.comparable)) return { score: 0.85, strong: true, reasons };
     if (rel === 'same' && !comparable) return { score: 0.7, strong: false, reasons: [...reasons, '单位名为不同语言写法'] };
+    // 同一单位的另一条只有单位名（无职位、无日期）：是同一段经历的补充片段，不是另一份工作
+    const bare = (e: AnyEntry) => !ym(e.start) && !ym(e.end) && !((e.title as LocalizedText | undefined)?.zh?.trim() || (e.title as LocalizedText | undefined)?.en?.trim());
+    if (sim >= 0.8 && (bare(a) || bare(b))) return { score: 0.8, strong: true, reasons: [...reasons, '另一条只有单位名称，视为同一段经历的补充'] };
     if (sim >= 0.8) return { score: 0.65, strong: false, reasons: [...reasons, rel === 'unknown' ? '缺少日期，无法确认' : '时间段有交集'] };
     return { score: 0, strong: false, reasons };
   }

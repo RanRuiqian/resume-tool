@@ -14,7 +14,7 @@ SEG=[
   'education':[
    {'school':'东临海事大学','degree':'工学学士','major':'轮机工程','start':'2019-09','end':'2023-06','actualConferralDate':'2023-06','courses':COURSES[:40],'coursesInText':40,'notes':['学位证编号待核实']},
    {'school':'Donglin Maritime University','degree':'Bachelor of Engineering','major':'Marine Engineering','start':'2019-09','end':'2023-06'},
-   {'school':'Sunbay University Malaysia','degree':'Master of Applied Engineering','major':'Industrial AI & Robotics','start':'2026-02','end':'2027-01','expectedConferralDate':'2027-01'},
+   {'school':'Sunbay University Malaysia','degree':'Master of Applied Engineering','major':'Industrial AI & Robotics','start':'2026-02','end':'2027-01','actualConferralDate':'2027-01','availableFullTimeDate':'2027-03'},
    {'school':'桑湾大学马来西亚分校','degree':'应用工程硕士','major':'工业人工智能与机器人','start':'2026-02','end':'2027-01'}],
   'work':[{'company':'北岭生物科技股份有限公司','title':'自动化生产技术员','kind':'fulltime','start':'2023-10','end':'2024-06','bullets':['负责灌装线 PLC 程序维护']},
           {'company':'北岭生物科技股份有限公司','title':'自动化生产技术员（实习）','kind':'internship','start':'2023-10','end':'2024-06','bullets':['负责灌装线 PLC 程序维护','编写故障排查手册']}],
@@ -34,6 +34,8 @@ SEG=[
   'certificates':[{'name':'全国大学英语六级'},{'name':'轮机工程相关职业资格证书'}],'awards':[{'name':'校级二等奖学金','date':'2021'}],
   'evidence':[{'fileName':'成绩单扫描件','type':'transcript','location':'D:/资料/成绩单.pdf','proves':'76 门课程成绩'}]},
 ]
+# 第 1 段原文已含全部带日期的条目（本地证据检查按段核对日期），第 2 段只补充后半张成绩单
+SEG=[{**SEG[0],'projects':SEG[1]['projects'],'work':SEG[0]['work']+SEG[2]['work'],**{k:SEG[2][k] for k in ['skills','certificates','awards','evidence']}},{'lang':'zh','education':SEG[1]['education']},{'lang':'zh'}]
 reqs=[]
 def ai_route(route):
     r=route.request; body=r.post_data or ''; reqs.append(body)
@@ -82,7 +84,7 @@ with sync_playwright() as p:
     gc=lambda g: pg.locator(f'[data-testid=imp-group-{g}] [data-testid=group-counts]').inner_text()
     groups=['basic','education','work','projects','skills','certificates','awards','evidence']
     chk('按 8 个类别折叠展示（个人信息…证据材料）', all(pg.locator(f'[data-testid=imp-group-{g}]').count()==1 for g in groups))
-    chk(f'教育标题含条目 / 重复 / 待确认数量：「{gc("education")}」', re.search(r'4 条 · 重复 2 · 待确认 \d+', gc('education')) is not None)
+    chk(f'教育标题含条目 / 重复 / 待确认数量：「{gc("education")}」', re.search(r'4 条 · 重复 2 · 待确认 2', gc('education')) is not None)
     chk('三级提示分开显示（需要决定 / 缺失待核对 / 说明），说明默认折叠', pg.locator('[data-testid=lv-critical]').count()==1 and pg.locator('[data-testid=lv-info]').get_attribute('open') is None)
     chk('课程未遗漏：76 门 ≥ 原文课程数，不报遗漏', '可能有遗漏' not in pg.locator('[data-testid=import-review]').inner_text())
     # 展开全部分组以检查控件
@@ -109,8 +111,10 @@ with sync_playwright() as p:
     chk('有待决定的条目时，确认按钮禁用', pg.locator('[data-testid=import-confirm]').is_disabled())
     und=pg.locator('[data-testid=imp-item].undecided')
     titles=[und.nth(i).locator('.imp-title b').inner_text() for i in range(und.count())]
-    chk(f'跨语言同名同期项目需用户决定：{titles}', titles==['智能听诊器'])
-    und.first.locator('[data-testid=imp-action]').select_option('merge'); pg.wait_for_timeout(200)
+    chk(f'中英文校名 / 项目名无法可靠对应 → 只标「可能重复」需用户决定：{titles}', sorted(titles)==sorted(['Donglin Maritime University · Marine Engineering · Bachelor of Engineering','桑湾大学马来西亚分校 · 工业人工智能与机器人 · 应用工程硕士','智能听诊器']))
+    crit=pg.locator('[data-testid=lv-critical]').inner_text()
+    chk('硕士「预计」日期冲突在审核页列为严重问题', '不能视为已授予' in crit or '预计' in crit and '结束日期' in crit)
+    while und.count(): und.first.locator('[data-testid=imp-action]').select_option('merge'); pg.wait_for_timeout(150)
     summ=pg.locator('[data-testid=import-summary]').inner_text()
     chk(f'决定后可以提交：{summ}', pg.locator('[data-testid=import-confirm]').is_enabled() and '待决定' not in summ)
     # 窄窗口
@@ -130,7 +134,7 @@ with sync_playwright() as p:
     chk('替换后不残留示例数据（Senior Frontend Engineer / 前端）', 'Senior Frontend Engineer' not in s and '前端' not in s)
     chk(f'两段学历（实际 {len(d2["education"])}）', len(d2['education'])==2 and d2['education'][0]['school'].get('zh')=='东临海事大学')
     edu0,edu1=d2['education']
-    chk('预计授予时间与实际授予时间分开', edu1.get('expectedConferralDate')=='2027-01' and not edu1.get('actualConferralDate') and edu0.get('actualConferralDate')=='2023-06')
+    chk('AI 把「预计 2027.01」误填为实际授予 → 实际授予留空、保留为预计；原文没有的可全职入职日期被清空', edu1.get('expectedConferralDate')=='2027-01' and not edu1.get('actualConferralDate') and not edu1.get('availableFullTimeDate') and edu0.get('actualConferralDate')=='2023-06')
     chk(f'课程完整：{len(edu0.get("courses",[]))} 门', len(edu0.get('courses',[]))==76)
     kinds=[(x['company'].get('zh'),x.get('kind')) for x in d2['work']]
     chk(f'企业实习只有一条且为实习；社团 / 志愿 / 兼职保留各自类型：{kinds}', [k for _,k in kinds].count('internship')==1 and 'fulltime' not in [k for _,k in kinds] and {'club','volunteer','parttime'}<={k for _,k in kinds} and len(kinds)==4)
@@ -148,7 +152,9 @@ with sync_playwright() as p:
     pg.click('[data-testid=smart-run]'); pg.wait_for_selector('[data-testid=import-review]', timeout=20000)
     pg.check('[data-testid=mode-merge]')
     chk('合并模式：提示示例数据仍会保留，建议替换', pg.locator('[data-testid=sample-warning]').count()==1)
-    pg.locator('[data-testid=imp-item].undecided [data-testid=imp-action]').first.select_option('add')
+    u2=pg.locator('[data-testid=imp-item].undecided')
+    while u2.count():
+        t=u2.first.locator('.imp-title b').inner_text(); u2.first.locator('[data-testid=imp-action]').select_option('add' if t=='智能听诊器' else 'merge'); pg.wait_for_timeout(150)
     pg.click('[data-testid=import-confirm]'); pg.wait_for_selector('[data-testid=import-done]')
     d3=prof(pg)
     chk('合并模式：保留原有条目并追加新条目；选「新增条目」的项目单独保留', 'Senior Frontend Engineer' in json.dumps(d3) and len([x for x in d3['projects'] if x['name'].get('zh')=='智能听诊器'])==1)

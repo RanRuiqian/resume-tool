@@ -32,14 +32,14 @@ describe('通用去重：本次识别结果内部', () => {
   const inc = rawToProfile(buggyAiOutput());
   const plan = buildImportPlan(emptyProfile(), inc, []);
   const decided: ImportPlan = { ...plan, items: plan.items.map((x) => (x.action === 'undecided' ? { ...x, action: 'merge' } : x)) };
-  it('中英文学历各一条 → 判为同一条并预设合并（共 2 段学历）', () => {
+  it('中英文学历各一条 → 只提示「可能重复」由用户确认，确认合并后共 2 段学历', () => {
     const edu = plan.items.filter((x) => x.section === 'education');
-    expect(edu.filter((x) => x.status === 'internal').map((x) => x.action)).toEqual(['merge', 'merge']);
+    expect(edu.filter((x) => x.status === 'internal').map((x) => x.action)).toEqual(['undecided', 'undecided']);
     const out = applyImportPlan(emptyProfile(), inc, decided);
     expect(out.education).toHaveLength(2);
     const ba = out.education[0];
     expect(ba.school.zh).toBe('东临海事大学');
-    expect(ba.aliases).toContain('Donglin Maritime University');
+    expect(ba.school.en).toBe('Donglin Maritime University'); // 英文写法补到英文位置
     expect(out.education[1].expectedConferralDate).toBe('2027-01');
     expect(out.education[1].actualConferralDate).toBeUndefined();
   });
@@ -56,13 +56,13 @@ describe('通用去重：本次识别结果内部', () => {
     const steth = pj.find((x) => x.title === '智能听诊器')!;
     expect(steth.status).toBe('internal'); expect(steth.action).toBe('undecided');
     expect(() => applyImportPlan(emptyProfile(), inc, plan)).toThrow(/未选择处理方式/);
-    const p2: ImportPlan = { ...plan, items: plan.items.map((x) => (x.key === steth.key ? { ...x, action: 'merge' } : x)) };
+    const p2: ImportPlan = { ...plan, items: plan.items.map((x) => (x.key === steth.key || (x.section === 'education' && x.action === 'undecided') ? { ...x, action: 'merge' } : x)) };
     const out = applyImportPlan(emptyProfile(), inc, p2);
     expect(out.projects).toHaveLength(3);
     expect(out.projects.filter((x) => x.kind === 'core')).toHaveLength(2);
     expect(out.projects.find((x) => x.kind === 'auxiliary')!.nature).toBe('课程实验');
     const st = out.projects[0];
-    expect(st.aliases).toContain('智能听诊器');
+    expect(st.name.zh).toBe('智能听诊器'); expect(st.name.en).toBe('Low-cost Smart Stethoscope for Clinical Training');
     expect(st.bullets.map((b) => b.en || b.zh)).toEqual(['Built a prototype', '完成样机与实验']);
     expect(st.mergeHistory?.length).toBe(1);
   });
@@ -74,8 +74,8 @@ describe('通用去重：本次识别结果内部', () => {
   });
   it('提交前汇总数量', () => {
     const s = planSummary(plan, 'merge');
-    expect(s.pending).toBe(1);
-    expect(s.merge).toBe(4); // 2 学历 + 1 工作 + 1 项目
+    expect(s.pending).toBe(3); // 2 条中英文学历 + 1 个中英文项目，需用户确认
+    expect(s.merge).toBe(2); // 1 工作 + 1 项目（别名一致）
     expect(s.add).toBe(6);
   });
 });

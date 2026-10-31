@@ -8,6 +8,7 @@ import { ProgressNote } from './ProgressNote';
 import { WORK_KIND_LABEL, type LocalizedText, type ProfileDoc, type SourceText, type WorkKind } from '../types';
 import { applyImportPlan, applyReplace, buildImportPlan, mergePreview, planSummary, sampleResidue, type ImportMode, type ImportPlan, type PlanAction, type PlanItem, type PlanSection } from '../ai/importPlan';
 import { normalizeProfile } from '../storage/profileIO';
+import { CRITICAL } from '../ai/sourceCheck';
 import sample from '../sample/sample-profile.json';
 
 const PLACEHOLDER = `随便写，不用管顺序和格式，例如：
@@ -143,8 +144,8 @@ export function SmartImport() {
     if (!p || !plan) return { critical, missing, info };
     for (const it of plan.items) {
       if (it.action === 'undecided') critical.push(`${it.title}：${it.status === 'internal' ? `可能与本次识别的「${it.intoTitle}」是同一条` : it.status === 'conflict' ? '与已有条目字段冲突' : `可能与已有「${it.matchTitle}」重复`}，请选择处理方式`);
-      for (const u of it.uncertain) missing.push(`${it.title}：${u}`);
       const e = entryOf(it);
+      for (const u of [...new Set([...it.uncertain, ...(((e?.uncertain as string[] | undefined) ?? []))])]) (u.startsWith(CRITICAL) ? critical : missing).push(`${it.title}：${u.startsWith(CRITICAL) ? u.slice(CRITICAL.length) : u}`);
       if (e && ['education', 'work', 'projects'].includes(it.section) && !e.start) missing.push(`${it.title}：没有识别到开始时间`);
       if (e && it.section === 'education' && typeof e.coursesInText === 'number' && e.coursesInText > ((e.courses as string[]) ?? []).length) critical.push(`${it.title}：原文约 ${e.coursesInText} 门课程，只识别到 ${((e.courses as string[]) ?? []).length} 门，可能有遗漏。完整原文会随导入一起保存，可在「原始资料记录」中检索。`);
       if (it.relatedNote) info.push(`${it.title}：${it.relatedNote}`);

@@ -1,6 +1,7 @@
 import type { Lang, LocalizedText, ProfileDoc, ProjectKind, Settings, WorkKind } from '../types';
 const WORK_KINDS: WorkKind[] = ['fulltime', 'internship', 'parttime', 'club', 'volunteer', 'other'];
 import { chatJson } from './provider';
+import { checkAgainstSource } from './sourceCheck';
 import { emptyProfile, normalizeEvidence, normalizeProfile } from '../storage/profileIO';
 
 const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 JSON。规则：
@@ -18,7 +19,7 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 - work.kind：fulltime 正式工作 / internship 实习 / parttime 兼职 / club 社团或学生工作任职 / volunteer 志愿服务 / other；看不出就留空，不要猜。社团、志愿、兼职也放在 work 里并标注 kind。
 - projects.kind：core（毕业设计、学位论文、核心研究或主要项目）/ auxiliary（课程实验、教学实训、个人小工具等辅助项目）；nature 写原文给出的性质（如「本科毕业设计」「课程实验」），没写就留空。
 - 课程：courses 必须完整列出原文中的全部课程（成绩单可能有几十门，一门都不能省略），每门一项，原文有学分 / 成绩就原样附在课程名后，如「高等数学 A（5 学分，88）」；coursesInText 填原文这一段里出现的课程总数。
-- 日期：预计毕业 / 预计授予学位只能填 expectedConferralDate，已实际授予才填 actualConferralDate；未知的日期、分数、单位名称、证书编号一律留空，严禁补全或推测。
+- 日期：四种日期严格区分——courseCompletionDate 课程结束、expectedConferralDate 预计毕业 / 预计授予、actualConferralDate 已实际授予、availableFullTimeDate 可全职入职。原文写「预计 / 在读 / expected」的日期只能填 expectedConferralDate，绝不能填 actualConferralDate，也不要填进 end；只有原文明确写「已授予 / 已获得学位」才填 actualConferralDate；未知的日期、分数、单位名称、证书编号一律留空，严禁补全或推测。
 - notes：原文里的备注、待核实说明、证据说明（如「需补充证明」「待核实」「证书在邮箱里」）放进对应条目的 notes 数组，不要写进 bullets / highlights / summary。
 输出 JSON：
 {"lang":"zh","name":"","headline":"","summary":"","email":"","phone":"","location":"","github":"","linkedin":"","website":"",
@@ -52,7 +53,10 @@ export function rawToProfile(r: Raw): ProfileDoc {
   const isZh = (v: string) => /[\u4e00-\u9fff]/.test(v);
   /** 主语言写法 + 原文里的另一语言写法 → 一个双语字段（两种写法都来自原文，均标为人工） */
   const L2 = (v: S, o: S): LocalizedText => {
-    const t = L(v); const ov = (o ?? '').trim(); if (!ov || ov === (v ?? '').trim()) return t;
+    // 主写法的文字与文档语言不一致（如中文资料里 AI 把英文题目放在主字段）：放到对应语言位置，避免中英文混放
+    const vv = (v ?? '').trim(); const vl: Lang = vv && isZh(vv) !== (lang === 'zh') ? (isZh(vv) ? 'zh' : 'en') : lang;
+    const t: LocalizedText = vl === lang ? L(v) : { [vl]: vv, source: vl, status: { [vl]: 'manual' } };
+    const ov = (o ?? '').trim(); if (!ov || ov === vv) return t;
     const ol: Lang = isZh(ov) ? 'zh' : 'en';
     if (t[ol]) return t;
     return { ...t, [ol]: ov, source: t.source ?? ol, status: { ...(t.status ?? {}), [ol]: 'manual' } };
@@ -103,7 +107,8 @@ export async function importProfileDetailed(s: Settings, text: string, onProgres
     onProgress?.(i + 1, chunks.length);
     const hint = chunks.length > 1 ? `（这是全部资料的第 ${i + 1}/${chunks.length} 段，可能只含部分信息）` : '';
     const r = await chatJson<Raw>(s, [{ role: 'system', content: '你是严谨的简历整理助手，只输出 JSON。' }, { role: 'user', content: `${PROMPT}${hint}\n\n原文：\n"""\n${chunks[i]}\n"""` }], { maxTokens: 8000, timeoutMs: 240_000 });
-    const p = rawToProfile(r);
+    // 本地证据检查：日期 / 任职性质 / 证书信息必须能在本段原文中找到依据（v1.6.1）
+    const p = checkAgainstSource(rawToProfile(r), chunks[i]);
     // 先在「本段」内用本段下标解析成稳定 id，再随合并映射到最终条目（A3：不依赖跨段会错位的局部下标）
     const segU: Uncertain[] = [];
     for (const u of Array.isArray(r.uncertain) ? r.uncertain : []) if (u?.field || u?.note) segU.push(resolveUncertain({ field: (u.field ?? '').trim(), note: (u.note ?? '').trim() }, p, i + 1));
@@ -159,7 +164,7 @@ export function mergeProfiles(base: ProfileDoc, add: ProfileDoc, idMap?: Map<str
       const h = hit as unknown as Record<string, unknown>, s2 = e as unknown as Record<string, unknown>;
       for (const f of ['start', 'end', 'date', 'link', 'kind', 'nature', 'courseCompletionDate', 'expectedConferralDate', 'actualConferralDate', 'availableFullTimeDate']) if (!h[f] && s2[f]) h[f] = s2[f];
       // 分段导入：课程 / 别名 / 备注取并集（长成绩单可能被切到不同段，不能只保留第一段）
-      for (const f of ['courses', 'aliases', 'notes']) if (Array.isArray(s2[f])) h[f] = [...new Set([...((h[f] as string[]) ?? []), ...(s2[f] as string[])])];
+      for (const f of ['courses', 'aliases', 'notes', 'uncertain']) if (Array.isArray(s2[f])) h[f] = [...new Set([...((h[f] as string[]) ?? []), ...(s2[f] as string[])])];
       if (typeof s2.coursesInText === 'number') h.coursesInText = ((h.coursesInText as number) ?? 0) + s2.coursesInText;
       if (Array.isArray(h.tags) && Array.isArray(s2.tags)) h.tags = [...new Set([...(h.tags as string[]), ...(s2.tags as string[])])];
     }
