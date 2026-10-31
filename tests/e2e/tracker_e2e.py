@@ -1,8 +1,9 @@
 import json, zipfile, io, os, tempfile, shutil
 from playwright.sync_api import sync_playwright
-S='/workspace/resume-tool/screenshots/'; B=os.environ.get('B','http://localhost:4173/')
-FX='/workspace/resume-tool/app/tests/fixtures/'
-d=json.load(open('/tmp/e2e/p2-seed-injected.json'))
+HERE=os.path.dirname(os.path.abspath(__file__))
+S=os.environ.get('SHOT_DIR','/workspace/resume-tool/screenshots/'); os.makedirs(S, exist_ok=True); B=os.environ.get('E2E_BASE','http://localhost:4173/')
+FX=os.path.join(HERE,'..','fixtures')+'/'
+d=json.load(open(FX+'e2e-seed.json'))  # 虚构资料
 ok=[]
 def chk(n,c): ok.append(bool(c)); print(('PASS ' if c else 'FAIL ')+n)
 DUMP="""n=>new Promise(r=>{const q=indexedDB.open(n);q.onsuccess=async()=>{const db=q.result;const o={version:db.version};
@@ -55,9 +56,9 @@ with sync_playwright() as p:
     # 关联当前简历
     pg.click('[data-testid=link-current]'); pg.wait_for_timeout(500)
     chk('关联当前生成的简历（快照，带事实审查摘要）', pg.locator('[data-testid=artifact]').count()==1 and '事实审查' in pg.locator('[data-testid=artifact]').first.inner_text())
-    pg.set_input_files('[data-testid=submitted-input]','/tmp/e2e/Mock_Vision_Engineer_CN.pdf'); pg.wait_for_timeout(500)
+    pg.set_input_files('[data-testid=submitted-input]',os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','fixtures','files','Mock_Vision_Engineer_CN.pdf')); pg.wait_for_timeout(500)
     chk('上传实际提交的 PDF，标记为实际提交版本', '实际提交版本' in pg.locator('[data-testid=artifacts]').inner_text() and 'Mock_Vision_Engineer_CN.pdf' in pg.locator('[data-testid=artifacts]').inner_text())
-    pg.set_input_files('[data-testid=att-input]','/tmp/e2e/jd_screenshot_mock.png'); pg.wait_for_timeout(500)
+    pg.set_input_files('[data-testid=att-input]',os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','fixtures','files','jd_screenshot_mock.png')); pg.wait_for_timeout(500)
     chk('拖入 / 选择附件保存到本机（含 SHA-256）', pg.locator('[data-testid=attachment-row]').count()==2 and 'SHA-256' in pg.locator('[data-testid=attachments-card]').inner_text())
     pg.locator('[data-testid=resume-card]').screenshot(path=S+'p4_resume_link.png')
     db1=pg.evaluate(DUMP,'resume-tool'); snap=db1['artifacts'][0] if db1['artifacts'][0]['kind']=='snapshot' else db1['artifacts'][1]
@@ -100,8 +101,8 @@ with sync_playwright() as p:
     chk('统计来自真实记录', st['st-postings']==str(n) and int(st['st-ti'])>=2)
     pg.screenshot(path=S+'p4_home.png', full_page=True)
     # 删除提示
-    dialogs.clear(); pg.on('dialog', lambda x: None)
-    nav('applications/'+pid); pg.once('dialog', lambda x: x.dismiss()); pg.remove_listener('dialog', on_dialog)
+    dialogs.clear()
+    nav('applications/'+pid); pg.remove_listener('dialog', on_dialog)
     msgs=[]; pg.once('dialog', lambda x: (msgs.append(x.message), x.dismiss()))
     pg.click('[data-testid=delete-posting]'); pg.wait_for_timeout(500)
     print('del msg', msgs[:1])
@@ -110,7 +111,7 @@ with sync_playwright() as p:
     # 备份
     nav('applications/backup')
     with pg.expect_download() as dl: pg.click('[data-testid=export-archive]')
-    zpath='/tmp/e2e/archive.zip'; dl.value.save_as(zpath); z=zipfile.ZipFile(zpath); names=z.namelist()
+    zpath=os.path.join(tempfile.mkdtemp(prefix='p4-'),'archive.zip'); dl.value.save_as(zpath); z=zipfile.ZipFile(zpath); names=z.namelist()
     alltxt=''.join(z.read(x).decode('utf8','ignore') for x in names if x.endswith('.json'))
     chk('ZIP 含 manifest、数据与附件', 'manifest.json' in names and any(x.startswith('attachments/') for x in names) and 'data/postings.json' in names)
     chk('导出文件不含 API Key', 'sk-e2e-FAKE-key-000' not in alltxt and 'apiKey' not in alltxt)
