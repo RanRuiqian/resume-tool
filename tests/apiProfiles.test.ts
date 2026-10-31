@@ -120,7 +120,7 @@ describe('11 旧版设置迁移', () => {
     expect(r.apiProfiles![0]).toMatchObject({ provider: 'deepseek', apiKey: K1, baseUrl: 'https://api.deepseek.com', model: 'deepseek-flash', translateModel: 'deepseek-flash' });
     expect(r.activeProfileId).toBe(r.apiProfiles![0].id); expect(r.apiKey).toBe(K1); expect(r.model).toBe('deepseek-flash');
     const snap = await d.settings.get(PROFILE_SNAPSHOT_ID);
-    expect(snap).toMatchObject({ apiKey: K1, model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' });
+    expect(snap).toMatchObject({ keyMasked: maskKey(K1), model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' }); expect(JSON.stringify(snap)).not.toContain(K1);
     // 幂等：再次加载不新增记录、不改 id、不覆盖快照
     const r2 = (await loadSettings(d))!;
     expect(r2.apiProfiles).toEqual(r.apiProfiles); expect(await d.settings.get(PROFILE_SNAPSHOT_ID)).toEqual(snap);

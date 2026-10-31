@@ -1,5 +1,5 @@
 import type { Settings } from '../types';
-import { isOfficialDeepSeek } from '../storage/defaults';
+import { baseUrlProblem, isOfficialDeepSeek } from '../storage/defaults';
 
 export type AiErrorKind = 'nokey' | 'auth' | 'balance' | 'rate' | 'model' | 'timeout' | 'network' | 'server' | 'format' | 'other';
 export class AiError extends Error {
@@ -13,6 +13,8 @@ export interface ChatMsg { role: 'system' | 'user' | 'assistant'; content: Conte
 /** OpenAI 兼容 Chat Completions；请求直连用户配置的服务商（PRD 8） */
 export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: string; json?: boolean; timeoutMs?: number; maxTokens?: number } = {}): Promise<string> {
   if (!s.apiKey) throw new AiError('尚未启用 API：请到「设置 → AI API 管理」添加或启用一套 API，或开启演示模式', 'nokey');
+  const bad = baseUrlProblem(s.baseUrl);
+  if (bad) throw new AiError(`已阻止发送请求：${bad}。请到「设置 → AI API 管理」编辑这套配置的 Base URL`, 'other');
   const url = s.baseUrl.replace(/\/+$/, '') + '/chat/completions';
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 120_000);

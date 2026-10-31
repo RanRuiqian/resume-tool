@@ -1,5 +1,5 @@
 import type { ApiProfile, ApiProvider, Settings } from '../types';
-import { isOfficialDeepSeek, PROVIDERS, RETIRED_DEEPSEEK_MODEL } from './defaults';
+import { baseUrlProblem, isOfficialDeepSeek, PROVIDERS, RETIRED_DEEPSEEK_MODEL } from './defaults';
 
 /**
  * 多 API 配置管理（纯函数，便于测试）。
@@ -9,6 +9,17 @@ import { isOfficialDeepSeek, PROVIDERS, RETIRED_DEEPSEEK_MODEL } from './default
  */
 
 export const PROFILE_SNAPSHOT_ID = 'settings-premigrate-profiles-v1';
+
+/** 迁移快照只保留不敏感信息（服务商 / 地址 / 模型 / Key 末 4 位脱敏 / 时间），绝不保存明文 Key */
+export function sanitizeSnapshot(raw: Record<string, unknown>, id: string, now = new Date().toISOString()): Record<string, unknown> {
+  const str = (v: unknown) => (typeof v === 'string' ? v : '');
+  const keyOf = str(raw.apiKey) || str(raw.keyMasked);
+  return {
+    id, sanitized: true, createdAt: str(raw.createdAt) || now,
+    provider: str(raw.provider), baseUrl: str(raw.baseUrl), model: str(raw.model), translateModel: str(raw.translateModel), visionModel: str(raw.visionModel),
+    keyMasked: raw.apiKey ? maskKey(str(raw.apiKey)) : keyOf,
+  };
+}
 
 export function newProfileId(): string {
   const r = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID().slice(0, 8) : Math.random().toString(36).slice(2, 10);
@@ -77,9 +88,10 @@ export function validateDraft(d: ProfileDraft, isNew: boolean): string[] {
   if (!d.name.trim()) e.push('请填写配置名称');
   if (isNew && !d.apiKey.trim()) e.push('请粘贴 API Key');
   if (!d.model.trim()) e.push('请填写模型名称');
+  const bad = baseUrlProblem(d.baseUrl);
   let u: URL | null = null;
   try { u = new URL(d.baseUrl.trim()); } catch { /* */ }
-  if (!u || !/^https?:$/.test(u.protocol)) e.push('Base URL 格式不正确，应以 https:// 开头');
+  if (bad || !u) e.push(bad ?? 'Base URL 格式不正确，应以 https:// 开头');
   else if (u.search || u.username || u.password) e.push('Base URL 不能带参数或账号信息（API Key 请填在 Key 输入框，不要放进网址）');
   if (/\s/.test(d.apiKey.trim())) e.push('API Key 中不能有空格或换行');
   return e;

@@ -55,6 +55,9 @@ with sync_playwright() as p:
     item(pg,'DeepSeek（原配置）').locator('[data-testid=api-del]').click(); pg.click('[data-testid=del-ok]'); pg.wait_for_timeout(300)
     m=cur(pg)
     chk('10 删除最后一个 → 空列表、尚未配置 API、Key 已移除、自动打开添加面板', m['apiProfiles']==[] and m['apiKey']=='' and K['old'] not in json.dumps(m) and '尚未启用 API' in pg.locator('[data-testid=ai-mode]').inner_text() and pg.locator('[data-testid=api-form]').count()==1)
+    full=pg.evaluate("""()=>new Promise(r=>{const q=indexedDB.open('resume-tool');q.onsuccess=async()=>{const db=q.result;const o={};for(const s of db.objectStoreNames){o[s]=await new Promise(z=>{const t=db.transaction(s).objectStore(s).getAll();t.onsuccess=()=>z(t.result)})}db.close();
+      const ls={};for(const st of [localStorage,sessionStorage])for(let i=0;i<st.length;i++){ls[st.key(i)]=st.getItem(st.key(i))}r(JSON.stringify([o,ls]))}})""")
+    chk('问题一 迁移→删除后：IndexedDB 全部表 + localStorage/sessionStorage 均不含已删除的 Key（迁移快照只剩脱敏信息）', K['old'] not in full and 'sk-••••••0010' in full)
     # ---- 1 新增第一个 ----
     pg.locator('[data-testid=api-form]').screenshot(path=S+'p7_add_panel.png')
     f=pg.locator('[data-testid=api-form]'); f.locator('[data-testid=f-save]').click(); pg.wait_for_timeout(200)

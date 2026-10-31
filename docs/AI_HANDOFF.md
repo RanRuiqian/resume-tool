@@ -46,7 +46,7 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 ## 4b. 多 API 配置（2026-10-31）
 - **存储**：不升级 Dexie、不改业务表。在原 `settings` 表的 `id='settings'` 记录里新增 `apiProfiles: ApiProfile[]` 与 `activeProfileId: string | null`。每条配置有独立 `id`（`api-<时间>-<随机>`），同一服务商可存多条。
 - **不变式**：`settings` 的平铺字段 `provider / baseUrl / apiKey / model / translateModel / visionModel` 永远等于当前启用配置（`applyActive` 统一刷新，store 的 `setSettings` 也会调用）。所以所有 AI 调用（资料整理、JD 解析、生成、翻译、OCR 视觉）无需改动；每个操作在开始时拿到当时的 `settings` 对象，中途切换不会混用。没有启用配置时 `apiKey=''`，调用直接报「尚未启用 API」。
-- **迁移**（`loadSettings`，幂等）：旧单套配置有 Key → 生成一条「<服务商>（原配置）」并启用；没 Key → 空列表。迁移前把原始记录原样存为同表 `id='settings-premigrate-profiles-v1'`（只写一次）。DeepSeek `deepseek-chat→deepseek-flash` 规则对每条配置继续生效。
+- **迁移**（`loadSettings`，幂等）：旧单套配置有 Key → 生成一条「<服务商>（原配置）」并启用；没 Key → 空列表。迁移前把不敏感信息（无明文 Key，只有末 4 位脱敏）存为同表 `id='settings-premigrate-profiles-v1'`（只写一次）；`scrubSettingsCopies` 每次加载清理非主记录中的 Key。Base URL 只允许 https（本机回环 http 例外，`baseUrlProblem`，保存与请求时都检查）。DeepSeek `deepseek-chat→deepseek-flash` 规则对每条配置继续生效。
 - **删除当前配置**：不自动切换（避免切到其他收费服务），进入未启用状态，由用户选择。
 - **连接测试**：`testConnection(settingsForProfile(settings, p))`，最小请求（`max_tokens: 8`），不改变启用配置；网络故障归为 `network`，不会提示 Key 无效。
 - **演示模式**：启用 / 切换配置会关闭演示模式；设置页顶部 `AiModeBanner` 显示「演示 / 未启用 / 真实调用 xx」。
