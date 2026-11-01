@@ -2,6 +2,7 @@ import type { Bi, JobParse, Lang, LocalizedText, ProfileDoc } from '../types';
 import { lt } from '../locale/text';
 import { rewriteSafe } from '../quality/resumeGuard';
 import { isResumeSafe } from '../quality/contentQuality';
+import { allocate, pickSide, type Allocation, type CapabilityModel } from './evidence';
 
 /**
  * v1.10 JD 相关性筛选（确定性、本地）：决定简历副本里「留哪些经历、每段留几条、每条保留多少细节」。
@@ -79,7 +80,7 @@ export function conciseBullet(text: string, lang: Lang, terms: Term[], budget = 
 }
 
 export interface PlanEntry { kind: 'work' | 'projects' | 'education'; id: string; score: number; core: boolean; bulletIds: string[] }
-export interface ResumePlan { entries: PlanEntry[]; skills: string[]; certificates: string[]; awards: string[]; caps: { core: number; minor: number } }
+export interface ResumePlan { entries: PlanEntry[]; skills: string[]; certificates: string[]; awards: string[]; caps: { core: number; minor: number }; budgets?: Record<string, number>; dropped?: Allocation['dropped']; model?: CapabilityModel; ranked?: Allocation['ranked'] }
 
 export const LANG_TEST = /\b(?:PTE|IELTS|TOEFL|TOEIC|Duolingo|CET-?[46]|TEM-?[48]|HSK|JLPT|TOPIK|DELF|DALF|TestDaF)\b|雅思|托福|大学英语[四六]级|英语[四六]级|专业英语[四八]级|专[四八]|多邻国|日语能力|普通话水平/i;
 
@@ -96,35 +97,16 @@ export function pickRelevant(bullets: LocalizedText[], terms: Term[], cap: numbe
   return chosen.sort((a, b) => a.i - b.i).map((x) => x.b);
 }
 
-/** 一页默认：核心项目 2–3 条、次要项目 1 条或不选；两页适当放宽。都是软上限，不要求凑满 */
+/**
+ * v1.11：分阶段选材（evidence.ts）——JD 能力分层 → 证据抽取 → 价值排序 → 按岗位分配篇幅。
+ * 保持 v1.10 的 ResumePlan 结构；额外返回每条要点的字数预算、未选原因和能力模型。
+ */
 export function planResume(p: ProfileDoc, job: JobParse, lang: Lang, targetPages = 1): ResumePlan {
-  const terms = jobTerms(job);
   const two = targetPages > 1;
   const caps = { core: two ? 4 : 3, minor: two ? 2 : 1 };
-  const txt = (x: unknown) => JSON.stringify(x);
-  const entries: PlanEntry[] = [];
-  const work = p.work.filter((x) => x.enabled).map((w) => ({ w, s: relevance(txt([w.title, w.company, w.tags, w.bullets]), terms) })).sort((a, b) => b.s - a.s);
-  work.forEach(({ w, s }, i) => { const core = i < 2 && s > 0; entries.push({ kind: 'work', id: w.id, score: s, core, bulletIds: pickRelevant(w.bullets, terms, core ? caps.core : Math.max(2, caps.minor), lang).map((b) => b.id!) }); });
-  const projs = p.projects.filter((x) => x.enabled).map((x) => ({ x, s: relevance(txt([x.name, x.role, x.tags, x.bullets]), terms) })).sort((a, b) => b.s - a.s);
-  const maxProj = two ? 5 : 3;
-  projs.forEach(({ x, s }, i) => {
-    if (i >= maxProj || (s <= 0 && i > 0)) return; // 与岗位无关的次要项目默认不选（母库保留，可手动勾选）
-    const core = i < (two ? 3 : 2) && s >= (projs[0]?.s ?? 0) * 0.4 && s > 0;
-    const ids = pickRelevant(x.bullets, terms, core ? caps.core : caps.minor, lang).map((b) => b.id!);
-    if (ids.length) entries.push({ kind: 'projects', id: x.id, score: s, core, bulletIds: ids });
-  });
-  p.education.filter((x) => x.enabled).forEach((e) => {
-    const hs = e.highlights.filter((b) => b.id && isResumeSafe(b.zh || b.en || ''));
-    const gpa = hs.filter((b) => /GPA|绩点|均分|平均分|排名|rank/i.test(`${b.zh} ${b.en}`));
-    const rel = pickRelevant(hs.filter((b) => !gpa.includes(b)), terms, two ? 2 : 1, lang).filter((b) => relevance(`${b.zh} ${b.en}`, terms) > 0);
-    entries.push({ kind: 'education', id: e.id, score: 0, core: false, bulletIds: [...gpa.slice(0, 1), ...rel].map((b) => b.id!) });
-  });
-  const skillsR = p.skills.filter((x) => x.enabled).map((k, i) => ({ k, i, s: relevance(`${k.name.zh} ${k.name.en}`, terms) }));
-  const rel = skillsR.filter((x) => x.s > 0 || LANG_TEST.test(`${x.k.name.zh} ${x.k.name.en}`) || /语言|language/i.test(`${x.k.category?.zh} ${x.k.category?.en}`));
-  const skills = (rel.length >= 4 ? rel : [...rel, ...skillsR.filter((x) => !rel.includes(x)).slice(0, 4 - rel.length)]).sort((a, b) => a.i - b.i).map((x) => x.k.id);
-  const certificates = p.certificates.filter((x) => x.enabled && (LANG_TEST.test(`${x.name.zh} ${x.name.en}`) || relevance(`${x.name.zh} ${x.name.en}`, terms) > 0)).map((x) => x.id);
-  const awards = p.awards.filter((x) => x.enabled && relevance(`${x.name.zh} ${x.name.en}`, terms) > 0).map((x) => x.id);
-  return { entries, skills, certificates, awards, caps };
+  const a = allocate(p, job, lang, targetPages);
+  const side = pickSide(p, job, a.model);
+  return { entries: a.entries, ...side, caps, budgets: a.budgets, dropped: a.dropped, model: a.model, ranked: a.ranked };
 }
 
 const splitSent = (s: string, lang: Lang) => s.trim().split(lang === 'zh' ? /(?<=[；;。])/ : /(?<=[;.])\s+(?=[A-Z])|(?<=;)\s*/).map((x) => x.trim()).filter(Boolean);
