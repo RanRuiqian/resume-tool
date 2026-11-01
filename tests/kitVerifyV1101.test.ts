@@ -3,7 +3,7 @@ vi.mock('../src/ai/provider', () => ({ chatJson: vi.fn() }));
 import { chatJson } from '../src/ai/provider';
 import type { ProfileDoc, ResumeDoc, Settings } from '../src/types';
 import { fictionalEngineer, jobs } from './helpers/v110Fixture';
-import { buildKitContext, kitExportState, kitHash, verifiedOnly, verifyKit, verifySentence } from '../src/quality/kitVerify';
+import { buildKitContext, kitExportState, kitHash, makeKitReview, verifiedOnly, verifyKit, verifySentence } from '../src/quality/kitVerify';
 import { generateCoverKit, generatePrep, layoutToText } from '../src/ai/extras';
 import { generateResume, generateRules } from '../src/ai/generate';
 import { buildLayout } from '../src/render/layout';
@@ -151,6 +151,7 @@ describe('v1.10.1 generateCoverKit — retry with feedback, block, never claim 1
 });
 
 describe('v1.10.1 export gating and old data', () => {
+  const R = { id: 'resume-1', createdAt: '2026-11-01T00:00:00Z', generatedBy: 'ai' as const };
   const ex = (k: typeof goodKit) => ({ coverLetter: { ...k.coverLetter }, selfIntro: { ...k.selfIntro } });
   it('verified text is exportable; old extras without kitReview are re-checked locally', () => {
     expect(kitExportState(P, J.A, ex(goodKit)).exportable).toBe(true);
@@ -159,10 +160,42 @@ describe('v1.10.1 export gating and old data', () => {
   it('unverified text is blocked until a manual override for that exact text', () => {
     const e = ex(badKit) as NonNullable<ResumeDoc['extras']>;
     expect(kitExportState(P, J.A, e).exportable).toBe(false);
-    e.kitReview = { overrideAt: '2026-11-01T00:00:00Z', textHash: kitHash(e), issues: 2 };
-    expect(kitExportState(P, J.A, e).exportable).toBe(true);
-    e.coverLetter!.zh += '我还精通 CATIA。';
-    expect(kitExportState(P, J.A, e).exportable).toBe(false);
+    e.kitReview = makeKitReview(P, J.A, R, e, 2);
+    expect(kitExportState(P, J.A, e, R).exportable).toBe(true);
+  });
+  describe('override invalidation', () => {
+    const setup = () => { const e = ex(badKit) as NonNullable<ResumeDoc['extras']>; e.kitReview = makeKitReview(P, J.A, R, e, 2); return e; };
+    it('unchanged profile / job / resume / text stays valid (even re-derived objects)', () => {
+      const e = setup();
+      expect(kitExportState(structuredClone(P), structuredClone(J.A), e, structuredClone(R)).overridden).toBe(true);
+    });
+    it('(a) a relevant profile fact edited → invalid', () => {
+      const e = setup(); const p2 = structuredClone(P); p2.projects[0].bullets[0].zh += '（改）';
+      expect(kitExportState(p2, J.A, e, R).exportable).toBe(false);
+      const p3 = structuredClone(P); p3.education[0].expectedConferralDate = '2027-06';
+      expect(kitExportState(p3, J.A, e, R).overridden).toBe(false);
+    });
+    it('(b) JD switched or edited → invalid', () => {
+      const e = setup();
+      expect(kitExportState(P, J.B, e, R).overridden).toBe(false);
+      expect(kitExportState(P, { ...J.A, rawText: J.A.rawText + '\n熟悉 CATIA' }, e, R).overridden).toBe(false);
+      expect(kitExportState(P, { ...J.A, mustHave: [...J.A.mustHave, { zh: 'CATIA', en: 'CATIA' }] }, e, R).overridden).toBe(false);
+    });
+    it('(c) cover letter or intro edited → invalid', () => {
+      const e = setup(); e.coverLetter!.zh += '我还精通 CATIA。';
+      expect(kitExportState(P, J.A, e, R).exportable).toBe(false);
+      const e2 = setup(); e2.selfIntro!.en += ' Extra.';
+      expect(kitExportState(P, J.A, e2, R).overridden).toBe(false);
+    });
+    it('(d) résumé regenerated for the job → invalid', () => {
+      const e = setup();
+      expect(kitExportState(P, J.A, e, { ...R, id: 'resume-new', createdAt: '2026-11-02T00:00:00Z' }).overridden).toBe(false);
+    });
+    it('old override without fingerprints is treated as invalid', () => {
+      const e = ex(badKit) as NonNullable<ResumeDoc['extras']>;
+      e.kitReview = { overrideAt: '2026-11-01T00:00:00Z', textHash: kitHash(e), issues: 2 };
+      expect(kitExportState(P, J.A, e, R).overridden).toBe(false);
+    });
   });
 });
 

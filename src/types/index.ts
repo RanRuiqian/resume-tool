@@ -263,7 +263,7 @@ export interface ResumeDoc {
   notes?: string[];
   /** 求职信 / 自我介绍 / 面试准备（可选功能） */
   /** kitReview（v1.10.1，可选）：用户对「逐句核对未通过」的求职信/自我介绍做了人工核对并允许导出；只对 textHash 对应的那份文本有效 */
-  extras?: { coverLetter?: Bi; selfIntro?: Bi; prep?: PrepDirection[]; kitReview?: { overrideAt: string; textHash: string; issues: number } };
+  extras?: { coverLetter?: Bi; selfIntro?: Bi; prep?: PrepDirection[]; kitReview?: { overrideAt: string; textHash: string; issues: number; profileHash?: string; jobHash?: string; resumeHash?: string } };
   /** 事实审查记录（v1.4，第二阶段）：逐条逐语言的接受 / 恢复 / 编辑；不影响资料库 */
   audit?: { decisions: Record<string, Partial<Record<Lang, { decision: 'pending' | 'accepted' | 'restored' | 'edited'; at: string; aiText: string; editedText?: string; recheck?: boolean; recheckReason?: string; riskAck?: { at: string; statement: string; evidenceIds: string[]; note?: string } }>>>; updatedAt: string };
 }

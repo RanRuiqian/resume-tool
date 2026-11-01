@@ -18,6 +18,9 @@ SEED="""([k,d])=>new Promise(r=>{const q=indexedDB.open('resume-tool');q.onsucce
   t.objectStore('profile').put({id:'me',doc:d.profile});t.objectStore('jobs').put(d.job);t.objectStore('resumes').put(d.resume);
   t.objectStore('state').put({id:'jobId',value:d.job.id});t.objectStore('state').put({id:'resumeId',value:d.resume.id});t.oncomplete=()=>{db.close();r()}}})"""
 GET="""()=>new Promise(r=>{const q=indexedDB.open('resume-tool');q.onsuccess=()=>{const db=q.result;const t=db.transaction('resumes').objectStore('resumes').getAll();t.onsuccess=()=>{db.close();r(t.result[0])}}})"""
+def _mut(store, fn): return """()=>new Promise(r=>{const q=indexedDB.open('resume-tool');q.onsuccess=()=>{const db=q.result;const t=db.transaction('%s','readwrite');const s=t.objectStore('%s');s.getAll().onsuccess=e=>{const x=e.target.result[0];%s;s.put(x)};t.oncomplete=()=>{db.close();r()}}})""" % (store, store, fn)
+EDIT_PROFILE=_mut('profile', "x.doc.work[0].bullets[0].zh+='（已修改）'")
+EDIT_JOB=_mut('jobs', "x.rawText+='\\n熟悉 CATIA'")
 with sync_playwright() as p:
     c=p.chromium.launch_persistent_context(tempfile.mkdtemp(prefix='chrome-kit-'), executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], viewport={'width':1280,'height':1000})
     pg=c.pages[0]; errs=[]; pg.on('pageerror', lambda e: errs.append(str(e))); pg.on('dialog', lambda x: x.accept()); c.route('https://api.deepseek.com/**', ai)
@@ -45,6 +48,14 @@ with sync_playwright() as p:
     rv=pg.evaluate(GET)['extras'].get('kitReview')
     chk('人工核对放行：保存 kitReview（含文本哈希），导出提示消失', rv and rv.get('textHash') and pg.locator('[data-testid=export-kit-blocked]').count()==0)
     pg.screenshot(path=S+'p19_kit_override.png', full_page=True)
+    chk('kitReview 同时记录资料 / 岗位 / 简历指纹', rv and all(rv.get(k) for k in ['profileHash','jobHash','resumeHash']))
+    pg.reload(); pg.wait_for_selector('text=求职信 + 1 分钟自我介绍'); pg.wait_for_timeout(300)
+    chk('刷新后（资料 / 岗位 / 简历未变）放行仍有效', pg.locator('[data-testid=export-kit-blocked]').count()==0)
+    pg.evaluate(EDIT_PROFILE); pg.reload(); pg.wait_for_selector('text=求职信 + 1 分钟自我介绍'); pg.wait_for_timeout(300)
+    chk('修改资料库中的事实后放行失效，导出重新拦截', pg.locator('[data-testid=export-kit-blocked]').count()==1 and pg.locator('[data-testid=kit-override]').count()==1)
+    pg.click('[data-testid=kit-override]'); pg.wait_for_timeout(300)
+    pg.evaluate(EDIT_JOB); pg.reload(); pg.wait_for_selector('text=求职信 + 1 分钟自我介绍'); pg.wait_for_timeout(300)
+    chk('修改岗位 JD 后放行失效，导出重新拦截', pg.locator('[data-testid=export-kit-blocked]').count()==1)
     chk('无页面报错；Key 不出现在页面', not errs and KEY not in pg.content())
     c.close()
 print(f'{sum(ok)}/{len(ok)} passed'); raise SystemExit(0 if all(ok) else 1)

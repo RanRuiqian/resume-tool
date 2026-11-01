@@ -3,7 +3,7 @@ import { useApp } from '../store';
 import { useL } from '../i18n';
 import { FEATURES } from '../features';
 import { enWords, generateCoverKit, generatePrep, zhLen, type KitQuality } from '../ai/extras';
-import { kitExportState, kitHash, type SentenceTrace } from '../quality/kitVerify';
+import { kitExportState, makeKitReview, type SentenceTrace } from '../quality/kitVerify';
 import type { Bi, Lang, ResumeDoc } from '../types';
 
 const KIND: Record<SentenceTrace['kind'], string> = { closing: '称呼 / 结尾', self: '自述', reflection: '概括前文', motivation: '动机 / 岗位 / 学习', other: '其他陈述' };
@@ -28,7 +28,7 @@ export function CareerKit() {
   const [quality, setQuality] = useState<KitQuality | null>(null);
   const [pending, setPending] = useState<{ coverLetter: Bi; selfIntro: Bi; quality: KitQuality } | null>(null);
   const ex = resume?.extras ?? {};
-  const state = useMemo(() => kitExportState(profile, job, resume?.extras), [profile, job, resume?.extras]);
+  const state = useMemo(() => kitExportState(profile, job, resume?.extras, resume), [profile, job, resume]);
   if (!resume || !job || (!FEATURES.coverLetter && !FEATURES.prepDirections)) return null;
   const save = (fn: (e: NonNullable<ResumeDoc['extras']>) => void) => { const n = structuredClone(resume); n.extras = n.extras ?? {}; fn(n.extras); setResume(n); };
   const adopt = (k: { coverLetter: Bi; selfIntro: Bi }) => save((e) => { e.coverLetter = k.coverLetter; e.selfIntro = k.selfIntro; delete e.kitReview; });
@@ -81,7 +81,7 @@ export function CareerKit() {
             ⚠ {L(`当前文本有 ${bad.length} 句无法对应到资料（可能是手动修改或旧版本生成）。`, `${bad.length} sentence(s) cannot be traced to your profile.`)}
             {state.overridden ? L('你已人工核对并允许导出。', ' You reviewed it and allowed export.') : L('导出 Word 时默认不包含求职信 / 自我介绍。', ' The cover letter / intro are left out of the Word export by default.')}
             <ul>{bad.map((t, i) => <li key={i}>{t.field === 'coverLetter' ? '求职信' : '自我介绍'}（{t.lang === 'zh' ? '中文' : '英文'}）「{t.text}」：{t.reasons.join('；')}</li>)}</ul>
-            {!state.overridden && <button data-testid="kit-override" onClick={() => save((e) => { e.kitReview = { overrideAt: new Date().toISOString(), textHash: kitHash(e), issues: bad.length }; })}>{L('我已逐句人工核对，允许导出', 'I reviewed each sentence; allow export')}</button>}
+            {!state.overridden && <button data-testid="kit-override" onClick={() => save((e) => { e.kitReview = makeKitReview(profile, job, resume, e, bad.length); })}>{L('我已逐句人工核对，允许导出', 'I reviewed each sentence; allow export')}</button>}
           </div>)}
       {state.hasText && <details className="small"><summary>{L('查看逐句核对', 'Per-sentence check')}</summary><TraceTable trace={state.verdict.trace} lang={lang} /></details>}
       {quality && quality.warnings.length > 0 && <div className="notice warn small" data-testid="kit-quality">{L('格式提示：', 'Style: ')}{quality.warnings.map((x, i) => <div key={i}>· {x}</div>)}</div>}

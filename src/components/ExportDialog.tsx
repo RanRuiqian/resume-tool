@@ -24,7 +24,7 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
   const [withKit, setWithKit] = useState(() => localStorage.getItem('zipKit') !== '0');
   const ex = resume?.extras;
   // v1.10.1：求职信 / 自我介绍逐句核对未通过且未人工确认时，不进入 Word（备考方向不受影响）
-  const kitState = useMemo(() => kitExportState(profile, job ?? null, ex), [profile, job, ex]);
+  const kitState = useMemo(() => kitExportState(profile, job ?? null, ex, resume), [profile, job, ex, resume]);
   const letterOk = kitState.exportable;
   const hasKit = (FEATURES.coverLetter || FEATURES.prepDirections) && !!((letterOk && (ex?.coverLetter || ex?.selfIntro)) || ex?.prep?.length);
   const stem = names.base;

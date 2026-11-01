@@ -251,12 +251,33 @@ export function verifiedOnly(kit: { coverLetter: Bi; selfIntro: Bi }, ctx: KitCo
 }
 
 /** 文本指纹：人工覆盖确认只对确认时的那份文本有效 */
-export const kitHash = (kit: { coverLetter?: Bi; selfIntro?: Bi }) => { const s = JSON.stringify([kit.coverLetter ?? {}, kit.selfIntro ?? {}]); let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h >>> 0); };
+const hstr = (s: string) => { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return String(h >>> 0); };
+export const kitHash = (kit: { coverLetter?: Bi; selfIntro?: Bi }) => hstr(JSON.stringify([kit.coverLetter ?? {}, kit.selfIntro ?? {}]));
 
-/** 导出 / 展示用：当前保存的求职信 + 自我介绍是否可以进入正常 Word 导出 */
-export function kitExportState(p: ProfileDoc, job: JobParse | null, ex?: { coverLetter?: Bi; selfIntro?: Bi; kitReview?: { textHash: string } }): { hasText: boolean; verdict: KitVerdict; overridden: boolean; exportable: boolean } {
+/** 人工确认的指纹（v1.10.1）：资料事实 / 岗位 JD / 当前简历 任一变化，旧确认即失效 */
+export interface KitFingerprint { profileHash: string; jobHash: string; resumeHash: string }
+export function kitFingerprint(p: ProfileDoc, job: JobParse | null, resume?: { id?: string; createdAt?: string; generatedBy?: string } | null): KitFingerprint {
+  const edu = (p.education ?? []).filter((e) => e.enabled !== false).map((e) => [e.id, e.degree, e.major, e.school, e.start, e.end, e.expectedConferralDate, e.actualConferralDate]);
+  const profileHash = hstr(JSON.stringify([profileFacts(p), edu]));
+  const jobHash = job ? hstr(JSON.stringify([job.id, job.rawText, job.title, job.company, job.mustHave, job.niceToHave, job.responsibilities, job.keywords])) : '';
+  const resumeHash = resume ? hstr(JSON.stringify([resume.id, resume.createdAt, resume.generatedBy])) : '';
+  return { profileHash, jobHash, resumeHash };
+}
+export type KitReview = { overrideAt: string; textHash: string; issues: number; profileHash?: string; jobHash?: string; resumeHash?: string };
+export function makeKitReview(p: ProfileDoc, job: JobParse | null, resume: { id?: string; createdAt?: string; generatedBy?: string } | null | undefined, ex: { coverLetter?: Bi; selfIntro?: Bi }, issues: number): KitReview {
+  return { overrideAt: new Date().toISOString(), textHash: kitHash(ex), issues, ...kitFingerprint(p, job, resume) };
+}
+/** 确认是否仍有效：文本、资料事实、岗位、简历四项指纹都一致；旧确认缺少指纹 → 视为无效 */
+export function overrideValid(p: ProfileDoc, job: JobParse | null, resume: { id?: string; createdAt?: string; generatedBy?: string } | null | undefined, ex?: { coverLetter?: Bi; selfIntro?: Bi; kitReview?: KitReview }): boolean {
+  const r = ex?.kitReview;
+  if (!r || !r.profileHash || !r.jobHash || !r.resumeHash) return false;
+  const f = kitFingerprint(p, job, resume);
+  return r.textHash === kitHash(ex ?? {}) && r.profileHash === f.profileHash && r.jobHash === f.jobHash && r.resumeHash === f.resumeHash;
+}
+
+export function kitExportState(p: ProfileDoc, job: JobParse | null, ex?: { coverLetter?: Bi; selfIntro?: Bi; kitReview?: KitReview }, resume?: { id?: string; createdAt?: string; generatedBy?: string } | null): { hasText: boolean; verdict: KitVerdict; overridden: boolean; exportable: boolean } {
   const hasText = !!(ex?.coverLetter?.zh || ex?.coverLetter?.en || ex?.selfIntro?.zh || ex?.selfIntro?.en);
   const verdict = hasText ? verifyKit(ex ?? {}, buildKitContext(p, job)) : { passed: true, trace: [], issues: [] };
-  const overridden = !!ex?.kitReview && ex.kitReview.textHash === kitHash(ex ?? {});
+  const overridden = overrideValid(p, job, resume, ex);
   return { hasText, verdict, overridden, exportable: verdict.passed || overridden };
 }
