@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, migrateSettings, PROVIDERS, RETIRED_DEEPSEEK_MODEL } from '../src/storage/defaults';
-import { chat } from '../src/ai/provider';
+import { chat, onAiUsage, AiError } from '../src/ai/provider';
 import type { Settings } from '../src/types';
 
 // 模拟测试：不访问网络，fetch 被替换为假实现；不使用真实 API Key
@@ -26,8 +26,9 @@ describe('已保存设置的迁移规则', () => {
     expect(migrateSettings(S({ model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/' })).settings.model).toBe('deepseek-flash');
     expect(migrateSettings(S({ model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com/v1' })).settings.model).toBe('deepseek-flash');
   });
-  it('用户自选的其他 DeepSeek 模型不动（deepseek-v4-pro、deepseek-reasoner、deepseek-flash）', () => {
-    for (const m of ['deepseek-v4-pro', 'deepseek-reasoner', 'deepseek-flash', 'deepseek-v4-flash']) {
+  // v1.11：deepseek-reasoner 与 deepseek-chat 同日（2026-07-24）停用，改为迁移（见下方 v1.11 用例）；其他自选模型仍不动
+  it('用户自选的其他 DeepSeek 模型不动（deepseek-v4-pro、deepseek-flash）', () => {
+    for (const m of ['deepseek-v4-pro', 'deepseek-flash', 'deepseek-v4-flash']) {
       const r = migrateSettings(S({ model: m })); expect(r.changed).toBe(false); expect(r.settings.model).toBe(m);
     }
   });
@@ -67,5 +68,22 @@ describe('Chat Completions 请求（模拟 fetch）', () => {
     const calls = capture();
     await chat(S({ provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }), [{ role: 'user', content: 'hi' }]);
     expect(calls[0].body.thinking).toBeUndefined(); expect(calls[0].body.model).toBe('gpt-4o-mini');
+  });
+});
+
+describe('v1.11 DeepSeek compatibility', () => {
+  it('deepseek-reasoner is migrated too; custom providers untouched', () => {
+    const s = { ...DEFAULT_SETTINGS, model: 'deepseek-reasoner', translateModel: 'deepseek-chat' };
+    const m = migrateSettings(s);
+    expect(m.changed).toBe(true); expect(m.settings.model).toBe(PROVIDERS.deepseek.model); expect(m.settings.translateModel).toBe(PROVIDERS.deepseek.model);
+    expect(migrateSettings({ ...s, provider: 'custom', baseUrl: 'https://example.com/v1' }).changed).toBe(false);
+  });
+  it('finish_reason=length raises a clear error and usage is reported without the key', async () => {
+    const seen: unknown[] = []; const off = onAiUsage((u) => seen.push(u));
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ model: 'deepseek-flash', choices: [{ finish_reason: 'length', message: { content: '{"a":' } }], usage: { prompt_tokens: 10, completion_tokens: 5, prompt_cache_hit_tokens: 4, prompt_cache_miss_tokens: 6 } }), { status: 200 })));
+    const s = { ...DEFAULT_SETTINGS, apiKey: 'sk-test-fake' };
+    await expect(chat(s, [{ role: 'user', content: 'x' }])).rejects.toBeInstanceOf(AiError);
+    expect(seen).toHaveLength(1); expect(JSON.stringify(seen)).not.toContain('sk-test-fake'); expect((seen[0] as { cacheHitTokens: number }).cacheHitTokens).toBe(4);
+    off(); vi.unstubAllGlobals();
   });
 });

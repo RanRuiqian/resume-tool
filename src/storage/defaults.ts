@@ -15,6 +15,9 @@ export const DEFAULT_SETTINGS: Settings = {
 
 /** DeepSeek 官方已停用的旧默认模型名（2026-04-24 公告，2026-07-24 停用；见 https://api-docs.deepseek.com/updates ） */
 export const RETIRED_DEEPSEEK_MODEL = 'deepseek-chat';
+/** v1.11：deepseek-chat 与 deepseek-reasoner 同日停用，都迁移到当前默认模型 */
+export const RETIRED_DEEPSEEK_MODELS = ['deepseek-chat', 'deepseek-reasoner'];
+export const isRetiredDeepSeekModel = (m?: string) => RETIRED_DEEPSEEK_MODELS.includes((m ?? '').trim());
 /**
  * API 地址安全检查：只允许 https://；http:// 仅限明确的本机回环地址（localhost / 127.0.0.1 / [::1]）供本地开发代理使用。
  * 返回 null 表示通过，否则返回中文提示。
@@ -42,7 +45,7 @@ export function isOfficialDeepSeek(s: Pick<Settings, 'provider' | 'baseUrl'>): b
 export function migrateSettings(s: Settings): { settings: Settings; changed: boolean } {
   if (!isOfficialDeepSeek(s)) return { settings: s, changed: false };
   const n = { ...s }; let changed = false;
-  if (n.model?.trim() === RETIRED_DEEPSEEK_MODEL) { n.model = PROVIDERS.deepseek.model; changed = true; }
-  if (n.translateModel?.trim() === RETIRED_DEEPSEEK_MODEL) { n.translateModel = PROVIDERS.deepseek.model; changed = true; }
+  if (isRetiredDeepSeekModel(n.model)) { n.model = PROVIDERS.deepseek.model; changed = true; }
+  if (isRetiredDeepSeekModel(n.translateModel)) { n.translateModel = PROVIDERS.deepseek.model; changed = true; }
   return { settings: changed ? n : s, changed };
 }

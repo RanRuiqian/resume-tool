@@ -1,5 +1,5 @@
 import type { ApiProfile, ApiProvider, Settings } from '../types';
-import { baseUrlProblem, isOfficialDeepSeek, PROVIDERS, RETIRED_DEEPSEEK_MODEL } from './defaults';
+import { baseUrlProblem, isOfficialDeepSeek, PROVIDERS, isRetiredDeepSeekModel } from './defaults';
 
 /**
  * 多 API 配置管理（纯函数，便于测试）。
@@ -47,8 +47,8 @@ export function presetFor(p: ApiProvider): Pick<ApiProfile, 'provider' | 'baseUr
 function fixRetiredModel(p: ApiProfile): ApiProfile {
   if (!isOfficialDeepSeek(p)) return p;
   const n = { ...p };
-  if (n.model.trim() === RETIRED_DEEPSEEK_MODEL) n.model = PROVIDERS.deepseek.model;
-  if (n.translateModel.trim() === RETIRED_DEEPSEEK_MODEL) n.translateModel = PROVIDERS.deepseek.model;
+  if (isRetiredDeepSeekModel(n.model)) n.model = PROVIDERS.deepseek.model;
+  if (isRetiredDeepSeekModel(n.translateModel)) n.translateModel = PROVIDERS.deepseek.model;
   return n;
 }
 

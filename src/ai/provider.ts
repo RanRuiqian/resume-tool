@@ -10,6 +10,11 @@ export class AiError extends Error {
 type Content = string | ({ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } })[];
 export interface ChatMsg { role: 'system' | 'user' | 'assistant'; content: Content }
 
+/** v1.11：每次调用的用量（不含任何 Key / 正文），供调试面板或测试脚本统计耗时与费用 */
+export interface AiUsage { model: string; ms: number; promptTokens?: number; completionTokens?: number; cacheHitTokens?: number; cacheMissTokens?: number; finishReason?: string }
+const usageListeners = new Set<(u: AiUsage) => void>();
+export function onAiUsage(fn: (u: AiUsage) => void): () => void { usageListeners.add(fn); return () => { usageListeners.delete(fn); }; }
+
 /** OpenAI 兼容 Chat Completions；请求直连用户配置的服务商（PRD 8） */
 export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: string; json?: boolean; timeoutMs?: number; maxTokens?: number } = {}): Promise<string> {
   if (!s.apiKey) throw new AiError('尚未启用 API：请到「设置 → AI API 管理」添加或启用一套 API，或开启演示模式', 'nokey');
@@ -18,6 +23,7 @@ export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: str
   const url = s.baseUrl.replace(/\/+$/, '') + '/chat/completions';
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), opts.timeoutMs ?? 120_000);
+  const t0 = Date.now();
   try {
     const body: Record<string, unknown> = { model: opts.model || s.model, messages, temperature: 0.2 };
     if (opts.maxTokens) body.max_tokens = opts.maxTokens;
@@ -38,6 +44,12 @@ export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: str
       throw httpError(res.status, txt);
     }
     const data = await res.json();
+    const fin: string | undefined = data?.choices?.[0]?.finish_reason;
+    const u = data?.usage ?? {};
+    const usage: AiUsage = { model: String(data?.model ?? body.model), ms: Date.now() - t0, promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, cacheHitTokens: u.prompt_cache_hit_tokens, cacheMissTokens: u.prompt_cache_miss_tokens, finishReason: fin };
+    usageListeners.forEach((fn) => { try { fn(usage); } catch { /* 统计回调出错不影响主流程 */ } });
+    // 输出被 max_tokens 截断时，JSON 往往不完整；明确提示而不是报「格式异常」
+    if (fin === 'length') throw new AiError('AI 输出过长被截断（finish_reason=length），请减少一次处理的内容或稍后重试', 'format');
     const out = data?.choices?.[0]?.message?.content;
     if (typeof out !== 'string') throw new AiError('AI 返回格式异常', 'format');
     return out;
