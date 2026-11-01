@@ -24,6 +24,9 @@ export interface Contacts {
   github?: string;
   linkedin?: string;
   website?: string;
+  portfolio?: string;
+  /** 对外链接逐项启用；缺省隐藏，不从链接推断项目证据。 */
+  visibility?: Partial<Record<'github' | 'linkedin' | 'website' | 'portfolio', boolean>>;
 }
 
 export interface PersonalInfo { birth?: string; gender?: string; hometown?: string; politics?: string }
@@ -123,6 +126,29 @@ export interface ProjectEntry extends BaseEntry {
   kind?: ProjectKind;
   /** 项目性质说明，如「课程实验」「教学实训」「本科毕业设计」（原文写出时才填） */
   nature?: string;
+  /** 课程学习与实践作业分开管理；不据此复制课程或项目。 */
+  courseIds?: string[];
+}
+
+export type CourseEvidenceLevel = 'official' | 'inferred' | 'recalled' | 'unverified';
+/** 课程属于教育知识，永远不是任职或软件实操的替代证据。 */
+export interface CourseEntry extends BaseEntry {
+  educationId: string;
+  school: string;
+  level: 'bachelor' | 'master';
+  term: string;
+  kind: 'taught' | 'project-credit';
+  name: LocalizedText;
+  code: string;
+  credits: string;
+  grade: { raw: string; status: 'recorded' | 'not-released' | 'unverified' };
+  synopsis: LocalizedText;
+  knowledgeTags: string[];
+  evidenceLevel: CourseEvidenceLevel;
+  sources: { id: string; label: string; reference?: string }[];
+  confirmation: 'pending' | 'confirmed';
+  defaultGradeVisible: false;
+  projectIds: string[];
 }
 export interface SkillEntry extends BaseEntry {
   name: LocalizedText; level?: string; category?: LocalizedText;
@@ -159,6 +185,8 @@ export interface ProfileDoc {
   awards: SimpleEntry[];
   /** v1.3 证据库 */
   evidence: Evidence[];
+  /** v1.4 独立课程；旧 JSON 缺省为空，不自动搬移或删除旧项目。 */
+  courses?: CourseEntry[];
   /** v1.6 智能导入的完整原始文本（母库原件），可检索；不参与简历生成 */
   sourceTexts?: SourceText[];
 }
@@ -264,6 +292,12 @@ export interface ResumeDoc {
   generatedBy: 'ai' | 'rules';
   /** v1.12：新生成简历保持用户设置的正文字号，超页用提示或两页，不靠继续缩字容纳。旧记录缺省沿用原逻辑。 */
   layoutPolicy?: 'readable';
+  /** 每份简历独立的课程/原始成绩选择；成绩永不默认开启。 */
+  courseSelection?: { ids: string[]; gradeIds: string[]; snapshots?: { id: string; educationId: string; school: string; name: LocalizedText; code: string; gradeRaw?: string }[] };
+  /** 资料页可配置默认值，新简历保存快照以免后续编辑改变历史简历。 */
+  contactVisibility?: Contacts['visibility'];
+  /** 固定版与本份简历的手动变体均可恢复；不写回母库。 */
+  summaryBaseline?: GenItem;
   notes?: string[];
   /** 求职信 / 自我介绍 / 面试准备（可选功能） */
   /** kitReview（v1.10.1，可选）：用户对「逐句核对未通过」的求职信/自我介绍做了人工核对并允许导出；只对 textHash 对应的那份文本有效 */

@@ -22,7 +22,8 @@ export interface ArchiveData {
   artifacts: ResumeArtifact[]; attachments: Attachment[];
   jobs: JobParse[]; resumes: ResumeDoc[];
 }
-// resumes / artifacts 已完整保留可选 sourceIds 与 layoutPolicy；它们不是新表，无需新增 section。
+// v1.13：独立课程位于 profile.courses；课程/成绩选择快照位于 resumes / artifacts，
+// 现有 section 已逐字段保留它们。母库备份保留私人成绩；新生成快照不携带隐藏成绩。
 export const SECTIONS = ['profile', 'postings', 'applications', 'events', 'artifacts', 'attachments', 'jobs', 'resumes'] as const;
 export type Section = (typeof SECTIONS)[number];
 export const SECTION_LABEL: Record<Section, string> = { profile: '个人事实档案', postings: '岗位库', applications: '申请记录', events: '状态历史', artifacts: '简历版本', attachments: '附件', jobs: '已解析 JD', resumes: '生成的简历' };

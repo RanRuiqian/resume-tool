@@ -1,4 +1,5 @@
 import { measurePages } from '../export/client';
+import { ResumeFactsOptions } from '../components/ResumeFactsOptions';
 import { AiDisclosure } from '../components/AiDisclosure';
 import { AuditBadge, FactAudit } from '../components/FactAudit';
 import { useState } from 'react';
@@ -76,6 +77,7 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
             {pending > 0 && <div className="notice warn">{pending} 条主版本已修改，副版本待同步。<button onClick={resync}>重新本地化</button></div>}
           </div>
           {showAudit && <FactAudit onClose={() => setShowAudit(false)} />}
+          <ResumeFactsOptions />
           <div className="card"><h4>逐条微调（左：中文，右：English）</h4><ItemsEditor /></div>
         </>
       )}

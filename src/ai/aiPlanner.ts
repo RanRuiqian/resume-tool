@@ -7,6 +7,7 @@ import { AI_PLAN_PROMPT, AI_PLAN_REPAIR_PROMPT, SYS_FACTS } from './prompts';
 import type { PlanEntry, ResumePlan } from './relevance';
 import { inferWorkKind } from '../render/classify';
 import { isProfessionalWork, isCampusWork, pageBudget, type ContentCategory } from './contentStrategy';
+import { profileForGeneration } from '../privacy/resume';
 
 /** AI 对岗位要求作出的可追溯判断：非官方 ATS 分数。 */
 export interface RequirementDecision {
@@ -63,6 +64,7 @@ function checkLibraryIds(p: ProfileDoc) {
 
 /** 只发送完成任务需要的专业素材；不发送照片、联系方式、证件、原始文档全文或 API Key。 */
 export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetPages: number, template?: TemplateConfig) {
+  p = profileForGeneration(p);
   checkLibraryIds(p);
   const evid = extractEvidence(p);
   const byEntry = (id: string, section: 'work' | 'projects' | 'education') => evid.filter((e) => e.entryId === id && e.section === section).map((e) => ({

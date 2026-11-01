@@ -57,7 +57,7 @@ export function toggleBullet(p: ProfileDoc, r: ResumeDoc, k: SelKey, entryId: st
 
 export function toggleSummary(p: ProfileDoc, r: ResumeDoc, on: boolean): ResumeDoc {
   const items = r.items.filter((i) => i.sourceId !== 'summary');
-  const summary = r.items.find((i) => i.sourceId === 'summary') ?? fixedSummaryItem(p);
+  const summary = r.items.find((i) => i.sourceId === 'summary') ?? r.summaryBaseline ?? fixedSummaryItem(p);
   if (on && summary) items.unshift(summary);
   return runConsistency({ ...r, items });
 }

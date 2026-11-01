@@ -4,6 +4,7 @@ import { eduDateText } from './degree';
 import { inferWorkKind, isCampusKind } from './classify';
 import type { Lang, ProfileDoc, ResumeDoc, TemplateConfig, ModuleKey, LocalizedText, Typography, PhotoPosition } from '../types';
 import { lt, formatRange, formatDate, moduleOrderFor } from '../locale/text';
+import { academicHighlight, academicGradeText, courseLines, profileForGeneration } from '../privacy/resume';
 
 /** 与输出格式无关的中间排版模型（PRD 7.3），预览 / PDF / Word 共用 */
 export interface LBlock { title?: string; subtitle?: string; date?: string; bullets: string[]; text?: string; tags?: string[] }
@@ -32,6 +33,7 @@ export interface LayoutModel {
 
 /** 生成结果为空时（仅预览），按资料库全部启用条目构造 */
 export function selectionFromProfile(p: ProfileDoc): ResumeDoc['selection'] {
+  p = profileForGeneration(p);
   const ids = <T extends { id: string; enabled: boolean }>(a: T[]) => a.filter((e) => e.enabled).map((e) => e.id);
   return { work: ids(p.work), projects: ids(p.projects), education: ids(p.education), skills: ids(p.skills), certificates: ids(p.certificates), awards: ids(p.awards) };
 }
@@ -91,7 +93,7 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
     return resume.items.filter((i) => originals.has(i.sourceId)).map((i) => B(originals.get(i.sourceId)!)).filter(Boolean);
   };
   const range = (s: string, e: string) => formatRange(s, e, loc.dateFormat, loc.presentLabel);
-  const byIds = <X extends { id: string }>(arr: X[], ids: string[]) => ids.map((id) => arr.find((x) => x.id === id)).filter((x): x is X => !!x);
+  const byIds = <X extends { id: string }>(arr: X[], ids: string[]) => [...new Set(ids)].map((id) => arr.find((x) => x.id === id)).filter((x): x is X => !!x);
 
   const sections: Partial<Record<ModuleKey, LSection>> = {};
   const DEFAULT_TITLES: Record<Lang, Partial<Record<ModuleKey, string>>> = { zh: { campus: '校园经历' }, en: { campus: 'Leadership & Activities' } };
@@ -131,7 +133,12 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
     return [maj, deg].filter(Boolean).join(sep);
   };
   // v1.10：生成的简历副本里，GPA 后的核验说明只保留「估算 / 非官方」等必要限定（资料库原文不变）
-  const ed = byIds(p.education, sel.education).map((e) => ({ title: T(e.school), subtitle: eduSub(e), date: eduRange(e), bullets: resume ? pickBullets(e.highlights).map((x) => compactGpaNote(x, lang)) : pickBullets(e.highlights) }));
+  const ed = byIds(p.education, sel.education).map((e) => {
+    const courses = courseLines(p, resume, e.id, lang);
+    // 同时检查原始 highlight 和用户编辑的生成句，避免旧缓存绕过默认隐藏。
+    const bullets = pickBullets(e.highlights.filter((b) => !academicHighlight(b))).filter((t) => !academicGradeText(t));
+    return { title: T(e.school), subtitle: eduSub(e), date: eduRange(e), bullets: [...(resume ? bullets.map((x) => compactGpaNote(x, lang)) : bullets), ...(courses.length ? [`${lang === 'zh' ? '相关课程（课程知识）' : 'Relevant coursework (academic knowledge)'}: ${courses.join(lang === 'zh' ? '、' : '; ')}`] : [])] };
+  });
   if (ed.length) sections.education = { key: 'education', title: title('education'), blocks: ed };
   const sk = byIds(p.skills, sel.skills);
   if (sk.length) {
@@ -184,7 +191,8 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   }
 
   const c = p.profile.contacts;
-  const contacts = [c.phone, c.email, T(c.location), c.github, c.linkedin, c.website].filter((x): x is string => !!x && !!x.trim());
+  const visibility = resume?.contactVisibility ?? c.visibility ?? {};
+  const contacts = [c.phone, c.email, T(c.location), ...(['github', 'linkedin', 'website', 'portfolio'] as const).filter((k) => visibility[k] === true).map((k) => c[k])].filter((x): x is string => !!x && !!x.trim());
   const personal = loc.personalFields.map((f) => (p.profile.personal[f] ? `${PERSONAL_LABEL[lang][f]}: ${p.profile.personal[f]}` : '')).filter(Boolean);
   const photo = loc.photo.enabled && loc.photo.position !== 'none' && p.profile.photo
     ? { dataUrl: p.profile.photo, position: loc.photo.position, sizeMm: loc.photo.sizeMm, aspect: p.profile.photoAspect ?? 0.8 } : null;

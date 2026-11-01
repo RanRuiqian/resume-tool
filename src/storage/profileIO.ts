@@ -1,14 +1,15 @@
 import type { Evidence, EvidenceType, LocalizedText, ProfileDoc, Proficiency, ProjectDossier } from '../types';
 import { forEachText } from '../locale/text';
+import { normalizeCourses } from './courses';
 
-export const PROFILE_VERSION = '1.3';
+export const PROFILE_VERSION = '1.4';
 
 export function emptyProfile(): ProfileDoc {
   const e = (): LocalizedText => ({});
   return {
     version: PROFILE_VERSION, primaryLanguage: 'zh', glossary: [],
     profile: { name: e(), headline: e(), summary: e(), contacts: { location: e() }, personal: {} },
-    education: [], work: [], projects: [], skills: [], certificates: [], awards: [], evidence: [],
+    education: [], work: [], projects: [], skills: [], certificates: [], awards: [], evidence: [], courses: [],
   };
 }
 
@@ -47,6 +48,7 @@ export function normalizeProfile(raw: unknown): ProfileDoc {
     });
   }
   p.evidence = (Array.isArray(r.evidence) ? r.evidence : []).map((e, i) => normalizeEvidence(e, i));
+  p.courses = normalizeCourses(r.courses ?? []);
   // 清理指向已不存在条目的关联（不删除任何用户写的内容）
   const ids = new Set([...p.work, ...p.projects].map((x) => x.id));
   const evIds = new Set(p.evidence.map((x) => x.id));

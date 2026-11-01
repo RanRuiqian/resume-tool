@@ -12,6 +12,7 @@ import { fixedSummaryItem, fixedSummaryNotes } from './fixedSummary';
 import { fitContent, pageBudget, type ContentOptions } from './contentStrategy';
 import { sourceText } from './provenance';
 import { decisionModel, planWithAi, type AiSelectionResult } from './aiPlanner';
+import { academicHighlight, profileForGeneration } from '../privacy/resume';
 
 type Sel = ResumeDoc['selection'];
 const NAME: Record<Lang, string> = { zh: '中文', en: '英文' };
@@ -50,6 +51,7 @@ function conflictNotes(p: ProfileDoc, job: JobParse): string[] {
  * 每段经历按价值和篇幅预算挑选要点，并按句精简（中英同步取舍）；不改写措辞，母库不变。
  */
 export function generateRules(p: ProfileDoc, job: JobParse, primary: Lang, targetPages = 1): ResumeDoc {
+  p = profileForGeneration(p);
   const plan = planResume(p, job, primary, targetPages);
   const terms = jobTerms(job);
   const idx = textIndex(p);
@@ -218,6 +220,9 @@ export function decideTranslation(pri: string, aiText: string | undefined, confi
 
 /** 基于主版本本地化副版本（F5.6 第二步）；校验失败重试 1 次，仍失败按 decideTranslation 回退 */
 export async function localizeAi(s: Settings, p: ProfileDoc, job: JobParse | null, r: ResumeDoc, onlyIds?: string[]): Promise<ResumeDoc> {
+  const hiddenAcademicIds = new Set(p.education.flatMap((e) => e.highlights.filter(academicHighlight).map((b) => b.id)));
+  p = profileForGeneration(p);
+  r = { ...r, items: r.items.filter((i) => !hiddenAcademicIds.has(i.sourceId)) };
   const pri = r.primaryLanguage, sec = other(pri);
   // 用户人工确认过的副版本优先保留，不再重译（B6）
   const target = r.items.filter((i) => i.sourceId !== 'summary' && (!onlyIds || onlyIds.includes(i.sourceId)) && !i.confirmedLangs?.includes(sec));
@@ -266,11 +271,12 @@ export function flagStale(p: ProfileDoc, r: ResumeDoc): ResumeDoc {
 }
 
 export async function generateResume(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void, options: ContentOptions = {}): Promise<ResumeDoc> {
+  p = profileForGeneration(p);
   const r = await generateResumeInner(s, p, job, primary, targetPages, onStep, options);
   let cut = 0;
   r.items = r.items.map((i) => { if (i.sourceId === 'summary') return i; const zh = stripAuthorList(i.zh), en = stripAuthorList(i.en); if (zh !== i.zh || en !== i.en) cut++; return zh !== i.zh || en !== i.en ? { ...i, zh, en } : i; });
   if (cut) r.notes = [...(r.notes ?? []), `已在简历中省略论文作者名单（${cut} 条；资料库原文未改）`];
-  return runConsistency(flagStale(p, r));
+  return runConsistency(flagStale(p, { ...r, courseSelection: { ids: [], gradeIds: [], snapshots: [] }, contactVisibility: { ...p.profile.contacts.visibility }, ...(r.items.find((i) => i.sourceId === 'summary') ? { summaryBaseline: structuredClone(r.items.find((i) => i.sourceId === 'summary')!) } : {}) }));
 }
 async function generateResumeInner(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void, options: ContentOptions = {}): Promise<ResumeDoc> {
   if (s.demoMode) {

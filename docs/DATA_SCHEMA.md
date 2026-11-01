@@ -1,6 +1,6 @@
 # 数据结构（DATA_SCHEMA）
 
-数据库：真实数据 `resume-tool`，演示数据 `resume-tool-demo`。Dexie 版本 **4**（浏览器里 `indexedDB` 版本显示为 40）。
+数据库：真实数据 `resume-tool`，演示数据 `resume-tool-demo`。Dexie 版本 **5**（浏览器里 `indexedDB` 版本显示为 50）。
 
 ## 版本历史
 | 版本 | 变化 |
@@ -8,6 +8,7 @@
 | v1 | `profile, jobs, resumes, exports, settings, state, templates` |
 | v2 | 新增 `backups`（资料快照）；升级前自动快照旧资料，再规范化资料结构 |
 | v3 | 历史简历条目补齐 `syncStatus`；事实审查 `audit` 为可选字段 |
+| v5 | 事务内原始资料备份后追加空 courses，其他表原样保留；失败整体回滚 |
 | v4 | 新增 `postings, applications, appEvents, artifacts, attachments, attachmentBlobs`（只新增，不改旧表） |
 
 ## v1.11.0（无结构变更，仍为 version 4）
@@ -121,3 +122,15 @@
 - `GenItem.sourceIds?: string[]`：同一工作/项目内多个已选事实的概括，包含主 `sourceId`。所有来源必须有效、同父条目、唯一且未被其它生成要点使用；缺省表示旧单来源。审查/恢复使用全部来源，手动取消其中一条时拆回其它原文。
 - `ResumeDoc.layoutPolicy?: 'readable'`：仅新 AI 简历设置；适配间距时不缩小正文和行距。缺省保持旧简历的布局行为。
 - 数据库表、版本、资料 JSON 和备份格式均不变。`backup.ts` 的既有 `resumes` / `artifacts` sections 已完整序列化这些可选字段，`tests/dataSafety.test.ts` 验证 IndexedDB、JSON、备份恢复及旧快照不变；不需要新增 section。
+
+## v1.13 P0/P1 增量（profile 1.4，Dexie 5）
+
+- 数据库 v5（IndexedDB 50）不增加/删除表：在同一升级事务里先写 `bk-premigrate-v4-me` 原始资料快照，再给缺少 courses 的旧文档追加 `courses: []`。不会重写旧经历、历史简历、密钥或求职记录。任意升级写入失败整体回滚 v4；重开可重试。成功升级后的资料回退使用快照，不降低数据库版本。升级前快照永久保留，不参与普通最近 20 份的轮替。
+- `ProfileDoc.courses?: CourseEntry[]` 是独立课程实体（不复用 projects）。字段：稳定 id、enabled、educationId、school、level=bachelor/master、term、kind=taught/project-credit、name 双语官方原名、code、credits 原文、grade={raw,status=recorded/not-released/unverified}、synopsis 双语一句概述、knowledgeTags、evidenceLevel=official/inferred/recalled/unverified、sources[{id,label,reference?}]、confirmation=pending/confirmed、defaultGradeVisible=false、projectIds、aliases。另一语言原名缺失允许留空，不批量机翻官方名称。`ProjectEntry.courseIds?` 可保存反向关联；本轮编辑入口以课程的 projectIds 为准，不自动迁移/删改旧项目。
+- 课程草稿 JSON 为课程数组或 `{courses:[...]}`，完整母库 JSON 仍可 roundtrip。TXT 为 UTF-8 带表头的 `|` 或 Tab 表格；列名和虚构示例见 `src/storage/courses.ts` 的 COURSE_TXT_EXAMPLE。不支持在单元格中转义分隔符/换行，复杂内容用 JSON。未知列、格式冲突整批拒绝，不能悄悄丢列。
+- 有官方代码时身份由教育（ID 优先）、层次、学期、代码构成；无代码使用官方名。相同身份的互补双语可合并，冲突不覆盖；无共同 ID/代码的疑似异语同课进入人工核对。以后换正式学校名/教育 ID 时请沿用稳定课程 ID。导入先预览，新内容一律待确认，默认全部跳过；明确选择 add/fill/replace 才写入，先保存完整资料快照。fill 不覆盖人类已有内容；replace 保持原 ID 并退回 pending。未提供 V5 文本格式，不能把本通用 TXT 接口当作已适配 V5 自由文本。
+- `ResumeDoc.courseSelection?={ids,gradeIds,snapshots?}` 每份简历独立，snapshots 只存 id、教育关联、课程官方名、代码；明确开启的单课才存 gradeRaw。未公布/待核实成绩不能公开，项目学分不计授课课程、不打印为新项目。课程概述不输出；本轮没有接通 AI 自动选课或语义报告。
+- `Contacts.portfolio?` 与 github/linkedin/website 各自有 `visibility?` 开关，缺省隐藏。`ResumeDoc.contactVisibility?` 保存新简历当时的开关。开关不授予任何项目证据资格。
+- `ResumeDoc.summaryBaseline?` 保留本份简历固定简介；人工变体显式确认后只改本份 resume，进入事实审查，支持恢复固定版/撤销。母库 manual/旧无状态/machine/stale 简介不再消失，而是原样显示并标待确认；只有真实 confirmed 状态才显示已确认。
+- 生成副本去掉结构化课程成绩、原文全文及教育学术分数亮点；语言考试证据不换算。新申请快照不复制隐藏的课程成绩。母库 JSON/完整档案备份和本地回滚快照**仍完整保存私人成绩**，请勿公开它们。已有 artifacts 保持不可变，不迁移/脱敏旧内容。自由文本中没有学术标签的任意分数不属于自动识别保证范围，投递前仍需人工审阅。
+- 现有 `SECTIONS` 已包含 profile/resumes/artifacts，不新增归档 section；旧归档无 courses 时默认空，旧记录原样保留。

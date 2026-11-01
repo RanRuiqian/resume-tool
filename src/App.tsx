@@ -15,10 +15,11 @@ const NAV: [string, MsgKey][] = [['applications', 'navApplications'], ['profile'
 const ADV: [string, MsgKey][] = [['job', 'navJob'], ['generate', 'navGenerate']];
 
 function Shell() {
-  const { ready, settings, setSettings, isDemo } = useApp();
+  const { ready, loadError, settings, setSettings, isDemo } = useApp();
   const t = useT();
   const [page, setPageS] = useState(() => location.hash.slice(1) || 'wizard');
   const go = (p: string) => { setPageS(p); window.history.replaceState(null, '', `#${p}`); window.scrollTo(0, 0); };
+  if (loadError) return <div className="notice error" role="alert">本地资料读取或升级失败。数据库升级事务失败会整体回滚，程序不会清库或重置密钥。请保留浏览器数据，关闭其他标签页后重试；若仍失败，请返回上一版本并导出备份。<button onClick={() => location.reload()}>重新读取</button></div>;
   if (!ready) return <div className="loading">加载中…</div>;
   return (
     <div className="app">

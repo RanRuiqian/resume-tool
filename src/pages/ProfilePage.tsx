@@ -6,6 +6,7 @@ import { useApp } from '../store';
 import { useT } from '../i18n';
 import { LTField } from '../components/LTField';
 import { FixedSummaryEditor } from '../components/FixedSummaryEditor';
+import { CoursesPanel } from '../components/CoursesPanel';
 import { EducationExtra, EvidenceList, ProjectDossierEditor, SkillExtra } from '../components/DossierFields';
 import type { LocalizedText, ProfileDoc, Lang } from '../types';
 import { uid, needsTranslation, forEachText } from '../locale/text';
@@ -16,8 +17,9 @@ import { downloadBytes, fileToDataUrl } from '../utils/download';
 import type { BackupRow } from '../storage/db';
 
 type ListKey = 'education' | 'work' | 'projects' | 'skills' | 'certificates' | 'awards';
-const TABS: { key: 'basic' | ListKey | 'evidence' | 'glossary'; label: string }[] = [
+const TABS: { key: 'basic' | ListKey | 'evidence' | 'glossary' | 'courses'; label: string }[] = [
   { key: 'basic', label: '基本信息' }, { key: 'education', label: '教育' }, { key: 'work', label: '工作' }, { key: 'projects', label: '项目' },
+  { key: 'courses', label: '课程' },
   { key: 'skills', label: '技能' }, { key: 'certificates', label: '证书' }, { key: 'awards', label: '获奖' }, { key: 'evidence', label: '证据' }, { key: 'glossary', label: '专有名词表' },
 ];
 const LT_FIELDS: Record<ListKey, [string, string, boolean?][]> = {
@@ -135,7 +137,7 @@ export function ProfilePage() {
       {(busy || msg) && <div className="notice">{busy || msg}</div>}
       <OrganizePanel />
       <ReviewSummary />
-      <div className="tabs">{TABS.map((x) => <button key={x.key} className={tab === x.key ? 'active' : ''} onClick={() => setTab(x.key)}>{x.label}{x.key !== 'basic' && x.key !== 'glossary' ? `（${profile[x.key].length}）` : ''}{x.key !== 'basic' && x.key !== 'glossary' && x.key !== 'evidence' && profile[x.key].some((e) => e.uncertain?.length) ? ' ⚠' : ''}</button>)}</div>
+      <div className="tabs">{TABS.map((x) => <button key={x.key} className={tab === x.key ? 'active' : ''} onClick={() => setTab(x.key)}>{x.label}{x.key !== 'basic' && x.key !== 'glossary' ? `（${(profile[x.key] ?? []).length}）` : ''}{x.key !== 'basic' && x.key !== 'glossary' && x.key !== 'evidence' && (profile[x.key] ?? []).some((e) => e.uncertain?.length) ? ' ⚠' : ''}</button>)}</div>
       {tab === 'basic' && (
         <div className="card">
           <div className="photo-row">
@@ -152,8 +154,8 @@ export function ProfilePage() {
           <FixedSummaryEditor value={pr.summary} settings={settings} onChange={(v) => upd((p) => { p.profile.summary = v; })} />
           <LTField label="所在城市" value={pr.contacts.location} onChange={(v) => upd((p) => { p.profile.contacts.location = v; })} />
           <div className="grid2">
-            {(['email', 'phone', 'github', 'linkedin', 'website'] as const).map((f) => (
-              <label key={f}>{f}<input value={pr.contacts[f] ?? ''} onChange={(e) => upd((p) => { p.profile.contacts[f] = e.target.value; })} /></label>
+            {(['email', 'phone', 'github', 'linkedin', 'website', 'portfolio'] as const).map((f) => (
+              <label key={f}>{f}<input value={pr.contacts[f] ?? ''} onChange={(e) => upd((p) => { p.profile.contacts[f] = e.target.value; })} />{(['github', 'linkedin', 'website', 'portfolio'] as string[]).includes(f) && <span className="check"><input type="checkbox" checked={pr.contacts.visibility?.[f as 'github' | 'linkedin' | 'website' | 'portfolio'] === true} onChange={(e) => upd((p) => { p.profile.contacts.visibility = { ...p.profile.contacts.visibility, [f]: e.target.checked }; })} />在新简历中显示（默认隐藏）</span>}</label>
             ))}
           </div>
           <h4>个人信息（仅中文版可选显示，默认关闭；在「版式设置」中勾选）</h4>
@@ -164,7 +166,8 @@ export function ProfilePage() {
           </div>
         </div>
       )}
-      {tab !== 'basic' && tab !== 'glossary' && tab !== 'evidence' && list(tab)}
+      {tab !== 'basic' && tab !== 'glossary' && tab !== 'evidence' && tab !== 'courses' && list(tab)}
+      {tab === 'courses' && <CoursesPanel />}
       {tab === 'evidence' && <EvidenceList profile={profile} upd={upd} />}
       {tab === 'glossary' && (
         <div className="card">
@@ -189,7 +192,7 @@ function BackupPanel({ list, restore }: { list: () => Promise<BackupRow[]>; rest
   const [rows, setRows] = useState<BackupRow[] | null>(null);
   return (
     <details className="card backups" onToggle={(e) => { if ((e.currentTarget as HTMLDetailsElement).open) list().then(setRows); }}>
-      <summary>🕘 资料快照（每次替换 / 导入前自动保存，最多 20 份）</summary>
+      <summary>🕘 资料快照（每次替换 / 导入前自动保存，最近 20 份，升级前快照额外保留）</summary>
       {rows === null ? <p className="muted small">加载中…</p> : rows.length === 0 ? <p className="muted small">还没有快照。</p> : (
         <table><tbody>{rows.map((b) => (
           <tr key={b.id}><td className="small">{new Date(b.createdAt).toLocaleString('zh-CN')}</td><td className="small">{b.reason}</td>

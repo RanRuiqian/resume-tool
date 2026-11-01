@@ -1,0 +1,46 @@
+import 'fake-indexeddb/auto';
+import { beforeEach, expect, it, vi } from 'vitest';
+vi.mock('../src/ai/provider', () => ({ chatJson: vi.fn() }));
+import { chatJson } from '../src/ai/provider';
+import { generateResume, generateRules, localizeAi } from '../src/ai/generate';
+import { coursesFixture } from './helpers/v113CoursesFixture';
+import { personalPlan } from './helpers/v112PersonalFixture';
+import { jobs } from './helpers/v110Fixture';
+import type { Settings } from '../src/types';
+import { ResumeDB } from '../src/storage/db';
+import { addPosting, linkResumeSnapshot } from '../src/tracker/repo';
+import { courseSelectionSnapshot } from '../src/privacy/resume';
+const api = vi.mocked(chatJson);
+const s: Settings = { id: 'settings', demoMode: false, baseUrl: 'https://api.deepseek.com', apiKey: 'fake-test-only', model: 'deepseek-flash', visionModel: '', translateModel: '', provider: 'deepseek', ocrMode: 'local', uiLang: 'zh', setupDone: true };
+beforeEach(() => { api.mockReset(); });
+it('keeps original AI plan/write/localize calls, excludes hidden scores from every payload/cache and does not mutate the master', async () => {
+  const p = coursesFixture(), before = structuredClone(p), job = jobs().A;
+  const translations = [...p.work, ...p.projects].flatMap((e) => e.bullets.map((b) => ({ sourceId: b.id, text: b.en })));
+  api.mockResolvedValueOnce(personalPlan()).mockResolvedValueOnce({ items: [] }).mockResolvedValue({ items: translations });
+  const r = await generateResume(s, p, job, 'zh', 1);
+  expect(api).toHaveBeenCalledTimes(3);
+  const payloads = JSON.stringify(api.mock.calls);
+  expect(payloads).not.toMatch(/MOCK-(?:UG|PG)-GRADE|GPA 3.6|虚构本科成绩单/);
+  expect(payloads).not.toContain('PLC 内容待核实');
+  expect(JSON.stringify(r)).not.toMatch(/MOCK-(?:UG|PG)-GRADE/); expect(p).toEqual(before);
+  expect(r.items.find((i) => i.sourceId === 'summary')!.zh).toBe(p.profile.summary.zh);
+});
+it('does not send old academic highlights when resynchronizing a cached resume, including mixed PTE and GPA notes', async () => {
+  const p = coursesFixture(); p.education[0].highlights = [{ id: 'old-academic', zh: 'GPA约 3.6（估算）；PTE Academic MOCK', en: 'Estimated GPA 3.6; PTE Academic MOCK' }];
+  const r = generateRules(p, jobs().A, 'zh'); r.items.push({ sourceId: 'old-academic', zh: p.education[0].highlights[0].zh!, en: '', syncStatus: 'pending' });
+  api.mockResolvedValue({ items: [] }); const localized = await localizeAi(s, p, jobs().A, r);
+  expect(JSON.stringify(api.mock.calls)).not.toContain('GPA'); expect(localized.items.some((i) => i.sourceId === 'old-academic')).toBe(false);
+  expect(p.education[0].highlights[0].zh).toContain('GPA');
+});
+it('new immutable application snapshots omit hidden raw grades; private master retains them and only opted-in grade stays in resume snapshot', async () => {
+  const p = coursesFixture(), r = generateRules(p, jobs().A, 'zh'), d = new ResumeDB('v113-immutable-grade-test');
+  const { application } = await addPosting(d, { company: '模拟公司', title: '模拟工程师' }, 'preparing');
+  r.courseSelection = courseSelectionSnapshot(p, [p.courses![0].id], []);
+  const hidden = await linkResumeSnapshot(d, application!.id, { profile: p, resume: r, job: jobs().A });
+  expect(JSON.stringify(hidden)).not.toMatch(/MOCK-(?:UG|PG)-GRADE/);
+  r.courseSelection = courseSelectionSnapshot(p, [p.courses![0].id], [p.courses![0].id]);
+  const shown = await linkResumeSnapshot(d, application!.id, { profile: p, resume: r, job: jobs().A });
+  expect(JSON.stringify(shown)).toContain('MOCK-UG-GRADE-1'); expect(JSON.stringify(shown)).not.toContain('MOCK-UG-GRADE-2');
+  expect(await d.artifacts.get(hidden.id)).toEqual(hidden); expect(p.courses![0].grade.raw).toBe('MOCK-UG-GRADE-1');
+  await d.delete();
+});

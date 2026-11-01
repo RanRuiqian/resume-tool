@@ -1,6 +1,8 @@
 # AI 交接说明（AI_HANDOFF）
 
-本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-11-01（v1.12 Draft：固定双语简介、完整职业背景、软版面预算与多来源概括；未合并未部署）。
+本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-11-02（v1.13 P0/P1 Draft，依赖尚未合并的 PR #13；课程母库、成绩隐私、简介待确认保留。多 JD 与课程 AI 语义匹配未实现；未合并未部署）。
+
+本增量的范围、验证及后续任务见 [V113_COURSE_LIBRARY.zh-CN.md](V113_COURSE_LIBRARY.zh-CN.md)。分支 `feat/v1.13-course-library` 基于 PR #13 的 `f7d947c`；不要把 P2 规划当成已完成。
 
 ## 1. 产品
 面向中国求职者（主要是 2027 届机械 / 机器视觉方向）的双语简历工具：
@@ -25,7 +27,7 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 | `src/tracker/importers.ts` | CSV / 通用 JSON / ran-application-handoff 1.0 专用适配器、导入计划与单事务执行 |
 | `src/tracker/backup.ts` | 档案格式 `resume-tool-archive` v1，`scrubSecrets` |
 | `src/tracker/stats.ts` | 统计（只从真实记录计算） |
-| `src/storage/db.ts` | Dexie 数据库与迁移（v1–v4） |
+| `src/storage/db.ts` | Dexie 数据库与迁移（v1–v5） |
 | `src/storage/mode.ts`, `demo.ts` | `?demo` 演示模式与示例数据 |
 | `src/ai/` | DeepSeek 调用（不要改调用方式）；`provider.ts` 的 `AiError.kind` 区分 Key 无效 / 余额 / 模型 / 超时 / 网络；`testConnection` 用于连接测试 |
 | `src/storage/apiProfiles.ts` | 多 API 配置纯函数：迁移、增改、切换、删除、脱敏、校验 |

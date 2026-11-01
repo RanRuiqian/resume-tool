@@ -32,6 +32,7 @@ import { ProgressNote } from '../components/ProgressNote';
 import { PhotoCropper } from '../components/PhotoCropper';
 import { JobHistory } from '../components/JobHistory';
 import { MatchInsights } from '../components/MatchInsights';
+import { ResumeFactsOptions } from '../components/ResumeFactsOptions';
 import { CareerKit } from '../components/CareerKit';
 import { FEATURES } from '../features';
 import { useL } from '../i18n';
@@ -268,7 +269,7 @@ function Step2({ next, back }: { next: () => void; back: () => void }) {
       if (r.reused === 'current') { setInfo('岗位文字没有变化，沿用已有分析结果（没有重新调用 AI）。需要时可点「重新分析」。'); return; }
       const j = { ...r.job, screenshots: imgs, ocrRawText: rawAll || undefined };
       setJob(j);
-      if (resume && resume.jobId !== j.id) setResume(null);
+      // 重新解析只新增岗位版本；保留已编辑简历，直到用户明确重新生成。
       if (r.reused === 'history') setInfo('这份岗位文字之前分析过，已复用当时的分析结果（没有重新调用 AI）。');
       if (r.aiError) setErr(`AI 解析失败（${r.aiError}），已用简单规则解析，请核对。`);
     } finally { setBusy(''); }
@@ -350,7 +351,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
     try { const r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy, { template, measure: (r) => measurePages(profile, { ...template, page: { ...template.page, autoFit: false } }, r) }); setResume({ ...r, templateId }); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
-  useEffect(() => { if (!started.current && job && (!resume || resume.jobId !== job.id)) { started.current = true; run(); } });
+  useEffect(() => { if (!started.current && job && !resume) { started.current = true; run(); } });
   // 实时统计 PDF 页数（Worker 中渲染，防抖）
   useEffect(() => {
     if (!resume) return;
@@ -374,6 +375,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
   return (
     <div className="step">
       <h2>③ 生成并预览</h2>
+      {resume && job && resume.jobId !== job.id && <div className="notice warn" data-testid="previous-resume-retained">岗位已重新解析；下方保留的是上一岗位版本的简历及手动选择。点击「重新生成」才会为当前岗位创建新简历，旧版继续保留在本机历史记录中。</div>}
       <AiDisclosure />
       {busy && <div className="notice"><span className="spinner" /> {busy}</div>}
       {err && <div className="notice error">{err}</div>}
@@ -425,6 +427,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
           </div>
         </div>
       </div>
+      <ResumeFactsOptions />
       <MatchInsights go={go} />
       {resume && (
         <div className="card">
@@ -432,7 +435,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
           {showItems && <ItemsEditor />}
         </div>
       )}
-      <div className="row nav-row"><button onClick={back}>← 换个岗位</button><span className="spacer" /><button className="primary big" disabled={!resume || !!busy} onClick={next}>满意了，去下载 →</button></div>
+      <div className="row nav-row"><button onClick={back}>← 换个岗位</button><span className="spacer" /><button className="primary big" disabled={!resume || !!busy || resume.jobId !== job?.id} onClick={next}>满意了，去下载 →</button></div>
     </div>
   );
 }

@@ -74,6 +74,7 @@ with tempfile.TemporaryDirectory(prefix='v112-personal-browser-') as user_dir, s
  before_profile=copy.deepcopy(saved['profile']); before_calls=len(calls); generated=[]
  for key in ['A','B']:
   pg.evaluate(SETJOB,JOBS[key]);pg.evaluate("localStorage.setItem('wizardStep','3')");pg.goto(BASE+'#wizard');pg.reload()
+  pg.wait_for_selector('.result-bar');pg.get_by_role('button',name='🔄 重新生成').click()
   r=None
   for _ in range(300):
    data=pg.evaluate(DUMP)

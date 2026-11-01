@@ -55,7 +55,7 @@ describe('migration v1 → v2', () => {
     old.close();
     const db = new ResumeDB('mig-test');
     await db.open();
-    expect(db.verno).toBe(4);
+    expect(db.verno).toBe(5);
     const r = (await db.resumes.get('r-old'))!;
     expect(r.items[0]).toMatchObject({ sourceId: 'p1-b1', zh: '漏检率降低 40%', syncStatus: 'in-sync' });
     expect(r.audit).toBeUndefined();
@@ -68,7 +68,7 @@ describe('migration v1 → v2', () => {
     expect(await db.jobs.count()).toBe(1);
     // 升级前自动快照：旧版原始资料原样保存，恢复时再统一升级
     const bk = await db.backups.toArray();
-    expect(bk.length).toBe(1);
+    expect(bk.length).toBe(2);
     expect(bk[0].reason).toContain('升级前自动快照');
     expect((bk[0].doc as unknown as { profile: { name: string } }).profile.name).toBe('测试用户乙');
     expect(normalizeProfile(bk[0].doc)).toEqual(doc);
@@ -119,7 +119,7 @@ describe('career profile v1.3 fields', () => {
     expect(p.evidence[0].publicOk).toBe(false);
     expect(normalizeProfile({ evidence: [{ location: 'https://arxiv.org/abs/1' }] }).evidence[0].locationKind).toBe('url');
     expect(normalizeProfile(JSON.parse(exportProfileJson(p)))).toEqual(p);
-    expect(p.version).toBe('1.3');
+    expect(p.version).toBe('1.4');
   });
   it('old v1.2 JSON backups (no new fields) still import', () => {
     const old = { version: '1.2', primaryLanguage: 'zh', glossary: [], profile: { name: { zh: '旧备份' }, headline: {}, summary: {}, contacts: { location: {} }, personal: {} },
@@ -181,4 +181,48 @@ it('v1.12 optional provenance and readable-layout fields round-trip without rewr
   expect((await restored.profile.get('me'))!.doc.profile.summary).toEqual(changed.profile.summary);
   await restored.delete();
   await d.delete();
+});
+
+/** v4 fixture deliberately includes every store, plus opaque old fields and a fictional credential. */
+async function makeV4(name: string) {
+  const old = new Dexie(name);
+  old.version(4).stores({ profile: 'id', templates: 'id', jobs: 'id, createdAt', resumes: 'id, jobId, createdAt', exports: 'id, [company+roleAbbr+date]', settings: 'id', state: 'id', backups: 'id, createdAt',
+    postings: 'id, company, city, recruitType, priority, deadline, updatedAt, *importKeys', applications: 'id, postingId, status, updatedAt', appEvents: 'id, applicationId, at', artifacts: 'id, applicationId, createdAt', attachments: 'id, postingId, applicationId, sha256, uploadedAt', attachmentBlobs: 'id' });
+  const profile = mockUser(); delete profile.courses; profile.version = '1.3';
+  await old.table('profile').put({ id: 'me', doc: profile });
+  const unchanged: Record<string, unknown[]> = {};
+  for (const table of old.tables.filter((t) => !['profile', 'backups'].includes(t.name))) {
+    const row = { id: `old-${table.name}`, opaque: { legacy: ['keep-all'], bytes: new Uint8Array([1, 2, 3]) }, ...(table.name === 'settings' ? { apiKey: 'fake-test-only-credential' } : {}) };
+    await table.put(row); unchanged[table.name] = await table.toArray();
+  }
+  await old.table('backups').put({ id: 'old-manual-backup', doc: profile, createdAt: '2026-01-01', reason: 'old snapshot' });
+  old.close(); return { profile, unchanged };
+}
+describe('v1.13 transactional migration v4 → v5 and protected rollback backups', () => {
+  it('backs up raw v4 before appending courses, keeps every other store byte-for-byte and can restore raw profile', async () => {
+    const name = 'v113-migrate-all-stores'; const { profile, unchanged } = await makeV4(name); const d = new ResumeDB(name);
+    await d.open(); expect(d.verno).toBe(5);
+    expect((await d.profile.get('me'))!.doc).toEqual({ ...profile, courses: [] });
+    const snapshot = (await d.backups.get('bk-premigrate-v4-me'))!;
+    expect(snapshot.doc).toEqual(profile); expect(snapshot.doc).not.toHaveProperty('courses');
+    for (const [table, rows] of Object.entries(unchanged)) expect(await d.table(table).toArray()).toEqual(rows);
+    expect(await d.backups.get('old-manual-backup')).toBeDefined();
+    for (let i = 0; i < 22; i++) await snapshotProfile(d, normalizeProfile(profile), `fictional ${i}`);
+    expect(await d.backups.get(snapshot.id)).toEqual(snapshot); expect(await d.backups.count()).toBe(21);
+    await d.profile.put({ id: 'me', doc: normalizeProfile(snapshot.doc) });
+    expect((await d.profile.get('me'))!.doc.work).toEqual(profile.work);
+    await d.delete();
+  });
+  it('rolls back the entire upgrade when the backup write fails; v4 data remains readable and retry succeeds', async () => {
+    const name = 'v113-forced-migration-failure'; const { profile, unchanged } = await makeV4(name); const d = new ResumeDB(name);
+    const fail = () => { throw new Error('simulated backup quota failure'); };
+    d.backups.hook('creating', fail);
+    await expect(d.open()).rejects.toThrow(/simulated backup quota failure/);
+    d.close();
+    const old = new Dexie(name);
+    await old.open(); expect(old.verno).toBe(4); expect((await old.table('profile').get('me')).doc).toEqual(profile);
+    for (const [table, rows] of Object.entries(unchanged)) expect(await old.table(table).toArray()).toEqual(rows);
+    expect(await old.table('backups').count()).toBe(1); old.close();
+    const retry = new ResumeDB(name); await retry.open(); expect((await retry.profile.get('me'))!.doc.courses).toEqual([]); await retry.delete();
+  });
 });

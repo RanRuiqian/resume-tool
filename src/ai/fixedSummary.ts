@@ -1,16 +1,17 @@
 import type { GenItem, Lang, LocalizedText, ProfileDoc } from '../types';
 
-/** 人工输入、已确认或无状态的旧资料可直接复用；机翻与过期译文需先在资料页确认。 */
+/** 已保存原文均保留；确认状态单独提示，不通过隐藏整栏冒充修复。 */
 export function fixedSummaryText(t: LocalizedText, lang: Lang): string {
-  return t[lang]?.trim() && t.status?.[lang] !== 'machine' && t.status?.[lang] !== 'stale' ? t[lang]! : '';
+  return t[lang]?.trim() ? t[lang]! : '';
 }
 
 export function fixedSummaryItem(p: ProfileDoc): GenItem | null {
   const zh = fixedSummaryText(p.profile.summary, 'zh'), en = fixedSummaryText(p.profile.summary, 'en');
-  return zh || en ? { sourceId: 'summary', zh, en, syncStatus: zh && en ? 'in-sync' : 'needs-review' } : null;
+  const confirmedLangs = (['zh', 'en'] as const).filter((l) => p.profile.summary.status?.[l] === 'confirmed' && !!fixedSummaryText(p.profile.summary, l));
+  return zh || en ? { sourceId: 'summary', zh, en, syncStatus: confirmedLangs.length === 2 ? 'in-sync' : 'needs-review', confirmedLangs } : null;
 }
 
 export function fixedSummaryNotes(p: ProfileDoc): string[] {
-  return (['zh', 'en'] as const).filter((l) => !fixedSummaryText(p.profile.summary, l))
-    .map((l) => `固定简介缺少已确认${l === 'zh' ? '中文' : '英文'}：请在「我的资料 → 个人简介」填写或确认翻译建议；本次不自动生成或覆盖。`);
+  return (['zh', 'en'] as const).filter((l) => p.profile.summary.status?.[l] !== 'confirmed' || !fixedSummaryText(p.profile.summary, l))
+    .map((l) => `固定简介${l === 'zh' ? '中文' : '英文'}${fixedSummaryText(p.profile.summary, l) ? '待确认：保留已保存原文，请核对后再投递' : '缺少原文：请填写或确认翻译建议'}；本次不自动生成或覆盖。`);
 }

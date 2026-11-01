@@ -31,10 +31,11 @@ describe('数据库升级 v3 → v4', () => {
     const p = mockProfile(); const r = mockResume(p);
     await old.open(); await old.table('profile').put({ id: 'me', doc: p }); await old.table('resumes').put(r); await old.table('backups').put({ id: 'bk-1', createdAt: '2026-10-01', reason: 'x', doc: p }); old.close();
     const d = new ResumeDB(name); await d.open();
-    expect(d.verno).toBe(4);
+    expect(d.verno).toBe(5);
     expect((await d.profile.get('me'))!.doc).toEqual(p);
     expect(await d.resumes.get('res-1')).toEqual(r);
-    expect(await d.backups.count()).toBe(1);
+    expect(await d.backups.count()).toBe(2);
+    expect(await d.backups.get('bk-premigrate-v4-me')).toBeDefined();
     for (const t of ['postings', 'applications', 'appEvents', 'artifacts', 'attachments', 'attachmentBlobs']) expect(d.tables.map((x) => x.name)).toContain(t);
     d.close();
   });
@@ -190,7 +191,7 @@ describe('完整备份 ZIP / 轻量 JSON / 恢复', () => {
     const JSZip = (await import('jszip')).default; const z = await JSZip.loadAsync(zip);
     const all = (await Promise.all(Object.values(z.files).filter((f) => !f.dir && f.name.endsWith('.json')).map((f) => f.async('string')))).join('\n');
     expect(all).not.toContain('sk-fake-should-never-export'); expect(all).not.toMatch(/apiKey/i);
-    const m = JSON.parse(await z.file('manifest.json')!.async('string')); expect(m).toMatchObject({ format: 'resume-tool-archive', dbVersion: 4, counts: { postings: 1, applications: 1, events: 2, artifacts: 1, attachments: 1, profile: 1 } });
+    const m = JSON.parse(await z.file('manifest.json')!.async('string')); expect(m).toMatchObject({ format: 'resume-tool-archive', dbVersion: 5, counts: { postings: 1, applications: 1, events: 2, artifacts: 1, attachments: 1, profile: 1 } });
     const b = fresh(); const chk = await readArchive(b, zip); expect(chk.errors).toEqual([]); expect(chk.warnings).toEqual([]);
     const r = await restoreArchive(b, chk, { sections: [...SECTIONS], overwrite: false, replaceProfile: false });
     expect(r.written).toMatchObject({ profile: 1, postings: 1, applications: 1, events: 2, artifacts: 1, attachments: 1 });
