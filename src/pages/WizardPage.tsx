@@ -11,7 +11,8 @@ import { ExportPanel } from '../components/ExportDialog';
 import { importProfileFromText, mergeProfiles } from '../ai/importProfile';
 import { translateProfile } from '../ai/translate';
 import { recognizeScreenshot } from '../ai/ocr';
-import { parseJdAi, parseJdRules } from '../ai/jd';
+import { analyzeJob, isAnalysisStale } from '../ai/jd';
+import { extractJdBody } from '../ai/jdText';
 import { JD_PREFILL_KEY, TRACKER_RETURN_KEY, type TrackerReturn } from '../tracker/useTracker';
 import { linkResumeSnapshot } from '../tracker/repo';
 import { db } from '../storage/db';
@@ -199,26 +200,36 @@ function PhotoPicker() {
 }
 
 function Step2({ next, back }: { next: () => void; back: () => void }) {
-  const { settings, job, setJob, setResume } = useApp();
-  const [imgs, setImgs] = useState<string[]>([]);
+  const { settings, job, setJob, resume, setResume } = useApp();
+  // v1.10：每张截图单独保存识别原文，删除某张时可以重建文字；岗位正文 = 去掉网页噪声后的识别文字（可修改）
+  const [shots, setShots] = useState<{ url: string; raw: string }[]>(() => (job?.screenshots ?? []).map((url) => ({ url, raw: '' })));
   const [text, setText] = useState(() => { const pre = uiStorage.getItem(JD_PREFILL_KEY); if (pre) { uiStorage.setItem(JD_PREFILL_KEY, ''); return pre; } return job?.rawText ?? ''; });
+  const [edited, setEdited] = useState(false);
   const [busy, setBusy] = useState('');
   const [pct, setPct] = useState<number | undefined>();
   const [err, setErr] = useState('');
+  const [info, setInfo] = useState('');
   const fileRef = useRef<HTMLInputElement>(null);
+  const imgs = shots.map((x) => x.url);
+  const rawAll = shots.map((x) => x.raw).filter(Boolean).join('\n');
+  const removedNoise = rawAll ? extractJdBody(rawAll).removed : [];
+  const stale = !!job && !!text.trim() && isAnalysisStale(job, text);
+  const hasResult = !!resume && !!job && resume.jobId === job.id;
 
   const addFiles = async (files: FileList | File[]) => {
     const list = [...files].filter((f) => f.type.startsWith('image/'));
     if (!list.length) return;
     const urls = await Promise.all(list.map(fileToDataUrl));
-    setImgs((x) => [...x, ...urls]);
-    setErr('');
-    let all = text ? text + '\n' : '';
+    setErr(''); setInfo('');
+    let cur = [...shots];
     for (let i = 0; i < urls.length; i++) {
+      const at = cur.length; // 按位置对应（两张相同图片也各自保存识别结果）
+      cur = [...cur, { url: urls[i], raw: '' }]; setShots(cur);
       try {
         const r = await recognizeScreenshot(settings, urls[i], (m, p) => { setBusy(`第 ${i + 1}/${urls.length} 张：${m}`); setPct(p === undefined ? undefined : (i + p) / urls.length); });
-        all += r.text + '\n';
-        setText(all.trim());
+        cur = cur.map((x, k) => (k === at ? { ...x, raw: r.text } : x)); setShots(cur);
+        const body = extractJdBody(cur.map((x) => x.raw).filter(Boolean).join('\n')).text;
+        setText((t) => (edited && t.trim() ? `${t}\n${extractJdBody(r.text).text}`.trim() : body));
       } catch (e) { setErr(`截图识别失败：${(e as Error).message}。你也可以直接把岗位文字粘贴到下面。`); }
     }
     setBusy(''); setPct(undefined);
@@ -229,11 +240,38 @@ function Step2({ next, back }: { next: () => void; back: () => void }) {
     return () => window.removeEventListener('paste', onPaste);
   });
 
-  const analyze = async () => {
-    setErr(''); setBusy('AI 正在读懂这个岗位…');
-    try { const j = settings.demoMode ? parseJdRules(text) : await parseJdAi(settings, text); setJob({ ...j, screenshots: imgs }); setResume(null); }
-    catch (e) { setErr(`AI 解析失败（${(e as Error).message}），已用简单规则解析，请核对。`); setJob({ ...parseJdRules(text), screenshots: imgs }); setResume(null); }
-    finally { setBusy(''); }
+  /** 清空本次岗位：只清当前文字 / 分析 / 生成结果；资料母库与历史投递记录不动 */
+  const clearJob = (askFirst = true) => {
+    if (askFirst && hasResult && !confirm('清空本次岗位会同时清除当前生成的简历（历史投递记录和个人资料不受影响）。继续吗？')) return false;
+    setShots([]); setText(''); setEdited(false); setInfo(''); setErr('');
+    if (job) setJob(null);
+    if (resume) setResume(null);
+    return true;
+  };
+  const removeShot = (i: number) => {
+    if (shots.length === 1) { clearJob(); return; }
+    const rest = shots.filter((_, k) => k !== i);
+    setShots(rest);
+    // 剩余截图重建正文（用户手动改过的文字保留，但分析会因文字变化被标为过期）
+    if (!edited) setText(extractJdBody(rest.map((x) => x.raw).filter(Boolean).join('\n')).text);
+    setInfo('已删除一张截图：岗位文字已按剩余截图更新，之前的分析结果需要重新分析后才会使用。');
+  };
+
+  const analyze = async (force = false) => {
+    setErr(''); setInfo('');
+    if (force && hasResult && !confirm('重新分析会生成新的岗位分析，当前生成的简历需要重新生成（旧简历仍保存在历史记录里）。继续吗？')) return;
+    if (!force && stale && hasResult && !confirm('岗位文字已修改，重新分析后需要重新生成简历（旧简历仍保存在历史记录里）。继续吗？')) return;
+    setBusy('AI 正在读懂这个岗位…');
+    try {
+      const history = await db.jobs.toArray().catch(() => [] as NonNullable<typeof job>[]);
+      const r = await analyzeJob(settings, text, { current: job, history, force });
+      if (r.reused === 'current') { setInfo('岗位文字没有变化，沿用已有分析结果（没有重新调用 AI）。需要时可点「重新分析」。'); return; }
+      const j = { ...r.job, screenshots: imgs, ocrRawText: rawAll || undefined };
+      setJob(j);
+      if (resume && resume.jobId !== j.id) setResume(null);
+      if (r.reused === 'history') setInfo('这份岗位文字之前分析过，已复用当时的分析结果（没有重新调用 AI）。');
+      if (r.aiError) setErr(`AI 解析失败（${r.aiError}），已用简单规则解析，请核对。`);
+    } finally { setBusy(''); }
   };
   const edit = (fn: (j: NonNullable<typeof job>) => void) => { if (!job) return; const n = structuredClone(job); fn(n); setJob(n); };
 
@@ -244,34 +282,46 @@ function Step2({ next, back }: { next: () => void; back: () => void }) {
       <div className="grid2 top">
         <div className="card">
           <div className={`dropzone ${busy ? 'busy' : ''}`} onClick={() => fileRef.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); }}>
-            {imgs.length ? <div className="thumbs">{imgs.map((u, i) => <img key={i} src={u} />)}</div> : <><div className="dz-icon">🖼️</div><b>点击选择 / 拖入 / 粘贴 岗位截图</b><div className="muted small">支持 png、jpg、webp</div></>}
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(e) => e.target.files && addFiles(e.target.files)} />
+            {shots.length ? <div className="thumbs">{shots.map((x, i) => (
+              <div key={i} className="thumb" data-testid="jd-thumb">
+                <img src={x.url} />
+                <button type="button" className="thumb-del" title="删除这张截图" aria-label="删除这张截图" data-testid="thumb-del" onClick={(e) => { e.stopPropagation(); removeShot(i); }}>×</button>
+              </div>))}</div> : <><div className="dz-icon">🖼️</div><b>点击选择 / 拖入 / 粘贴 岗位截图</b><div className="muted small">支持 png、jpg、webp</div></>}
+            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" multiple hidden onChange={(e) => { if (e.target.files) addFiles(e.target.files); e.target.value = ''; }} />
           </div>
-          <label>岗位文字（识别结果可修改，或直接粘贴）<textarea rows={10} value={text} onChange={(e) => setText(e.target.value)} placeholder="岗位名称、公司、职责、任职要求……" /></label>
-          <div className="row"><button className="link" onClick={() => setText(SAMPLE_JD)}>用一个示例岗位试试</button><span className="spacer" />
-            <button className="primary big" disabled={!text.trim() || !!busy} onClick={analyze}>🔍 分析岗位</button></div>
+          <label>岗位文字（已自动去掉「共有 N 个职位」等网页噪声，可修改，或直接粘贴）<textarea data-testid="jd-text" rows={10} value={text} onChange={(e) => { setText(e.target.value); setEdited(true); }} placeholder="岗位名称、公司、职责、任职要求……" /></label>
+          {rawAll && <details className="small" data-testid="ocr-raw"><summary>查看截图识别原文{removedNoise.length ? `（已去掉 ${removedNoise.length} 行网页噪声）` : ''}</summary><pre className="src-pre">{rawAll}</pre>{removedNoise.length > 0 && <div className="muted">去掉的行：{removedNoise.join(' / ')}</div>}<button className="link" onClick={() => { setText(rawAll); setEdited(true); }}>改用完整识别原文</button></details>}
+          <div className="row"><button className="link" onClick={() => { setText(SAMPLE_JD); setEdited(true); }}>用一个示例岗位试试</button>
+            {(text || shots.length > 0 || job) && <button className="link" data-testid="clear-job" onClick={() => clearJob()}>清空本次岗位</button>}
+            <span className="spacer" />
+            {job && !stale && <button disabled={!text.trim() || !!busy} data-testid="reanalyze" onClick={() => analyze(true)}>↻ 重新分析</button>}
+            <button className="primary big" data-testid="analyze" disabled={!text.trim() || !!busy} onClick={() => analyze(false)}>🔍 分析岗位</button></div>
+          {stale && <div className="notice warn" data-testid="stale-warn">岗位文字已修改，右侧的分析结果可能已过期。点「分析岗位」按新文字重新分析。</div>}
+          {info && <div className="notice ok" data-testid="analyze-info">{info}</div>}
           {busy && <ProgressNote msg={busy} pct={pct} />}
           {err && <div className="notice error">{err}</div>}
         </div>
         <div className="card">
           {!job ? <div className="empty">分析结果会显示在这里：公司、岗位、关键要求。</div> : (
             <>
-              <h3>{job.title.zh || job.title.en || '岗位'} <span className="muted small">{job.title.en}</span></h3>
+              <h3>{job.title.zh || job.title.en || '岗位'} <span className="muted small">{job.title.en}</span>{stale && <span className="badge st-stale">可能过期</span>}</h3>
               <div className="grid2">
                 <label>公司简称<input value={job.company.short} placeholder="没识别到，请填写" onChange={(e) => edit((j) => { j.company.short = e.target.value; })} /></label>
                 <label>岗位缩写（用于文件名）<input value={job.roleAbbr} placeholder="如 FE / PM / DA" onChange={(e) => edit((j) => { j.roleAbbr = e.target.value; })} /></label>
               </div>
               {job.yearsRequired != null && <div className="small">经验要求：{job.yearsRequired} 年以上</div>}
+              {(job.responsibilities?.length ?? 0) > 0 && <><div className="small"><b>岗位职责：</b></div><div className="chips">{job.responsibilities!.map((k, i) => <span key={i} className="chip">{k.zh || k.en}</span>)}</div></>}
               <div className="small"><b>必备：</b></div>
               <div className="chips">{job.mustHave.map((k, i) => <span key={i} className="chip must">{k.zh || k.en}</span>)}</div>
-              {job.niceToHave.length > 0 && <><div className="small"><b>加分：</b></div><div className="chips">{job.niceToHave.map((k, i) => <span key={i} className="chip">{k.zh || k.en}</span>)}</div></>}
+              <div className="small"><b>加分（JD 明确写出的）：</b>{job.niceToHave.length ? '' : <span className="muted">JD 没有明确列出加分项</span>}</div>
+              {job.niceToHave.length > 0 && <div className="chips">{job.niceToHave.map((k, i) => <span key={i} className="chip">{k.zh || k.en}</span>)}</div>}
               <div className="small"><b>关键词（中 / 英）：</b></div>
               <div className="chips">{job.keywords.map((k, i) => <span key={i} className="chip kw">{k.zh}{k.en && k.en !== k.zh ? ` / ${k.en}` : ''}</span>)}</div>
             </>
           )}
         </div>
       </div>
-      <div className="row nav-row"><button onClick={back}>← 上一步</button><span className="spacer" /><button className="primary big" disabled={!job} onClick={next}>生成简历 →</button></div>
+      <div className="row nav-row"><button onClick={back}>← 上一步</button><span className="spacer" /><button className="primary big" disabled={!job || stale} title={stale ? '岗位文字已修改，请先重新分析' : ''} onClick={next}>生成简历 →</button></div>
     </div>
   );
 }
@@ -335,6 +385,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
             <div className={`small ${resume.consistency.issues.length ? 'err-text' : 'ok-text'}`}>
               {resume.consistency.issues.length ? `⚠ 中英文有 ${resume.consistency.issues.length} 处数字/内容对不上，请在「逐条修改」里检查（标红行）` : '✓ 中英文两版条目和数字完全一致'}
             </div>
+            <div className="muted small" data-testid="score-note">「匹配度」是本工具按你的资料覆盖岗位要求估算的参考分，和下方「关键词覆盖率（ATS）」算法不同，也都不是招聘方的官方评分。</div>
             <div className="muted small">AI 只应调整措辞和顺序；请用「事实审查」逐条确认改写都能追溯到你的资料。</div>
             <AuditBadge onOpen={() => setShowAudit(true)} />
           </div>
@@ -366,6 +417,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
           {(['zh', 'en', 'both'] as const).map((v) => <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>{v === 'zh' ? '中文版' : v === 'en' ? 'English' : '中英对照'}</button>)}
           <span className="muted small">中文版 {pageText('zh')} · 英文版 {pageText('en')}</span>
         </div>
+        {pages && pages !== 'error' && (pages.zh.overflow || pages.en.overflow) && <div className="notice warn small" data-testid="overflow-tip">超出目标页数：建议在左侧清单取消勾选和岗位关系最弱的条目（如与岗位无关的项目、奖项或证书），或改为「2 页内」。本工具不会为了塞进页面而把字号缩到难以阅读。</div>}
         <div className="pool-layout">
           {resume && <MaterialPool />}
           <div className="previews">
