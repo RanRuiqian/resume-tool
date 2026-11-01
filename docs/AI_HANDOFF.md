@@ -99,7 +99,7 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 - 测试：`tests/qualityV110.test.ts`（虚构资料 `tests/helpers/v110Fixture.ts`，场景 A 机械 / B 视觉 / C 机器人）、`tests/e2e/jd_step2_e2e.py`。
 
 ## 4f. 求职信逐句事实核对（v1.10.1）
-- `src/quality/kitVerify.ts`：`buildKitContext`（资料事实 / 语料 / 专业 / JD 缺口词 / 学位是否未授予）、`splitSentences`、`verifySentence`、`verifyKit`（返回 trace）、`verifiedOnly`、`kitHash`、`kitExportState`。
+- `src/quality/kitVerify.ts`：`buildKitContext`（资料事实 / 语料 / 专业 / JD 缺口词 / 学位是否未授予）、`splitSentences`、`verifySentence`、`verifyKit`（返回 trace）、`verifiedOnly`、`kitHash`、`kitFingerprint` / `makeKitReview` / `overrideValid`（人工确认绑定文本 + 资料 + 岗位 + 简历指纹）、`kitExportState`。
 - `src/ai/extras.ts` `generateCoverKit`：提示词分【A 候选人事实】【B 岗位需求】【C 缺口】三块；≤2 次，第 2 次带逐句反馈；返回 `quality.status: verified|blocked`、`safe`、`caught`。
 - `CareerKit.tsx`：blocked 不保存（kit-blocked / kit-trace / kit-use-safe / kit-discard），已保存文本现算状态（kit-status / kit-override）；`ExportDialog.tsx` 未通过且未放行时 Word 不含求职信（export-kit-blocked）。
 - `generate.ts`：`entityIssues` 拦截 AI 新增工具 / 机构 / 专业；`localizeAi` 拒绝引入资料外实体的翻译。
@@ -110,7 +110,7 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 描述的结构与映射规则见 `docs/DATA_SCHEMA.md`「导入格式」。实现：`src/tracker/importers.ts` 中 `handoff10()`、`HANDOFF_MAPPING`、`HANDOFF_STATUS`。
 
 ## 6. 测试现状
-单元 / 集成 380 项（vitest，v1.10.1），浏览器 e2e：`jd_step2_e2e.py` 17、`kit_verify_e2e.py` 11、`tracker_e2e.py` 33、`release_e2e.py` 35、`api_profiles_e2e.py` 47、`smart_import_e2e.py` 41（Mock AI），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
+单元 / 集成 386 项（vitest，v1.10.1），浏览器 e2e：`jd_step2_e2e.py` 17、`kit_verify_e2e.py` 15、`tracker_e2e.py` 33、`release_e2e.py` 35、`api_profiles_e2e.py` 47、`smart_import_e2e.py` 41（Mock AI），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
 
 ## 7. 待办与已知限制
 见 `docs/PROJECT_STATUS.md`。

@@ -54,7 +54,7 @@
 - 旧记录没有这些字段时按旧行为处理（哈希按 `rawText` 现算）。
 
 ## 求职信人工核对（v1.10.1，可选，不升级 Dexie，仍为 version 4）
-- `ResumeDoc.extras.kitReview?: { overrideAt; textHash; issues }`：用户对逐句核对未通过的求职信 / 自我介绍人工核对并允许导出；只对 `textHash` 对应的文本有效，文本改动后自动失效。逐句核对明细不持久化，打开时按当前资料现算（旧数据兼容）。
+- `ResumeDoc.extras.kitReview?: { overrideAt; textHash; issues; profileHash?; jobHash?; resumeHash? }`：用户对逐句核对未通过的求职信 / 自我介绍人工核对并允许导出。只有四项指纹全部一致才有效：文本（`textHash`）、资料事实集合（`profileHash`）、当前岗位（`jobHash`：id + JD 文字 + 分析结果）、当前简历（`resumeHash`：id + 生成时间）。任一变化即失效、重新拦截；缺少指纹的旧记录视为无效。逐句核对明细不持久化，打开时按当前资料现算（旧数据兼容）。
 
 ## 状态（10 种）
 `screening` 待筛选 · `saved` 已收藏 · `preparing` 准备材料 · `applied` 已投递 · `assessment` 在线测评/笔试 · `interviewing` 面试中 · `offer` Offer · `rejected` 已拒绝/未通过 · `withdrawn` 已撤回 · `closed` 已结束
