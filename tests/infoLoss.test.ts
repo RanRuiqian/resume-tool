@@ -53,37 +53,43 @@ const CASES: [string, string, string | null, RegExp, Lang, Parameters<typeof one
 ];
 
 beforeEach(() => mock.mockReset());
-describe('AI 信息丢失回归', () => {
-  for (const [src, bad, local, why, lang, opt] of CASES) it(`拦截：${src} → ${bad}`, async () => {
-    const p = one(src, lang, opt); const before = JSON.stringify(p);
+const DIRTY = { zh: '实际职责以本人核实为准。', en: ' For reference only.' };
+const dirty = (t: string, l: Lang) => (l === 'zh' ? `${t}。${DIRTY.zh}` : `${t}.${DIRTY.en}`);
+const localOnly = async (p: ProfileDoc, l: Lang) => { const pl = await planOrganize(S, p, { useAi: false }); return textOf(applyOrganize(p, pl, safe(pl)), l); };
+describe('AI 信息丢失回归（v1.9.3：丢失 → 反馈重试 → 仍丢失则拒绝、保持原文）', () => {
+  for (const [src, bad, , why, lang, opt] of CASES) it(`拦截：${src} → ${bad}`, async () => {
+    const p = one(dirty(src, lang), lang, opt); const before = JSON.stringify(p); const expectText = await localOnly(p, lang);
     aiWith({ [src]: bad });
     const plan = await planOrganize(S, p, { useAi: true });
-    const ai = plan.proposals.filter((x) => x.source === 'ai');
-    expect(ai.length, '应有 AI 建议').toBe(1);
-    expect(ai[0].risk, ai[0].reasons.join('；')).toBe('high');
-    expect(ai[0].reasons.join('；')).toMatch(why);
-    expect(safe(plan).has(ai[0].id)).toBe(false);
-    const loc = plan.proposals.filter((x) => x.source === 'local' && x.risk === 'safe');
-    if (local) expect((loc[0]?.after as Record<string, string> | undefined)?.[lang]).toBe(local); else expect(loc.length).toBe(0);
-    // 「接受全部安全修正」不会写入危险改写；原文、链接、ID、原始资料不变
+    expect(mock, '首轮 + 1 次反馈重试').toHaveBeenCalledTimes(2);
+    expect(plan.proposals.some((x) => x.source === 'ai'), '丢失事实的 AI 改写不会成为任何建议').toBe(false);
+    expect(plan.stats?.rejected).toBe(1);
+    expect(plan.rejectedItems?.[0].reasons.join('；')).toMatch(why);
+    // 重试请求带上了具体丢失的事实
+    const retryBody = (mock.mock.calls[1][1] as { content: string }[])[1].content; expect(retryBody).toContain('lostFacts');
     const out = applyOrganize(p, plan, safe(plan));
-    expect(textOf(out, lang)).toBe(local ?? src);
+    expect(textOf(out, lang)).toBe(expectText); // 只有本地机械清洗写入
+    expect(textOf(out, lang)).not.toContain(lang === 'zh' ? '实际职责' : 'reference only');
     const e0 = (out.work[0] ?? out.projects[0] ?? out.education[0]) as unknown as { id: string; link?: string };
     expect(e0.id).toBe('x'); expect(JSON.stringify(out.sourceTexts)).toBe(JSON.stringify(JSON.parse(before).sourceTexts));
     if (e0.link !== undefined) expect(e0.link).toMatch(/^https:\/\/example\.com/);
     if (opt?.section === 'education') { expect(out.education[0].expectedConferralDate).toBe('2027-01'); expect(out.education[0].actualConferralDate ?? '').toBe(''); }
-    expect(JSON.stringify(p)).toBe(before); // 计划本身不修改输入
+    expect(JSON.stringify(p)).toBe(before);
   });
-
-  it('真实 DeepSeek 丢失案例（带说明句的原句）被拦截，本地安全版保留「在公司」', async () => {
-    const src = '我在公司使用设备进行第1轮测试。实际职责以本人核实为准。';
-    const p = one(src); aiWith({ 第1轮: '使用设备进行第1轮测试' });
+  it('真实 DeepSeek 丢失案例：「在公司」丢失被拒绝，本地清洗保留「在公司」', async () => {
+    const p = one('我在公司使用设备进行第1轮测试。实际职责以本人核实为准。'); aiWith({ 第1轮: '使用设备进行第1轮测试' });
     const plan = await planOrganize(S, p, { useAi: true });
-    const ai = plan.proposals.find((x) => x.source === 'ai')!;
-    expect(ai.risk).toBe('high'); expect(ai.reasons.join()).toContain('在公司');
+    expect(plan.rejectedItems?.[0].reasons.join()).toContain('在公司');
     const out = applyOrganize(p, plan, safe(plan));
     expect(textOf(out)).toBe('在公司使用设备进行第1轮测试。');
     expect(JSON.stringify(out.work[0])).toContain('实际职责以本人核实为准');
+  });
+  it('重试修好：首轮丢失、重试给出完整版本 → 不再丢失', async () => {
+    const p = one('我负责搭建测试台，包括电源、示波器和数据采集卡。以上信息仅供参考。'); let call = 0;
+    aiWith({}, (x) => { call++; return { key: x.key, category: 'resume', zh: call === 1 ? '负责搭建测试台。' : x.zh, en: '' }; });
+    const plan = await planOrganize(S, p, { useAi: true });
+    expect(plan.stats?.rejected).toBe(0); expect(mock).toHaveBeenCalledTimes(2);
+    expect(textOf(applyOrganize(p, plan, safe(plan)))).toBe('负责搭建测试台，包括电源、示波器和数据采集卡。');
   });
   it('A 类：AI 输出与本地机械清洗等价（只差标点）→ 安全，采用本地版本', async () => {
     const p = one('我在公司使用设备测试。'); aiWith({ 设备: '在公司使用设备测试' });
@@ -91,10 +97,10 @@ describe('AI 信息丢失回归', () => {
     expect(plan.proposals.filter((x) => x.kind !== 'field').every((x) => x.risk === 'safe')).toBe(true);
     expect(textOf(applyOrganize(p, plan, safe(plan)))).toBe('在公司使用设备测试。');
   });
-  it('窄放行：即使是忠实的语序调整也按 B 类处理（无法证明等价）', async () => {
-    const p = one('使用示波器完成电路测试'); aiWith({ 示波器: '完成电路测试，使用示波器' });
+  it('AI 改写不会被标为 A 类（语序调整：丢片段 → 拒绝；不会冒充安全）', async () => {
+    const p = one('我使用示波器完成电路测试'); aiWith({ 示波器: '完成电路测试，使用示波器' });
     const plan = await planOrganize(S, p, { useAi: true });
-    expect(plan.proposals.filter((x) => x.source === 'ai').every((x) => x.risk === 'high')).toBe(true);
+    expect(plan.proposals.some((x) => x.source === 'ai' && x.risk === 'safe')).toBe(false);
   });
   it('一条 AI 错误 / 一批失败不影响其它清洗结果', async () => {
     const p = emptyProfile();
@@ -113,22 +119,22 @@ describe('AI 信息丢失回归', () => {
     expect(out.work[0].bullets.map((b) => b.id)).toEqual(Array.from({ length: 25 }, (_, i) => `w-b${i}`));
   });
   it('用户已确认的内容不被任何 AI 改写覆盖', async () => {
-    const p = one('协助维护自动化生产设备'); p.work[0].bullets[0].status = { zh: 'confirmed' }; aiWith({ 协助: '负责维护自动化生产设备' });
+    const p = one('我协助维护自动化生产设备'); p.work[0].bullets[0].status = { zh: 'confirmed' }; aiWith({ 协助: '负责维护自动化生产设备' });
     const plan = await planOrganize(S, p, { useAi: true });
-    expect(textOf(applyOrganize(p, plan, new Set(plan.proposals.map((x) => x.id))))).toBe('协助维护自动化生产设备');
+    expect(textOf(applyOrganize(p, plan, new Set(plan.proposals.map((x) => x.id))))).not.toContain('负责');
   });
-  it('规则版本 / 模型变化或「重新检查」时，已拒绝的建议可以再次出现', async () => {
-    const p = one('协助维护自动化生产设备'); aiWith({ 协助: '负责维护自动化生产设备' });
+  it('规则版本 / 模型变化或「重新检查」时，以前处理过的文字可以再次送检', async () => {
+    const p = one('我协助维护自动化生产设备'); aiWith({ 协助: '负责维护自动化生产设备' });
     const p1 = await planOrganize(S, p, { useAi: true });
-    const o1 = applyOrganize(p, p1, new Set()); // 全部拒绝
+    const o1 = applyOrganize(p, p1, new Set());
     mock.mockClear();
     const p2 = await planOrganize(S, o1, { useAi: true });
-    const ai = (x: OrganizePlan) => x.proposals.filter((y) => y.source === 'ai').length;
-    expect(ai(p2)).toBe(0); expect(mock).not.toHaveBeenCalled();
+    expect(mock).not.toHaveBeenCalled(); expect(p2.stats?.rejected).toBe(0);
     const p3 = await planOrganize(S, o1, { useAi: true, force: true });
-    expect(ai(p3)).toBe(1);
+    expect(mock).toHaveBeenCalled(); expect(p3.stats?.rejected).toBe(1);
+    mock.mockClear();
     const p4 = await planOrganize({ ...S, model: 'deepseek-other' } as Settings, o1, { useAi: true });
-    expect(ai(p4)).toBe(1);
+    expect(mock).toHaveBeenCalled(); expect(p4.stats?.rejected).toBe(1);
   });
 });
 
@@ -156,11 +162,11 @@ describe('专项场景（虚构）', () => {
     expect(JSON.stringify((out.work[0] as unknown as { notes: string[] }).notes)).toContain('实际职责以本人能核对的操作范围为准');
   });
   it('课程项目不变商业交付、实习不变全职、参与开发不变独立开发（本地规则 + AI 都不会默认写入）', async () => {
-    const p = one('在课程实验中参与开发机器人仿真程序', 'zh', { section: 'projects' });
+    const p = one('我在课程实验中参与开发机器人仿真程序', 'zh', { section: 'projects' });
     aiWith({ 课程实验: '独立开发商业机器人仿真程序并交付客户' });
     const plan = await planOrganize(S, p, { useAi: true });
-    const r = plan.proposals.find((x) => x.source === 'ai')!;
-    expect(r.risk).toBe('high'); expect(r.reasons.join()).toMatch(/商业/); expect(r.reasons.join()).toMatch(/参与程度|独立/);
+    expect(plan.proposals.some((x) => x.source === 'ai')).toBe(false);
+    const r = plan.rejectedItems![0]; expect(r.reasons.join()).toMatch(/商业/); expect(r.reasons.join()).toMatch(/参与程度|独立/);
     expect(textOf(applyOrganize(p, plan, safe(plan)))).toBe('在课程实验中参与开发机器人仿真程序');
   });
   it('工具函数：覆盖率与语义类别', () => {
@@ -188,7 +194,7 @@ import { crossCheck } from '../src/quality/factCheck';
 // v1.9.2 英文译文交叉核对：AI 重新机翻英文时，数字一致不代表事实一致
 function trans(zh: string, oldEn: string, opt?: Parameters<typeof one>[2]) {
   const p = one(zh, 'zh', opt); const e = (p.work[0] ?? p.projects[0] ?? p.education[0]) as unknown as { bullets?: Record<string, unknown>[]; highlights?: Record<string, unknown>[] };
-  const b = (e.bullets ?? e.highlights)![0]; b.en = oldEn; b.status = { zh: 'manual', en: 'machine' }; return p;
+  const b = (e.bullets ?? e.highlights)![0]; b.en = oldEn; b.status = { zh: 'manual', en: 'stale' }; return p;
 }
 const enAi = (en: string) => aiWith({}, (x) => ({ key: x.key, category: 'resume', zh: x.zh, en }));
 const TRANS: [string, string, RegExp, Parameters<typeof one>[2]?][] = [
@@ -203,8 +209,8 @@ describe('英文译文交叉核对', () => {
   for (const [zh, bad, why, opt] of TRANS) it(`译文待核对：${zh} → ${bad}`, async () => {
     const p = trans(zh, 'old machine text', opt); enAi(bad);
     const plan = await planOrganize(S, p, { useAi: true });
-    const ai = plan.proposals.find((x) => x.source === 'ai' && (x.after as Record<string, string>).en === bad)!;
-    expect(ai).toBeTruthy(); expect(ai.risk).toBe('high'); expect(ai.reasons.join()).toMatch(/译文待核对/); expect(ai.reasons.join()).toMatch(why);
+    expect(plan.proposals.some((x) => x.source === 'ai' && (x.after as Record<string, string>).en === bad)).toBe(false);
+    const r = plan.rejectedItems![0].reasons.join(); expect(r).toMatch(/译文待核对/); expect(r).toMatch(why);
     const out = applyOrganize(p, plan, safe(plan)); expect(textOf(out, 'en')).toBe('old machine text'); expect(textOf(out)).toBe(zh);
   });
   it('正确译文仍为 A 类', async () => {
@@ -218,7 +224,7 @@ describe('英文译文交叉核对', () => {
   it('英文有风险时中文安全清洗照常写入', async () => {
     const p = trans('我协助维护自动化生产设备。实际职责以本人核实为准。', 'old machine text'); enAi('Led the maintenance of automated production equipment');
     const plan = await planOrganize(S, p, { useAi: true });
-    expect(plan.proposals.some((x) => x.source === 'ai' && x.risk === 'high')).toBe(true);
+    expect(plan.stats?.rejected).toBe(1);
     const out = applyOrganize(p, plan, safe(plan));
     expect(textOf(out)).toBe('协助维护自动化生产设备。'); expect(textOf(out, 'en')).toBe('old machine text');
     expect(JSON.stringify(out.work[0].notes)).toContain('以本人核实为准');

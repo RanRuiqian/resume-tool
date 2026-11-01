@@ -45,6 +45,9 @@ const CATS: Cat[] = [
   { label: '时间状态', zh: /尚未|正在|进行中|预计|计划|拟|即将|在读|已经|已于|已获得|已授予|已完成|已上线/g, en: /\b(?:expected|ongoing|in progress|planned|upcoming|pending|currently|completed|conferred|obtained|awarded|launched|delivered|finished)\b/gi, mode: 'both' },
   { label: '因果关系 / 技术结论', zh: /因为|由于|因此|导致|从而|所以|使得|以便|为了|结果表明|证明了|验证了/g, en: /\b(?:because|due to|therefore|thus|resulting|so that|which led|proved|demonstrated|validated|verified)\b/gi, mode: 'both' },
   { label: '职责范围', zh: /全部|整个|整体|全流程|部分|主要|核心|局部|子模块|日常|辅助性/g, en: /\b(?:entire|whole|end-to-end|full|all|part of|main|core|key|daily|routine)\b/gi, mode: 'both' },
+  { label: '估算 / 适用范围', zh: /(?<![预节制契])约(?![束定])|大约|左右|估算|估计|预估|粗略|历史|不代表|并非|非官方|不是官方|核心材料|原型|样机|量产|零售/g, en: /\b(?:about|approximately|approx|around|roughly|estimated?|estimates?|historical|represents?|unofficial|official|prototype|core materials?|mass[- ]production|retail)\b|~/gi, mode: 'both' },
+  { label: '讨论 / 设想（未实现）', zh: /讨论|探讨|考虑|设想|构想|提出|调研|评估|需求|建议/g, en: /\b(?:discuss\w*|consider\w*|explor\w*|propos\w*|evaluat\w*|requirements?|suggest\w*)\b/gi, mode: 'drop' },
+  { label: '实现 / 完成', zh: /实现|完成|开发了|做出|落地|研制|搭建了/g, en: /\b(?:implement\w*|realiz\w*|achiev\w*|built|enabled|completed|developed)\b/gi, mode: 'add' },
   { label: '商业 / 正式性质', zh: /商业|客户项目|公司项目|企业项目|量产|交付|上线|正式员工|全职|转正/g, en: /\b(?:commercial|client project|production|deliver(?:ed|y)|full[- ]time|permanent)\b/gi, mode: 'add' },
 ];
 const PART_ZH: [RegExp, number][] = [[/参与|配合|辅助/, 1], [/协助|支持/, 2], [/负责|承担/, 3], [/主导|牵头|主持|带领|领导|统筹/, 4], [/独立完成|独立开发|独立设计|独立|单独完成|个人完成|一人完成/, 5]];
@@ -55,6 +58,13 @@ const SOLO = { zh: /独立|个人|单独|一人/, en: /\b(?:independently|single
 const TEAM = { zh: /团队|小组|合作|协作|共同|与[^，。]{0,8}(?:一起|共同|合作)|[两二三四五六七八九十\d]人/, en: /\b(?:team|group|collaborat\w*|jointly|together|with (?:a|the|my)?\s*(?:team|colleagues|peers))\b/i };
 const terms = (s: string, re: RegExp) => new Set((s.match(re) ?? []).map((x) => x.toLowerCase()));
 const parts = (s: string, lang: Lang) => (lang === 'zh' ? s.split(/及|以及|和|与|、|并且|并|，|,/) : s.split(/\band\b|,|;/i)).map((x) => x.trim()).filter((x) => x.replace(PUNCT, '').length >= 2).length;
+
+const listItems = (s: string, lang: Lang) => (lang === 'zh' ? s.replace(/^.*?(?:包括|包含|有|：|:)/, '').split(/、|，|,|以及|及|和|与/) : s.replace(/^.*?(?:including|includes|:)/i, '').split(/,|;|\band\b/i)).map((x) => x.replace(/[。.；;]+$/, '').trim()).filter((x) => x.replace(PUNCT, '').length >= 2);
+/** 只差有边界的虚词（曾 / 曾经 / 了 / 进行 / 的 / 地 / 着；英文冠词），视为无价值改动 */
+const TRIV_ZH = /(?<![未不何])曾经?|了|进行|的|地|着/g;
+export const trivialOnly = (a: string, b: string, lang: Lang) => lang === 'zh' ? normZh(a.replace(TRIV_ZH, '')) === normZh(b.replace(TRIV_ZH, '')) : enWords(a).filter((w) => !/^(?:the|a|an)$/.test(w)).join(' ') === enWords(b).filter((w) => !/^(?:the|a|an)$/.test(w)).join(' ');
+/** 未丢事实、只新增很少字词的改写：价值低，不产生审核项 */
+export function lowValue(a: string, b: string, lang: Lang): boolean { const cv = coverage(a, b, lang); return !cv.missing.length && (lang === 'zh' ? cv.added.join('').replace(TRIV_ZH, '').length <= 2 : cv.added.length === 0); }
 
 /** 语义类别检查：返回人能读懂的风险原因（用于解释，不用于放行） */
 export function semanticFlags(before: string, after: string, lang: Lang): string[] {
@@ -71,6 +81,10 @@ export function semanticFlags(before: string, after: string, lang: Lang): string
   const s = lang === 'zh' ? SOLO.zh : SOLO.en, t = lang === 'zh' ? TEAM.zh : TEAM.en;
   if (t.test(before) && !t.test(after)) r.push('删除了团队 / 合作关系');
   if (s.test(after) && !s.test(before)) r.push('团队合作被改成独立完成');
+  // 并列成果 / 内容逐项核对：任何一项在改写后找不到即为丢失
+  const na = lang === 'zh' ? normZh(after) : enWords(after).join(' ');
+  const lostItems = listItems(before, lang).filter((x) => !na.includes(lang === 'zh' ? normZh(x) : enWords(x).join(' ')));
+  if (lostItems.length && listItems(before, lang).length >= 2) r.push(`删除了并列成果 / 内容：${lostItems.join('、')}`);
   const pb = parts(before, lang), pa = parts(after, lang);
   if (pa < pb) r.push(`并列内容减少：${pb} 项 → ${pa} 项`);
   return [...new Set(r)];
@@ -89,7 +103,7 @@ export function lossReport(local: string, ai: string, lang: Lang): string[] {
 // ---- v1.9.2 中英交叉事实一致性（保守：任一概念只在一侧出现即判为待核对）----
 type Pair = [name: string, zh: RegExp, en: RegExp];
 const XPAIRS: Pair[] = [
-  ['否定 / 未完成', /尚未|未完成|未能|没有|未经|无法|不能|未/, /\bnot\b|\bno\b|n't|\byet\b|\bpending\b|\bincomplete\b|\bunfinished\b|\bwithout\b|\bunable\b|\bnever\b/i],
+  ['否定 / 未完成', /尚未|未完成|未能|没有|未经|无法|不能|未|不代表|并非|不是|非官方/, /\bnot\b|\bno\b|n't|\byet\b|\bpending\b|\bincomplete\b|\bunfinished\b|\bwithout\b|\bunable\b|\bnever\b/i],
   ['进行中', /正在|进行中|在研|持续/, /\bongoing\b|\bin progress\b|\bcurrently\b|\bongoing\b|\bcontinu\w*/i],
   ['仅 / 限定', /仅|只在|只对|只有|仅限/, /\bonly\b|\bsolely\b|\bmerely\b|\blimited to\b|\bexclusively\b/i],
   ['室温条件', /室温|常温/, /room[- ]temperature|ambient/i],
@@ -97,6 +111,10 @@ const XPAIRS: Pair[] = [
   ['预计 / 尚未授予', /预计|预期|拟于|将于|即将/, /\bexpected\b|\banticipated\b|\bexpect\w*|\bwill\b|\bto be (?:awarded|conferred)\b|\bupcoming\b/i],
   ['已获得 / 已授予', /已获得|已授予|已取得|(?<!(?:预计|预期|将于|拟于|即将).{0,12})(?:获得.{0,6}学位|授予(?!.{0,2}日期))/, /\bawarded\b|\bconferred\b|\bobtained\b|\breceived\b|\bearned\b|\bgranted\b/i],
   ['已完成', /已完成|完成了|已经完成|完成/, /\bcompleted\b|\bfinished\b|\baccomplished\b|\bdelivered\b/i],
+  ['估算 / 约数', /(?<![预节制契])约(?![束定])|大约|左右|估算|估计|预估|粗略/, /\babout\b|\bapprox\w*|\baround\b|\broughly\b|\bestimat\w*|~/i],
+  ['非官方 / 不代表', /非官方|并非官方|不是官方|不代表|并不代表/, /unofficial|not (?:an |the )?official|non-official|not represent|does not represent|not reflect|not indicative/i],
+  ['讨论 / 设想', /讨论|探讨|考虑|设想|构想|提出/, /discuss\w*|consider\w*|explor\w*|propos\w*|envision\w*/i],
+  ['实现', /实现/, /implement\w*|realiz\w*|achiev\w*|\benabled\b/i],
   ['实习', /实习/, /\bintern\w*/i],
   ['全职 / 正式', /全职|正式员工|正式工作|正式入职/, /full[- ]time|\bpermanent\b|\bemployment\b|\bemployee\b/i],
   ['兼职', /兼职/, /part[- ]time/i],

@@ -12,7 +12,7 @@ import type { Lang, LocalizedText, ProfileDoc, ProjectDossier } from '../types';
  * 检测按「句子 / 分句」进行：只移出元信息分句，同一句里的事实部分保留。
  * 不会因为出现「不确定 / 失败 / 局限」等字样就删除句子——项目里的失败方案、测试局限是技术事实，进入项目档案（dossier）。
  */
-export const QUALITY_VERSION = 'q2';
+export const QUALITY_VERSION = 'q3';
 
 export type MetaKind = 'verify' | 'advice' | 'evidence' | 'disclaimer' | 'selfpraise';
 export const META_LABEL: Record<MetaKind, string> = {
@@ -63,7 +63,8 @@ export function detectMeta(clause: string): { kind: MetaKind; reason: string } |
 
 /** 句子切分：保留结尾标点 */
 export function sentences(s: string): string[] {
-  return (s.match(/[^。！？；;!?\n]+[。！？；;!?]*|\n/g) ?? []).map((x) => x.trim()).filter(Boolean);
+  // 英文句号后接空格 + 大写字母视为分句（不拆 v1.2 / 3.5 等）
+  return (s.replace(/(?<=[a-z0-9)%][.])\s+(?=[A-Z])/g, '\n').match(/[^。！？；;!?\n]+[。！？；;!?]*|\n/g) ?? []).map((x) => x.trim()).filter(Boolean);
 }
 const clauses = (s: string) => s.split(/(?<=[，,])/).map((x) => x.trim()).filter(Boolean);
 const tidy = (s: string) => s.replace(/[，,、]\s*([。；;!?！？]|$)/g, '$1').replace(/^[，,、；;\s]+/, '').replace(/\s{2,}/g, ' ').trim();

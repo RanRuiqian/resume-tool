@@ -1,10 +1,10 @@
 import type { Lang, LocalizedText, ProfileDoc, ProjectDossier, Settings } from '../types';
 import { chatJson } from '../ai/provider';
-import { ORGANIZE_PROMPT } from '../ai/prompts';
+import { ORGANIZE_PROMPT, ORGANIZE_RETRY } from '../ai/prompts';
 import { numberTokens } from '../ai/consistency';
 import { extractTechTerms, normTerm, isUnconfirmedImport } from '../audit/techTerms';
 import { checkAgainstSource, CRITICAL } from '../ai/sourceCheck';
-import { lossReport, equivalent, crossCheck } from './factCheck';
+import { lossReport, equivalent, crossCheck, trivialOnly, lowValue } from './factCheck';
 import { QUALITY_VERSION } from './contentQuality';
 import { detectMeta, META_LABEL, noteOf, sentences, splitMeta, stripFirstPerson } from './contentQuality';
 
@@ -24,8 +24,9 @@ export interface Proposal {
   notes: string[]; archive: string[]; uncertain: string[];
   risk: Risk; reasons: string[]; source: 'local' | 'ai' | 'source-check';
 }
-export interface OrganizePlan { proposals: Proposal[]; fingerprints: { section: string; entryId: string; target: string; hash: string }[]; aiCalls: number; aiItems: number; createdAt: string; /** 指纹盐：规则版本 + 模型；任一变化即视为未整理 */ salt?: string; /** 失败的 AI 批次（其余批次与本地清洗照常保留） */ aiErrors?: string[] }
+export interface OrganizePlan { proposals: Proposal[]; fingerprints: { section: string; entryId: string; target: string; hash: string }[]; aiCalls: number; aiItems: number; createdAt: string; /** 指纹盐：规则版本 + 模型；任一变化即视为未整理 */ salt?: string; /** 失败的 AI 批次（其余批次与本地清洗照常保留） */ aiErrors?: string[]; /** v1.9.3 报告统计（按文字条目计） */ stats?: OrganizeStats; /** AI 建议因事实不完整（含重试后）被拒绝、保持原文的条目 */ rejectedItems?: { entryTitle: string; text: string; reasons: string[] }[] }
 
+export interface OrganizeStats { total: number; metaCleaned: number; improved: number; unchanged: number; rejected: number; review: number; aiSkipped: number }
 export const hashText = (s: string) => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
 const fp = (t: { zh?: string; en?: string }, salt = '') => hashText(`${salt}\u0002${t.zh ?? ''}\u0001${t.en ?? ''}`);
 export const saltOf = (s: Pick<Settings, 'model'>) => `${QUALITY_VERSION}|${s.model ?? ''}`;
@@ -34,7 +35,8 @@ interface Unit { section: string; entryId: string; entryTitle: string; target: s
 const ltk = (t?: LocalizedText) => (t ? t.zh || t.en || '' : '');
 const FAILED = /失败|未能|未成功|没有成功|放弃|不可行|行不通|failed|abandoned|did not work|unsuccessful/i;
 const LIMIT = /局限|不足之处|误差较大|仅在实验室|limitation|only tested/i;
-const RECOVERED = /改用|最终|随后|从而|提升|降低|缩短|解决|switched|finally|improv|reduc|resolv/i;
+/** 明显的格式问题（多余空白、重复标点、行首项目符号、整句重复） */
+const FORMAT = /\s{2,}|[。，,.]{2,}|^\s*[-•·*]\s*|(.{8,})\1/;
 
 function units(p: ProfileDoc): Unit[] {
   const out: Unit[] = [];
@@ -89,69 +91,115 @@ function localCandidate(u: Unit): { zh?: string; en?: string; notes: string[]; r
   return { ...cand, notes: [...new Set(notes)], reasons: [...new Set(reasons)] };
 }
 
-export interface OrganizeOptions { useAi: boolean; /** 忽略指纹，重新检查之前已整理 / 已拒绝的文字（规则或模型更新后） */ force?: boolean; batchSize?: number; onProgress?: (done: number, total: number, msg: string) => void; timeoutMs?: number }
+export interface OrganizeOptions { useAi: boolean; /** 忽略指纹，重新检查之前已整理 / 已拒绝的文字（规则或模型更新后） */ force?: boolean; batchSize?: number; onProgress?: (done: number, total: number, msg: string) => void; timeoutMs?: number; /** 事实不完整时反馈重试次数（默认 1） */ retries?: number }
 
 export async function planOrganize(s: Settings, src: ProfileDoc, o: OrganizeOptions): Promise<OrganizePlan> {
   const p = structuredClone(src);
   const us = units(p); const proposals: Proposal[] = []; const fingerprints: OrganizePlan['fingerprints'] = [];
-  const cands = new Map<Unit, ReturnType<typeof localCandidate> & { local: ReturnType<typeof localCandidate>; archive: string[]; uncertain: string[]; source: 'local' | 'ai'; aiFlags: string[]; semantic: string[]; enTrans: boolean }>();
+  const cands = new Map<Unit, ReturnType<typeof localCandidate> & { local: ReturnType<typeof localCandidate>; archive: string[]; uncertain: string[]; source: 'local' | 'ai'; aiFlags: string[]; semantic: string[]; enTrans: boolean; rejected?: string[] }>();
   for (const u of us) { if (!u.lt.zh && !u.lt.en) continue; const lc = localCandidate(u); cands.set(u, { ...lc, local: { zh: lc.zh, en: lc.en, notes: [...lc.notes], reasons: [...lc.reasons] }, archive: [], uncertain: [], source: 'local', aiFlags: [], semantic: [], enTrans: false }); }
   // 项目：失败方案 / 局限 → 档案
   for (const [u, c] of cands) if (u.section === 'projects' && !u.isName) {
     const v = c.zh || c.en || ''; if (!(FAILED.test(v) || LIMIT.test(v))) continue;
     c.archive.push(v); c.reasons.push(FAILED.test(v) ? '失败方案存入项目档案' : '技术局限存入项目档案');
-    if (!RECOVERED.test(v)) { c.zh = undefined; c.en = undefined; c.reasons.push('只描述失败 / 局限，不作为简历要点'); }
+    // v1.9.3：母库是完整记录——失败方案 / 技术局限只复制一份到档案，正式资料里的原句保留（生成简历时再按 JD 取舍）
   }
-  // AI 规范化（分批，避免超时与输出截断）；已整理且文字未变的跳过（防持续改写）
-  let aiCalls = 0, aiItems = 0; const salt = saltOf(s); const aiErrors: string[] = []; let batches = 0;
+  // AI 规范化（v1.9.3）：只把确实有问题的条目送 AI（说明句 / 第一人称 / 格式 / 缺英文或英文过期）；
+  // 干净、事实完整的条目不送、不改，计为「无需修改」。AI 输出逐条做事实完整性检查，失败则反馈丢失的事实重试，仍失败则保留原文。
+  let aiCalls = 0, aiItems = 0, rejected = 0, skipped = 0; const rejectedItems: NonNullable<OrganizePlan['rejectedItems']> = []; const salt = saltOf(s); const aiErrors: string[] = [];
   if (o.useAi) {
-    const todo = [...cands.entries()].filter(([u, c]) => !u.isName && u.target !== 'headline' && (c.zh || c.en) && (o.force || u.lt.organized !== fp(u.lt, salt)) && !(['zh', 'en'] as Lang[]).every((l) => !u.lt[l] || confirmedLang(u, l)));
-    const B = o.batchSize ?? 20; const keyOf = new Map<string, [Unit, (typeof todo)[number][1]]>();
-    todo.forEach(([u, c], i) => keyOf.set(`k${i}`, [u, c]));
-    const keys = [...keyOf.keys()];
+    type C = NonNullable<ReturnType<typeof cands.get>>;
+    const modeOf = (u: Unit, c: C): 'clean' | 'translate' | null => {
+      if (u.isName || u.target === 'headline' || !(c.zh || c.en)) return null;
+      if (!o.force && u.lt.organized === fp(u.lt, salt)) return null;
+      if ((['zh', 'en'] as Lang[]).every((l) => !u.lt[l] || confirmedLang(u, l))) return null;
+      const dirty = (['zh', 'en'] as Lang[]).some((l) => (u.lt[l] ?? '') !== (c.local[l] ?? '') || FORMAT.test(u.lt[l] ?? ''));
+      if (dirty) return 'clean';
+      const srcL: Lang = u.lt.source ?? 'zh', oL: Lang = srcL === 'zh' ? 'en' : 'zh';
+      if (c[srcL] && !confirmedLang(u, oL) && (!u.lt[oL] || u.lt.status?.[oL] === 'stale')) return 'translate';
+      return null;
+    };
+    const todo: [Unit, C, 'clean' | 'translate'][] = [];
+    for (const [u, c] of cands) { const m = modeOf(u, c); if (m) todo.push([u, c, m]); else if (!u.isName && u.target !== 'headline' && (c.zh || c.en)) skipped++; }
+    const B = o.batchSize ?? 20; const keyOf = new Map<string, [Unit, C, 'clean' | 'translate']>();
+    todo.forEach((t, i) => keyOf.set(`k${i}`, t));
+    type AiItem = { key?: string; category?: string; zh?: string; en?: string; notes?: string[]; archive?: string[]; uncertain?: string[] };
+    type Out = { items?: AiItem[] };
+    const strs = (a?: string[]) => (Array.isArray(a) ? a.filter((y) => typeof y === 'string' && y.trim()).map(asText) : []);
+    /** 判断一条 AI 输出：loss = 事实不完整（需重试 / 拒绝）；rewrite = 未发现丢失但无法证明等价（B 类）；其余为 A 类或无改动 */
+    const judge = (u: Unit, c: C, x: AiItem, mode: 'clean' | 'translate') => {
+      const out: { zh?: string; en?: string } = { zh: c.local.zh, en: c.local.en }; const notes: string[] = []; const reasons: string[] = [];
+      const loss: string[] = [], rewrite: string[] = []; let trans = false, internal = false;
+      const srcL: Lang = u.lt.source ?? 'zh', oL: Lang = srcL === 'zh' ? 'en' : 'zh'; const ctx = { tags: u.entry.tags, kind: u.entry.kind, nature: u.entry.nature, section: u.section };
+      if (x.category === 'internal' && mode === 'clean') {
+        // 整条是说明：只有本地规则也认可时才移出；否则视为丢失事实
+        if (sentences(c.local.zh || c.local.en || '').some((y) => detectMeta(y))) { internal = true; return { out: {}, notes: [c.local.zh, c.local.en].filter((y): y is string => !!y).map((y) => `【说明】${y}`), reasons: ['AI 判断为内部说明，移入备注'], loss, rewrite, trans, internal }; }
+        loss.push('AI 想把整条移出简历，但本地规则认为这是事实'); return { out, notes, reasons, loss, rewrite, trans, internal };
+      }
+      for (const l of [srcL, oL]) {
+        const raw = x[l]; const v = (typeof raw === 'string' ? raw : '').trim(); if (!v || confirmedLang(u, l)) continue;
+        if (mode === 'translate' && l === srcL) continue; // 只补译：源语言不动
+        const L = l === 'zh' ? '中文' : '英文';
+        const { keep, moved } = splitMeta(v);
+        if (moved.length) { notes.push(...moved.map(noteOf)); reasons.push('AI 输出仍含说明句，已由本地规则移出'); }
+        const next = keep ? stripFirstPerson(keep, l) : ''; const loc = c.local[l] ?? '';
+        if (!next) { if (loc) loss.push(`${L}：AI 删除了整条内容`); continue; }
+        if (loc && (equivalent(loc, next, l) || trivialOnly(loc, next, l))) continue; // 等价或只差「曾 / 了」等虚词：不改
+        const isTrans = l === oL && (!u.lt[l] || u.lt.status?.[l] === 'machine' || u.lt.status?.[l] === 'stale') && (out[srcL] ?? '') === (c.local[srcL] ?? '');
+        if (isTrans) {
+          const srcT = out[srcL] ?? ''; const nb = numberTokens(srcT), na = numberTokens(next);
+          const xc = [...(nb.join() !== na.join() ? [`译文数字与原文不一致：${nb.join('、') || '无'} → ${na.join('、') || '无'}`] : []), ...crossCheck(srcL === 'zh' ? srcT : next, srcL === 'zh' ? next : srcT)];
+          if (xc.length) loss.push(...xc.map((y) => `${L}译文待核对：${y}`)); else { out[l] = next; trans = true; }
+          continue;
+        }
+        const lr = loc ? [...lossReport(loc, next, l), ...factGuard(loc, next, ctx)] : ['原文没有这一语言的内容，AI 新写'];
+        if (lr.length) { loss.push(...[...new Set(lr)].map((y) => `${L}：${y}`)); continue; }
+        if (lowValue(loc, next, l)) continue; // 未丢事实但改动价值很低：不产生审核项
+        out[l] = next; rewrite.push(`${L}：AI 改写了措辞，未发现事实丢失，但无法证明与原文完全等价`);
+      }
+      return { out, notes, reasons, loss, rewrite, trans, internal };
+    };
+    const send = async (items: unknown[], label: string, retry: boolean): Promise<Map<string, AiItem> | null> => {
+
+      try {
+        const r = await chatJson<Out>(s, [{ role: 'system', content: '你是严谨的简历资料整理助手，只输出 JSON。' }, { role: 'user', content: `${ORGANIZE_PROMPT}${retry ? `\n\n${ORGANIZE_RETRY}` : ''}\n\n${JSON.stringify({ items })}` }], { maxTokens: 8000, timeoutMs: o.timeoutMs ?? 180_000 }); aiCalls++;
+        const got = new Map((Array.isArray(r?.items) ? r.items : []).filter((x) => x && typeof x.key === 'string' && keyOf.has(x.key)).map((x) => [x.key!, x]));
+        if (!got.size) { aiErrors.push(`${label}：AI 没有返回可用的整理结果（可能输出被截断）`); return null; }
+        return got;
+      } catch (e) { aiErrors.push(`${label}：${(e as Error).message}`); return null; }
+    };
+    const itemOf = (k: string, feedback?: string[]) => { const [u, c, mode] = keyOf.get(k)!; return { key: k, mode, section: u.section, context: [u.entryTitle, u.entry.nature, u.entry.kind].filter(Boolean).join(' · '), zh: c.local.zh ?? '', en: c.local.en ?? '', needEn: mode === 'translate' || (!!c.local.zh && (!u.lt.en || u.lt.status?.en === 'stale')), ...(feedback ? { lostFacts: feedback } : {}) }; };
+    const results = new Map<string, ReturnType<typeof judge> & { x: AiItem }>();
+    const keys = [...keyOf.keys()]; let failedBatches = 0, firstBatches = 0;
     for (let i = 0; i < keys.length; i += B) {
-      const batch = keys.slice(i, i + B);
+      const batch = keys.slice(i, i + B); firstBatches++;
       o.onProgress?.(i, keys.length, `AI 规范化第 ${Math.floor(i / B) + 1}/${Math.ceil(keys.length / B)} 批（${batch.length} 条）`);
-      const items = batch.map((k) => { const [u, c] = keyOf.get(k)!; return { key: k, section: u.section, context: [u.entryTitle, u.entry.nature, u.entry.kind].filter(Boolean).join(' · '), zh: c.zh ?? '', en: c.en ?? '', needEn: !!c.zh && (!u.lt.en || u.lt.status?.en === 'machine' || u.lt.status?.en === 'stale') }; });
-      type Out = { items?: { key?: string; category?: string; zh?: string; en?: string; notes?: string[]; archive?: string[]; uncertain?: string[] }[] };
-      batches++; let r: Out;
-      // 单批失败不影响其它批次：该批只保留本地清洗结果
-      try { r = await chatJson<Out>(s, [{ role: 'system', content: '你是严谨的简历资料整理助手，只输出 JSON。' }, { role: 'user', content: `${ORGANIZE_PROMPT}\n\n${JSON.stringify({ items })}` }], { maxTokens: 8000, timeoutMs: o.timeoutMs ?? 180_000 }); aiCalls++; }
-      catch (e) { aiErrors.push(`第 ${Math.floor(i / B) + 1} 批：${(e as Error).message}`); continue; }
-      const got = new Map((Array.isArray(r?.items) ? r.items : []).filter((x) => x && typeof x.key === 'string' && keyOf.has(x.key)).map((x) => [x.key!, x]));
-      if (!got.size) { aiErrors.push(`第 ${Math.floor(i / B) + 1} 批：AI 没有返回可用的整理结果（可能输出被截断）`); continue; }
-      for (const k of batch) {
-        const x = got.get(k); const [u, c] = keyOf.get(k)!; if (!x) continue; aiItems++;
-        fingerprints.push({ section: u.section, entryId: u.entryId, target: u.target, hash: '' }); // 应用时按最终文字计算
-        const strs = (a?: string[]) => (Array.isArray(a) ? a.filter((y) => typeof y === 'string' && y.trim()).map(asText) : []);
-        c.source = 'ai'; c.notes = [...new Set([...c.notes, ...strs(x.notes)])]; c.archive = [...new Set([...c.archive, ...strs(x.archive)])]; c.uncertain = strs(x.uncertain);
-        if (x.category === 'internal') {
-          const localAgrees = sentences(c.zh || c.en || '').some((y) => detectMeta(y));
-          c.notes.push(...[c.zh, c.en].filter((y): y is string => !!y).map((y) => `【说明】${y}`));
-          if (!localAgrees) c.aiFlags.push('AI 认为整条是说明而非经历，但本地规则没有识别为说明，请确认是否移出简历要点');
-          c.zh = undefined; c.en = undefined; c.reasons.push('AI 判断为内部说明，移入备注'); continue;
-        }
-        const srcL: Lang = u.lt.source ?? 'zh', oL: Lang = srcL === 'zh' ? 'en' : 'zh';
-        for (const l of [srcL, oL]) {
-          const raw = x[l]; const v = (typeof raw === 'string' ? raw : '').trim(); if (!v || confirmedLang(u, l)) continue;
-          // 独立检测：AI 输出仍含说明句 → 本地再移出
-          const { keep, moved } = splitMeta(v);
-          if (moved.length) { c.notes.push(...moved.map(noteOf)); c.reasons.push('AI 输出仍含说明句，已由本地规则移出'); }
-          const next = keep ? stripFirstPerson(keep, l) : ''; const loc = c.local[l] ?? '';
-          if (!next || next === c[l]) continue;
-          if (loc && equivalent(loc, next, l)) continue; // 与本地机械清洗等价：A 类，采用本地版本（不吸收 AI 的标点改动）
-          // 另一语言原本是机翻 / 过期 / 缺失，且源语言保持 A 类：属于「英文翻译」，不是事实改写
-          const isTrans = l === oL && (!u.lt[l] || u.lt.status?.[l] === 'machine' || u.lt.status?.[l] === 'stale') && equivalent(c[srcL] ?? '', c.local[srcL] ?? '', srcL);
-          c[l] = next;
-          if (isTrans) { c.enTrans = true; const nb = numberTokens(c[srcL] ?? ''), na = numberTokens(next); if (nb.join() !== na.join()) c.semantic.push(`译文数字与原文不一致：${nb.join('、') || '无'} → ${na.join('、') || '无'}`); const zhT = srcL === 'zh' ? c[srcL] ?? '' : next, enT = srcL === 'zh' ? next : c[srcL] ?? ''; const xc = crossCheck(zhT, enT); if (xc.length) c.semantic.push(...xc.map((y) => `${l === 'en' ? '英文' : '中文'}译文待核对：${y}`)); if (!c.reasons.includes('重新机翻（英文翻译，非事实改写）')) c.reasons.push('重新机翻（英文翻译，非事实改写）'); continue; }
-          const lr = loc ? lossReport(loc, next, l) : ['原文没有这一语言的内容，AI 新写'];
-          c.semantic.push(...(lr.length ? lr : ['AI 改写了措辞，无法证明与原文事实完全等价']).map((y) => `${l === 'zh' ? '中文' : '英文'}：${y}`));
-          if (!c.reasons.includes('AI 语义改写')) c.reasons.push('AI 语义改写');
-        }
-        c.notes = [...new Set(c.notes)];
+      const got = await send(batch.map((k) => itemOf(k)), `第 ${Math.floor(i / B) + 1} 批`, false);
+      if (!got) { failedBatches++; continue; }
+      for (const k of batch) { const x = got.get(k); if (!x) continue; aiItems++; const [u, c, m] = keyOf.get(k)!; results.set(k, { ...judge(u, c, x, m), x }); fingerprints.push({ section: u.section, entryId: u.entryId, target: u.target, hash: '' }); }
+    }
+    // 重试：把具体丢失的事实反馈给 AI，要求保守版本
+    for (let t = 0; t < (o.retries ?? 1); t++) {
+      const bad = [...results.entries()].filter(([, r]) => r.loss.length).map(([k]) => k); if (!bad.length) break;
+      for (let i = 0; i < bad.length; i += B) {
+        const batch = bad.slice(i, i + B);
+        o.onProgress?.(i, bad.length, `事实不完整，反馈后重试（${batch.length} 条）`);
+        const got = await send(batch.map((k) => itemOf(k, results.get(k)!.loss)), `重试第 ${t + 1} 轮`, true); if (!got) continue;
+        for (const k of batch) { const x = got.get(k); if (!x) continue; const [u, c, m] = keyOf.get(k)!; results.set(k, { ...judge(u, c, x, m), x }); }
       }
     }
-    if (batches && aiErrors.length === batches) throw new Error(`AI 整理全部失败，资料没有任何改动：${aiErrors.join('；')}`);
+    for (const [k, r] of results) {
+      const [, c] = keyOf.get(k)!;
+      if (r.loss.length) { const [u0] = keyOf.get(k)!; rejected++; c.rejected = r.loss; rejectedItems.push({ entryTitle: u0.entryTitle, text: u0.lt.zh || u0.lt.en || '', reasons: [...new Set(r.loss)] }); continue; } // 仍不完整：保留原文（本地机械清洗照常）
+      if (r.internal) { c.zh = undefined; c.en = undefined; c.notes = [...new Set([...c.notes, ...r.notes])]; c.reasons.push(...r.reasons); c.source = 'ai'; continue; }
+      const changed = (r.out.zh ?? '') !== (c.local.zh ?? '') || (r.out.en ?? '') !== (c.local.en ?? '');
+      if (!changed && !r.notes.length) continue;
+      c.source = 'ai'; c.zh = r.out.zh; c.en = r.out.en; c.notes = [...new Set([...c.notes, ...r.notes, ...strs(r.x.notes).filter((y) => detectMeta(y))])];
+      c.archive = [...new Set([...c.archive, ...strs(r.x.archive)])]; c.uncertain = strs(r.x.uncertain); c.reasons.push(...r.reasons);
+      if (r.trans) { c.enTrans = true; c.reasons.push('补译 / 重新机翻（已通过中英交叉核对）'); }
+      if (r.rewrite.length) { c.semantic.push(...r.rewrite); c.reasons.push('AI 语义改写'); }
+    }
+    if (firstBatches && failedBatches === firstBatches) throw new Error(`AI 整理全部失败，资料没有任何改动：${aiErrors.join('；')}`);
     o.onProgress?.(keys.length, keys.length, aiErrors.length ? `AI 规范化完成（${aiErrors.length} 批失败，已仅用本地规则）` : 'AI 规范化完成');
   }
   // 汇总为建议
@@ -168,7 +216,8 @@ export async function planOrganize(s: Settings, src: ProfileDoc, o: OrganizeOpti
     for (const l of ['zh', 'en'] as Lang[]) {
       if ((before[l] ?? '') === (after[l] ?? '')) continue;
       if (confirmedLang(u, l)) { risk = 'high'; reasons.push(`${l === 'zh' ? '中文' : '英文'}是你确认过的内容`); }
-      const g = after[l] ? factGuard(before[l] ?? '', after[l]!, { tags: u.entry.tags, kind: u.entry.kind, nature: u.entry.nature, section: u.section }) : [];
+      // 补译 / 重新机翻：已在上面与中文做过数字 + 交叉核对，旧译文（或空）不是比较基准
+      const g = c.enTrans && l === 'en' ? [] : after[l] ? factGuard(before[l] ?? '', after[l]!, { tags: u.entry.tags, kind: u.entry.kind, nature: u.entry.nature, section: u.section }) : [];
       // 仅移出了说明句 / 去掉主语时，原文数字理应全部保留；factGuard 发现差异即为高风险
       if (g.length) { risk = 'high'; reasons.push(...g); }
     }
@@ -203,7 +252,12 @@ export async function planOrganize(s: Settings, src: ProfileDoc, o: OrganizeOpti
       });
     }
   }
-  return { proposals, fingerprints, aiCalls, aiItems, createdAt: new Date().toISOString(), salt: o.useAi ? saltOf(s) : undefined, aiErrors };
+  const tk = (x: Proposal) => `${x.section}|${x.entryId}|${x.target}`;
+  const textP = proposals.filter((x) => x.kind !== 'field'); const total = [...cands.keys()].filter((u) => !u.isName).length;
+  const safeT = new Set(textP.filter((x) => x.risk === 'safe').map(tk)), highT = new Set(textP.filter((x) => x.risk === 'high').map(tk));
+  const metaT = new Set(textP.filter((x) => x.risk === 'safe' && (x.notes.length || x.kind === 'drop')).map(tk));
+  const stats: OrganizeStats = { total, metaCleaned: metaT.size, improved: [...safeT].filter((k) => !metaT.has(k)).length, unchanged: [...cands.keys()].filter((u) => !u.isName && !safeT.has(tk({ section: u.section, entryId: u.entryId, target: u.target } as Proposal)) && !highT.has(tk({ section: u.section, entryId: u.entryId, target: u.target } as Proposal))).length, rejected, review: highT.size + proposals.filter((x) => x.kind === 'field').length, aiSkipped: skipped };
+  return { proposals, fingerprints, aiCalls, aiItems, createdAt: new Date().toISOString(), salt: o.useAi ? saltOf(s) : undefined, aiErrors, stats, rejectedItems };
 }
 
 const addUniq = (a: string[] | undefined, xs: string[]) => { const s = new Set(a ?? []); for (const x of xs) if (x && x.trim()) s.add(x.trim()); return [...s]; };

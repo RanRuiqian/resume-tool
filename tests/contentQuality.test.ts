@@ -46,8 +46,8 @@ describe('content quality (v1.9)', () => {
     p.education = [{ id: 'e1', enabled: true, school: { zh: '示例大学' }, degree: { zh: '硕士' }, major: { zh: '机械工程' }, start: '2024-09', end: '2027-01', expectedConferralDate: '2027-01', highlights: [{ id: 'e1-h1', zh: '预计2027年1月授予硕士学位', status: { zh: 'manual' } }] } as unknown as ProfileDoc['education'][number]];
     mock.mockResolvedValue({ items: [{ key: 'k0', category: 'resume', zh: '已于2027年1月获得硕士学位', en: 'Master degree conferred Jan 2027' }] });
     const plan = await planOrganize(S, p, { useAi: true });
-    const pr = plan.proposals.find((x) => x.target === 'b:e1-h1')!;
-    expect(pr.risk).toBe('high');
+    const pr = plan.proposals.find((x) => x.target === 'b:e1-h1');
+    expect(pr?.risk ?? 'none').not.toBe('safe'); // v1.9.3：干净条目不送 AI；即使送了也不会成为安全修改
     const out = applyOrganize(p, plan, safeIds(plan));
     expect(out.education[0].expectedConferralDate).toBe('2027-01');
     expect(out.education[0].actualConferralDate ?? '').toBe('');
@@ -64,12 +64,12 @@ describe('content quality (v1.9)', () => {
     expect(out.projects[0].bullets[0].zh).toBe('在课程实验中完成齿轮箱装配。');
     expect(out.work[0].bullets[0].zh).toBe('参与设备测试。');
   });
-  it('5. failed approaches go to the dossier, bullets stay concise', async () => {
+  it('5. failed approaches / limitations are copied to the dossier; the 母库 keeps the facts (v1.9.3)', async () => {
     const p = emptyProfile();
     p.projects = [{ id: 'p1', enabled: true, name: { zh: '夹具设计' }, role: { zh: '组员' }, start: '', end: '', tags: [], bullets: [{ id: 'p1-b1', zh: '完成夹具三维建模与装配。', status: { zh: 'manual' } }, { id: 'p1-b2', zh: '第一版方案因刚度不足失败。', status: { zh: 'manual' } }, { id: 'p1-b3', zh: '测试仅在常温下进行，存在局限。', status: { zh: 'manual' } }] } as unknown as ProfileDoc['projects'][number]];
     const plan = await planOrganize(S, p, { useAi: false });
     const out = applyOrganize(p, plan, all(plan));
-    expect(out.projects[0].bullets.map((b) => b.zh)).toEqual(['完成夹具三维建模与装配。']);
+    expect(out.projects[0].bullets.map((b) => b.zh)).toEqual(['完成夹具三维建模与装配。', '第一版方案因刚度不足失败。', '测试仅在常温下进行，存在局限。']);
     expect(out.projects[0].dossier?.failedAttempts?.map((f) => f.approach).join()).toContain('刚度不足');
     expect(out.projects[0].dossier?.problems).toContain('常温');
   });
