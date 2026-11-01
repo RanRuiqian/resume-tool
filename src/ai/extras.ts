@@ -3,7 +3,8 @@ import { chatJson } from './provider';
 import { COVER_KIT_PROMPT, SYS_FACTS } from './prompts';
 import { numberTokens } from './consistency';
 import { buildKitContext, verifiedOnly, verifyKit, type SentenceTrace } from '../quality/kitVerify';
-import { hasTerm, overlap, planResume } from './relevance';
+import { hasTerm, overlap } from './relevance';
+import { decisionModel } from './aiPlanner';
 import { buildLayout } from '../render/layout';
 import { BUILTIN_TEMPLATES } from '../templates';
 import type { LayoutModel } from '../render/layout';
@@ -85,10 +86,15 @@ export interface KitQuality {
 const STYLE_ONLY = /过长|过短|重复句|套话|为空/;
 
 export async function generateCoverKit(s: Settings, p: ProfileDoc, job: JobParse, r: ResumeDoc, opts: { maxAttempts?: number } = {}): Promise<{ coverLetter: Bi; selfIntro: Bi; quality: KitQuality }> {
-  void r; // 事实来源是资料库（母库启用条目）；简历只是其子集
+  // 重点由已经完成深度语义选材的简历决定；核实证据仍可引用整个启用母库。
   const ctx = buildKitContext(p, job);
-  const plan = planResume(p, job, 'zh', 1);
-  const focus = plan.entries.filter((e) => e.kind !== 'education' && e.score > 0).sort((a, b) => b.score - a.score).slice(0, 2).map((e) => e.id);
+  const chosen = new Set([...r.selection.work, ...r.selection.projects]);
+  const sourceToEntry = new Map([...p.work, ...p.projects].flatMap((e) => e.bullets.filter((b) => !!b.id).map((b) => [b.id!, e.id] as const)));
+  const focus = [...new Set(r.items.map((it) => sourceToEntry.get(it.sourceId)).filter((id): id is string => !!id && chosen.has(id)))].slice(0, 2);
+  for (const id of [...r.selection.work, ...r.selection.projects]) {
+    if (focus.length >= 2) break;
+    if (!focus.includes(id)) focus.push(id);
+  }
   const factBlock = ctx.facts.map((f) => `[${f.id}] ${f.zh}${f.en && f.en !== f.zh ? `\n      ${f.en}` : ''}`).join('\n');
   const degree = ctx.degreePending ? `\n学位状态：尚未授予，预计 ${ctx.degreePending}（只能写「预计」）。` : '';
   const gaps = ctx.gapTerms.slice(0, 30);
@@ -103,7 +109,7 @@ ${factBlock}
 ${jobBrief(job)}
 
 【C A 中没有、只出现在 B 的技能 / 工具——不得写成已有能力或基础，只能写「希望学习」或不提】
-${JSON.stringify(gaps)}` }]);
+${JSON.stringify(gaps)}` }], { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 12_000 });
   const max = Math.max(1, Math.min(2, opts.maxAttempts ?? 2));
   type Kit = { coverLetter: Bi; selfIntro: Bi };
   let best: { kit: Kit; v: ReturnType<typeof verifyKit>; w: string[] } | null = null;
@@ -142,7 +148,7 @@ export async function generatePrep(s: Settings, job: JobParse): Promise<PrepDire
 - 中英对应。
 输出 JSON：{"items":[{"area":{"zh":"","en":""},"why":{"zh":"","en":""},"source":"JD 原句"}]}
 岗位描述原文：
-${job.rawText}` }]);
+${job.rawText}` }], { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 8_000 });
   const raw = norm(job.rawText);
   return (out.items ?? []).filter((x) => x?.area && x.source && norm(x.source).length >= 4 && raw.includes(norm(x.source)) && !prepClaims(x)).slice(0, 6);
 }

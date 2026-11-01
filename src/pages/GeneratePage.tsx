@@ -63,7 +63,7 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
               <div className="score" style={{ ['--p' as string]: resume.matchScore }}>{resume.matchScore}<small>匹配度</small></div>
               <div className="grow">
                 <div><b>缺口：</b>{resume.gaps.length ? resume.gaps.map((g) => <span key={g} className="badge st-stale">{g}</span>) : '无'}</div>
-                <div className="muted small">生成方式：{resume.generatedBy === 'ai' ? 'AI 改写' : '规则匹配'} · 主版本 {resume.primaryLanguage === 'zh' ? '中文' : 'English'} · 共 {resume.items.length} 条，均可追溯到资料库 sourceId</div>
+                <div className="muted small">生成方式：{resume.generatedBy === 'ai' ? 'AI 深度选材与写作' : '规则匹配'} · 主版本 {resume.primaryLanguage === 'zh' ? '中文' : 'English'} · 共 {resume.items.length} 条，均可追溯到资料库 sourceId</div>
                 {resume.notes?.map((n, i) => <div key={i} className="muted small">· {n}</div>)}
                 <AuditBadge onOpen={() => setShowAudit(true)} />
               </div>

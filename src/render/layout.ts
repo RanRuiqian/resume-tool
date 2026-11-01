@@ -51,6 +51,14 @@ export function skillName(name: string, cat: string): string {
   return n;
 }
 
+/** 旧资料导入可能把「编程语言 / Python」误当作口语语言；不修改母库，只修正简历显示分类。 */
+export function resumeSkillCategory(category: string, name: string, lang: Lang): string {
+  const technicalLanguage = /(?:^|[^A-Za-z0-9])(?:Python|C\+\+|C#|Java(?:Script)?|TypeScript|MATLAB|SQL|R(?:ust)?|Go|Swift|Kotlin|PHP|Ruby)(?=$|[^A-Za-z0-9])/i.test(name);
+  const languageCategory = /^(?:语言|语言能力|外语|英语|language|languages|language skills|programming languages|编程语言)$/i.test(category.trim());
+  if (technicalLanguage && languageCategory) return lang === 'zh' ? '编程 / 脚本' : 'Programming';
+  return category;
+}
+
 export function natureLabel(n: string | undefined, lang: Lang): string {
   const v = n?.trim();
   if (!v) return '';
@@ -118,7 +126,8 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   if (sk.length) {
     // 按分类分组
     const groups = new Map<string, string[]>();
-    sk.forEach((s) => { const c = T(s.category); groups.set(c, [...(groups.get(c) ?? []), skillName(T(s.name), c)]); });
+    sk.forEach((s) => { const raw = T(s.category), c = resumeSkillCategory(raw, T(s.name), lang);
+      groups.set(c, [...(groups.get(c) ?? []), skillName(T(s.name), raw)]); });
     sections.skills = { key: 'skills', title: title('skills'), blocks: [...groups].map(([c, names]) => ({ title: c || undefined, bullets: [], text: names.join(lang === 'zh' ? '、' : ', ') })) };
   }
   // v1.10：PTE / IELTS / CET 等语言考试成绩不是职业资格证书——归入技能里的「语言」组（旧数据兼容：按名称识别）

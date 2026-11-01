@@ -1,14 +1,15 @@
 import type { GenItem, JobParse, Lang, LocalizedText, ProfileDoc, ResumeDoc, Settings } from '../types';
 import { chatJson } from './provider';
-import { GENERATE_PROMPT, LOCALIZE_PROMPT, SYS_FACTS } from './prompts';
+import { AI_WRITE_PROMPT, LOCALIZE_PROMPT, SYS_FACTS } from './prompts';
 import { checkConsistency, compareFacts } from './consistency';
 import { lt, other, uid } from '../locale/text';
 import { mockTranslate } from './translate';
 import { guardRewrite } from '../quality/resumeGuard';
 import { buildKitContext, entityTokens, unsupportedEntities } from '../quality/kitVerify';
-import { compactSummary, hasTerm, conciseBi, jobTerms, planResume, type PlanEntry, type ResumePlan, LANG_TEST } from './relevance';
-import { capabilityBrief, coverage, stripAuthorList } from './evidence';
+import { compactSummary, hasTerm, conciseBi, jobTerms, planResume, type PlanEntry, type ResumePlan } from './relevance';
+import { coverage, stripAuthorList } from './evidence';
 import { focusSummary, guardSummary } from './summary';
+import { decisionModel, planWithAi } from './aiPlanner';
 
 type Sel = ResumeDoc['selection'];
 const NAME: Record<Lang, string> = { zh: '中文', en: '英文' };
@@ -99,28 +100,32 @@ export function runConsistency(r: ResumeDoc): ResumeDoc {
 }
 
 /**
- * AI 生成主版本（F5.6 第一步）。v1.11 阶段 E：选材由本地分阶段算法确定（planResume），
- * AI 只对已选事实做排序内的精简 / 改写 / 合并措辞，不再挑选条目；随后逐条过事实护栏（guardRewrite + 实体检查），
- * 不通过的用按预算精简的原文。matchScore / gaps 由本地计算。
+ * v1.12：AI 先阅读完整有效母库并决定选材、项目重点、技能和篇幅；再由 Pro 精简撰写。
+ * 程序只验证选材 ID、配额和写作事实，不再用关键词排名替代 AI 作出选材决策。
  */
-async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number): Promise<ResumeDoc> {
+async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void): Promise<ResumeDoc> {
   // v1.9.1：主语言译文已过期（另一语言改过）时，改用最新的另一语言原文交给 AI 重写，不静默使用过期译文
   const T = (t: LocalizedText) => (t?.status?.[primary] === 'stale' ? lt(t, other(primary)) : lt(t, primary));
-  const plan = planResume(p, job, primary, targetPages);
+  onStep?.('Pro 模型正在深入阅读岗位要求，比较全部有效经历并规划简历重点…');
+  const decision = await planWithAi(s, p, job, primary, targetPages);
+  const plan = decision.plan;
   const idx = textIndex(p);
   const terms = jobTerms(job);
   const rankOf = new Map((plan.ranked ?? []).map((r, i) => [r.id, { r, i }]));
   const entryName = (id: string) => { const w = p.work.find((x) => x.id === id); if (w) return { entry: T(w.company), role: T(w.title) }; const pr = p.projects.find((x) => x.id === id); if (pr) return { entry: T(pr.name), role: T(pr.role) }; const ed = p.education.find((x) => x.id === id); return { entry: ed ? T(ed.school) : id, role: ed ? T(ed.major) : '' }; };
   // 不发送照片、出生年月、性别、籍贯等敏感信息（PRD 8）；只发送本简历选中的事实
-  const facts = plan.entries.filter((e) => e.kind !== 'education').flatMap((e) => e.bulletIds.map((id) => ({ sourceId: id, ...entryName(e.id), text: T(idx.get(id)!.t), priority: (rankOf.get(id)?.i ?? 99) + 1, budget: plan.budgets?.[id], qualifiers: rankOf.get(id)?.r.qualifiers ?? [] }))).filter((f) => f.text);
+  let aiPriority = 0;
+  const facts = plan.entries.filter((e) => e.kind !== 'education').flatMap((e) => e.bulletIds.map((id) => ({ sourceId: id, ...entryName(e.id), text: T(idx.get(id)!.t), priority: ++aiPriority, budget: plan.budgets?.[id], qualifiers: rankOf.get(id)?.r.qualifiers ?? [] }))).filter((f) => f.text);
   const summaryOrig = T(p.profile.summary);
   const tools = toolNames(p, plan);
   const model = plan.model!;
-  const focus = capabilityBrief(model, primary).filter((x) => x.tier !== '一般协作' && x.tier !== '低价值补充');
-  const avoid = capabilityBrief(model, primary).filter((x) => x.tier === '一般协作' || x.tier === '低价值补充').map((x) => x.capability);
-  const brief = { title: job.title, focus, avoid, summaryOriginal: summaryOrig, summaryTools: tools, facts };
+  const brief = { title: job.title, requirements: decision.requirements, summaryFocus: decision.summaryFocus,
+    summaryOriginal: summaryOrig, summaryTools: tools, facts };
   type Out = { items?: { sourceId: string; text: string }[]; reasons?: string };
-  const out = await chatJson<Out>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content: `${GENERATE_PROMPT(NAME[primary], targetPages > 1 ? 5 : 4)}\n\n${JSON.stringify(brief)}` }]);
+  onStep?.('Pro 模型正在根据选材方案撰写精炼的岗位定制简历…');
+  const out = await chatJson<Out>(s, [{ role: 'system', content: SYS_FACTS },
+    { role: 'user', content: `${AI_WRITE_PROMPT(NAME[primary])}\n\n${JSON.stringify(brief)}` }],
+  { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 16_000 });
 
   const notes: string[] = [];
   const kctx = buildKitContext(p, null);
@@ -133,13 +138,44 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   const allowed = new Set(['summary', ...plan.entries.flatMap((e) => e.bulletIds)]);
   const extra = [...aiText.keys()].filter((k) => !allowed.has(k));
   if (extra.length) notes.push(`已丢弃 AI 返回的未选 / 无来源条目：${extra.join(', ')}`);
+  const sourcePool = facts.map((f) => f.text).concat(p.education.filter((e) => e.enabled).map((e) => `${T(e.school)} ${T(e.major)} ${T(e.degree)}`), tools);
+  const invalid = [...aiText.entries()].filter(([id, val]) => {
+    if (!allowed.has(id)) return false;
+    if (id === 'summary') return !![...guardSummary(summaryOrig, val, primary, sourcePool, model.jdTools),
+      ...unsupportedEntities(val, primary, kctx.corpus, [], kctx.majors)].length;
+    const orig = facts.find((f) => f.sourceId === id)?.text;
+    return !!orig && !![...guardRewrite(orig, val, primary), ...entityIssues(orig, val)].length;
+  });
+  if (invalid.length) {
+    // 只修复真正有事实风险的改写，仍让 Pro 模型尝试换一种精炼写法；通过同一护栏才采用。
+    try {
+      const repairBrief = { job: job.title, selected: invalid.map(([sourceId, rejected]) => {
+        const orig = facts.find((f) => f.sourceId === sourceId)?.text ?? summaryOrig;
+        const issues = sourceId === 'summary'
+          ? guardSummary(summaryOrig, rejected, primary, sourcePool, model.jdTools)
+          : [...guardRewrite(orig, rejected, primary), ...entityIssues(orig, rejected)];
+        return { sourceId, original: orig, rejected, issues };
+      }), summaryFocus: decision.summaryFocus };
+      const repair = await chatJson<Out>(s, [{ role: 'system', content: SYS_FACTS },
+        { role: 'user', content: `下列简历措辞违反了事实约束。请保持所有来源限定，针对每个 sourceId 只返回可核实且精炼的修改稿，不添任何事实；summary 还可参考此前已经选定的经历。输出 JSON {"items":[{"sourceId":"...","text":"..."}]}。\n${JSON.stringify(repairBrief)}` }],
+      { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 10_000 });
+      for (const item of repair.items ?? []) {
+        if (!item?.sourceId || !item.text?.trim() || !invalid.some(([id]) => id === item.sourceId)) continue;
+        const orig = facts.find((f) => f.sourceId === item.sourceId)?.text ?? summaryOrig;
+        const bad = item.sourceId === 'summary'
+          ? [...guardSummary(summaryOrig, item.text, primary, sourcePool, model.jdTools),
+            ...unsupportedEntities(item.text, primary, kctx.corpus, [], kctx.majors)]
+          : [...guardRewrite(orig, item.text, primary), ...entityIssues(orig, item.text)];
+        if (!bad.length) { aiText.set(item.sourceId, item.text.trim()); notes.push(`${item.sourceId}：Pro 已修正一条存在事实风险的改写`); }
+      }
+    } catch (e) { notes.push(`AI 安全重写未完成，相关内容保守回退：${(e as Error).message}`); }
+  }
   const items: GenItem[] = [];
   let fallback = 0;
   // 简介：AI 版本须通过 guardSummary；否则用按岗位精简的原文
   if (summaryOrig || aiText.get('summary')) {
     const a = aiText.get('summary');
-    const sources = facts.map((f) => f.text).concat(p.education.filter((e) => e.enabled).map((e) => `${T(e.school)} ${T(e.major)} ${T(e.degree)}`), tools);
-    const bad = a ? [...guardSummary(summaryOrig, a, primary, sources, model.jdTools), ...unsupportedEntities(a, primary, kctx.corpus, [], kctx.majors).map((t) => `出现了资料中没有的：${t}`)] : ['AI 未返回简介'];
+    const bad = a ? [...guardSummary(summaryOrig, a, primary, sourcePool, model.jdTools), ...unsupportedEntities(a, primary, kctx.corpus, [], kctx.majors).map((t) => `出现了资料中没有的：${t}`)] : ['AI 未返回简介'];
     const text = a && !bad.length ? a : (summaryOrig ? (focusSummary(summaryOrig, primary, model, tools) ?? compactSummary(summaryOrig, primary)) : '');
     if (a && bad.length) notes.push(`简介改写未通过事实护栏（${bad.join('；')}），已改用按岗位精简的原文`);
     if (text) items.push({ sourceId: 'summary', zh: primary === 'zh' ? text : '', en: primary === 'en' ? text : '', syncStatus: 'in-sync' });
@@ -158,15 +194,15 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
     if (text) items.push({ sourceId: id, zh: primary === 'zh' ? text : '', en: primary === 'en' ? text : '', syncStatus: 'in-sync' });
   }
   if (fallback) notes.push(`${fallback} 条要点使用了精简原文（AI 未返回或未通过护栏）`);
-  const cov = coverage(p, job, model, plan.ranked ?? [], primary);
   const ids = (k: PlanEntry['kind']) => plan.entries.filter((e) => e.kind === k).map((e) => e.id);
   const selection: Sel = { work: ids('work'), projects: ids('projects'), education: ids('education').length ? ids('education') : p.education.filter((x) => x.enabled).map((x) => x.id), skills: plan.skills, certificates: plan.certificates, awards: plan.awards };
-  // 语言成绩（PTE / IELTS / CET…）几乎所有岗位都需要；排版时归入技能「语言」组
-  for (const id of p.certificates.filter((c) => c.enabled && LANG_TEST.test(`${c.name.zh} ${c.name.en}`)).map((c) => c.id)) if (!selection.certificates.includes(id)) selection.certificates.push(id);
   return {
     id: uid('resume'), jobId: job.id, templateId: '', primaryLanguage: primary, createdAt: new Date().toISOString(),
-    matchScore: cov.matchScore, gaps: cov.gaps, selection, items,
-    consistency: { checkedAt: '', issues: [] }, generatedBy: 'ai', notes: [...(out.reasons ? [String(out.reasons)] : []), ...notes, ...dropNotes(p, plan), ...conflictNotes(p, job)],
+    matchScore: decision.matchScore, gaps: decision.gaps, selection, items,
+    consistency: { checkedAt: '', issues: [] }, generatedBy: 'ai',
+    notes: [`AI 选材：${decision.tradeoffs || '已比对完整岗位与候选经历'}`,
+      ...decision.chosenReasons.slice(0, 8), ...(out.reasons ? [String(out.reasons)] : []), ...notes,
+      ...dropNotes(p, plan), ...conflictNotes(p, job)],
   };
 }
 
@@ -253,14 +289,12 @@ async function generateResumeInner(s: Settings, p: ProfileDoc, job: JobParse, pr
   }
   let r: ResumeDoc;
   try {
-    onStep?.(`生成${NAME[primary]}主版本…`);
-    r = await generatePrimaryAi(s, p, job, primary, targetPages);
+    onStep?.(`准备生成${NAME[primary]}岗位定制主版本…`);
+    r = await generatePrimaryAi(s, p, job, primary, targetPages, onStep);
   } catch (e) {
-    onStep?.('AI 生成失败，降级为规则匹配');
-    r = generateRules(p, job, primary, targetPages);
-    r.notes = [...(r.notes ?? []), `AI 错误：${(e as Error).message}`];
-    fillSecondaryFromProfile(p, r, false);
-    return runConsistency(r);
+    // 用户明确要求 AI 主导选材：不能在真实模式下悄悄退回关键词规则，生成看似成功但实际选材失败的简历。
+    onStep?.('AI 深度选材或写作失败：未保存低质量规则简历，请检查提示后重试');
+    throw e;
   }
   try {
     onStep?.(`本地化${NAME[other(primary)]}副版本…`);
