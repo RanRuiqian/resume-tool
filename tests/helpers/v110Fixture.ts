@@ -11,7 +11,7 @@ export function fictionalEngineer(): ProfileDoc {
     profile: { name: T('林小舟', 'Xiaozhou Lin'), headline: T('机械工程方向应届生', 'Mechanical engineering graduate'),
       summary: T('轮机工程专业应届生，做过结构设计、机器视觉测试和机器人仿真项目。熟悉 SolidWorks 与 Python。喜欢动手做原型。课余参与校机器人社团活动。', 'Marine Engineering graduate with projects in structural design, machine-vision testing and robot simulation. Familiar with SolidWorks and Python. Enjoys hands-on prototyping. Takes part in the university robotics club.'),
       contacts: { email: 'lin.xz@example.com', phone: '', location: T('虚构市', 'Fictional City') } },
-    education: [{ id: 'edu-1', enabled: true, school: T('虚构海事大学', 'Fictional Maritime University'), degree: T('本科', 'B.Eng.'), major: T('轮机工程', 'Marine Engineering'), start: '2022-09', end: '2026-06',
+    education: [{ id: 'edu-1', enabled: true, school: T('虚构海事大学', 'Fictional Maritime University'), degree: T('本科', 'B.Eng.'), major: T('轮机工程', 'Marine Engineering'), start: '2022-09', end: '2026-06', expectedConferralDate: '2026-12',
       highlights: bl('edu-1', [['GPA 3.6/4.0（估算，非官方，以学校成绩单为准）', 'GPA 3.6/4.0 (est., unofficial; subject to official transcript)'], ['相关课程：机械设计、工程制图、热力学', 'Relevant coursework: Machine Design, Engineering Drawing, Thermodynamics'], ['校园歌手大赛二等奖', 'Second prize, campus singing contest']]) }],
     work: [{ id: 'work-1', enabled: true, company: T('虚构动力设备公司', 'Fictional Power Equipment Co.'), title: T('结构设计实习生', 'Structural Design Intern'), start: '2025-07', end: '2025-09', tags: ['SolidWorks', 'CAD'],
       bullets: bl('work-1', [
@@ -31,10 +31,10 @@ export function fictionalEngineer(): ProfileDoc {
           ['参与搭建相机图像质量测试流程，按 ISO 12233 测量 MTF50 与 SNR。', 'Took part in building a camera image-quality test flow, measuring MTF50 and SNR per ISO 12233.'],
           ['用 Python + OpenCV 编写标定与畸变分析脚本，在室温条件下完成 30 组测试。', 'Wrote calibration and distortion-analysis scripts in Python + OpenCV, completing 30 test runs at room temperature.'],
         ]) },
-      { id: 'proj-3', enabled: true, name: T('六轴机械臂抓取仿真', 'Six-Axis Robot Arm Grasping Simulation'), role: T('参与', 'Participant'), start: '2024-03', end: '2024-06', tags: ['ROS', 'RobotStudio'], link: '',
+      { id: 'proj-3', enabled: true, name: T('六轴机械臂抓取仿真', 'Six-Axis Robot Arm Grasping Simulation'), role: T('参与', 'Participant'), start: '2024-03', end: '2024-06', tags: ['RobotStudio'], link: '',
         bullets: bl('proj-3', [
           ['在 RobotStudio 中参与六轴机械臂抓取路径的离线编程与仿真（仅仿真，未上实机）。', 'Took part in offline programming and simulation of a six-axis arm grasping path in RobotStudio (simulation only, not on a real robot).'],
-          ['与组员讨论过用 ROS 做运动学验证的设想。', 'Discussed with teammates the idea of using ROS for kinematic verification.'],
+          ['与组员讨论过后续做运动学验证的设想。', 'Discussed with teammates the idea of a follow-up kinematic verification.'],
         ]) },
       { id: 'proj-4', enabled: true, name: T('校园奶茶店营销策划', 'Campus Tea-Shop Marketing Plan'), role: T('组长', 'Lead'), start: '2023-10', end: '2023-12', tags: ['营销'], link: '',
         bullets: bl('proj-4', [['策划校园奶茶店促销活动，问卷回收 200 份。', 'Planned a campus tea-shop promotion and collected 200 survey responses.']]) },
@@ -93,7 +93,7 @@ const B = (zh: string, en: string) => ({ zh, en });
 export const jobs = () => {
   const mk = (text: string, x: Partial<JobParse>): JobParse => normalizeJob({ ...parseJdRules(text), ...x } as JobParse);
   return {
-    A: mk(JD_A_MECH, { title: B('机械结构设计工程师', 'Mechanical Design Engineer'), mustHave: [B('机械结构设计', 'mechanical structural design'), B('SolidWorks', 'SolidWorks'), B('CAD', 'CAD')], keywords: [B('原型验证', 'prototype validation'), B('装配', 'assembly'), B('发电机', 'generator')], niceToHave: [B('有限元分析', 'FEA')], responsibilities: [B('发电机结构设计与 CAD 建模', 'generator structural design and CAD modeling'), B('原型样机装配与验证', 'prototype assembly and validation')] }),
+    A: mk(JD_A_MECH, { title: B('机械结构设计工程师', 'Mechanical Design Engineer'), mustHave: [B('机械结构设计', 'mechanical structural design'), B('SolidWorks', 'SolidWorks'), B('CAD', 'CAD'), B('NX', 'NX')], keywords: [B('原型验证', 'prototype validation'), B('装配', 'assembly'), B('发电机', 'generator')], niceToHave: [B('有限元分析', 'FEA')], responsibilities: [B('发电机结构设计与 CAD 建模', 'generator structural design and CAD modeling'), B('原型样机装配与验证', 'prototype assembly and validation')] }),
     B: mk(JD_B_VISION, { jdLanguage: 'en', title: B('机器视觉测试工程师', 'Machine Vision Test Engineer'), mustHave: [B('Python', 'Python'), B('OpenCV', 'OpenCV'), B('图像质量测试', 'image quality testing')], keywords: [B('MTF', 'MTF'), B('SNR', 'SNR'), B('畸变', 'distortion'), B('相机', 'camera')], niceToHave: [B('ISO 12233', 'ISO 12233')], responsibilities: [B('搭建相机图像质量测试流程', 'build camera image quality test flows')] }),
     C: mk(JD_C_ROBOT, { title: B('机器人应用工程师', 'Robotics Application Engineer'), mustHave: [B('机器人离线编程', 'robot offline programming'), B('RobotStudio', 'RobotStudio'), B('运动学', 'kinematics'), B('ROS', 'ROS')], keywords: [B('仿真', 'simulation'), B('调试', 'commissioning')], niceToHave: [], responsibilities: [B('机器人离线编程与仿真', 'robot offline programming and simulation')] }),
   };

@@ -207,16 +207,17 @@ describe('v1.10 cover letter & self-intro quality', () => {
     const d = degradeText(t, 'zh', 'cover', { sourceText: src, gapTerms: ['有限元分析'] });
     expect(d).toBe('我协助完成支架结构设计。'); expect(degradeText(t, 'zh', 'cover', { sourceText: src, gapTerms: ['有限元分析'] })).toBe(d);
   });
-  it('generateCoverKit retries at most twice, then degrades; lengths measured', async () => {
+  it('generateCoverKit retries at most twice, then blocks; lengths measured', async () => {
     const r = generateRules(P, J.A, 'zh');
     const out = { coverLetter: { zh: '我精通有限元分析并带领团队提升效率 50%。', en: 'I am an expert in FEA with 10 years of experience.' }, selfIntro: { zh: '大家好。', en: 'Hello.' } };
     mock.mockResolvedValue(out);
     const k = await generateCoverKit(S, P, J.A, r);
     expect(mock).toHaveBeenCalledTimes(2);
     expect(k.quality.attempts).toBe(2);
-    expect(k.coverLetter.zh).not.toContain('50');
-    expect(k.coverLetter.en).not.toContain('10 years');
-    expect(k.quality.issues.length).toBeGreaterThan(0); // 降级后仍过短：如实报告，不假装通过
+    // v1.10.1：两次都未通过逐句核对 → 标记 blocked，由界面决定不保存；问题逐句给出
+    expect(k.quality.status).toBe('blocked');
+    expect(k.quality.issues.join('\n')).toMatch(/有限元分析|FEA/);
+    expect(k.quality.safe).toBeNull();
     expect(zhLen('一二三 ABC')).toBe(4); expect(enWords('I am 22 years old.')).toBe(5);
   });
   it('generateCoverKit stops after one attempt when the first draft passes', async () => {

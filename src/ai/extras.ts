@@ -2,6 +2,7 @@ import type { Bi, JobParse, PrepDirection, ProfileDoc, ResumeDoc, Settings } fro
 import { chatJson } from './provider';
 import { COVER_KIT_PROMPT, SYS_FACTS } from './prompts';
 import { numberTokens } from './consistency';
+import { buildKitContext, verifiedOnly, verifyKit, type SentenceTrace } from '../quality/kitVerify';
 import { hasTerm, overlap, planResume } from './relevance';
 import { buildLayout } from '../render/layout';
 import { BUILTIN_TEMPLATES } from '../templates';
@@ -16,7 +17,7 @@ export function layoutToText(m: LayoutModel): string {
   }
   return out.filter(Boolean).join('\n');
 }
-const resumeText = (p: ProfileDoc, r: ResumeDoc) => layoutToText(buildLayout(p, BUILTIN_TEMPLATES[0], 'zh', r)) + '\n\n' + layoutToText(buildLayout(p, BUILTIN_TEMPLATES[0], 'en', r));
+export const resumeText = (p: ProfileDoc, r: ResumeDoc) => layoutToText(buildLayout(p, BUILTIN_TEMPLATES[0], 'zh', r)) + '\n\n' + layoutToText(buildLayout(p, BUILTIN_TEMPLATES[0], 'en', r));
 const jobBrief = (j: JobParse) => JSON.stringify({ company: j.company.short || j.company.full, title: j.title, responsibilities: j.responsibilities ?? [], mustHave: j.mustHave, keywords: j.keywords, summary: j.summary });
 
 /** v1.10 求职信 / 自我介绍的长度目标（中文按字、英文按词；含适度弹性） */
@@ -33,7 +34,6 @@ const CLAIM_ZH = /熟练|精通|掌握|丰富|擅长|多年|具备.{0,6}经验|�
 const CLAIM_EN = /\b(?:proficient|expert|experienced|extensive|skilled|mastered|hands-on experience|track record|currently (?:work|design)\w*|have (?:designed|worked|led|built))\b/i;
 const LEARN = /学习|了解|接触|基础|希望|愿意|计划|准备|learn|familiar|exposure|basic|eager|plan to|looking forward|keen to/i;
 
-export interface KitQuality { attempts: number; degraded: string[]; issues: string[] }
 
 /** 自动质量检查：长度、数字可追溯、重复句、套话、把资料中没有的岗位技能写成已有经验 */
 export function checkKit(kit: { coverLetter: Bi; selfIntro: Bi }, ctx: { sourceText: string; gapTerms: string[] }): string[] {
@@ -68,40 +68,68 @@ export function degradeText(t: string, l: 'zh' | 'en', k: 'intro' | 'cover', ctx
   return out.join(l === 'zh' ? '' : ' ');
 }
 
+export interface KitQuality {
+  attempts: number;
+  /** verified：逐句核对全部通过，可保存；blocked：两次生成仍有无法追溯的自述，不保存 */
+  status: 'verified' | 'blocked';
+  /** 阻断性的事实问题（逐句：哪句、为什么） */
+  issues: string[];
+  /** 非阻断提示：长度、重复、套话 */
+  warnings: string[];
+  trace: SentenceTrace[];
+  /** 只保留已核实句子的版本（不改写、不调 AI）；不足以成文时为 null */
+  safe: { coverLetter: Bi; selfIntro: Bi } | null;
+  /** 每次尝试被拦下的句子（用于记录 AI 误写） */
+  caught: string[][];
+}
+const STYLE_ONLY = /过长|过短|重复句|套话|为空/;
+
 export async function generateCoverKit(s: Settings, p: ProfileDoc, job: JobParse, r: ResumeDoc, opts: { maxAttempts?: number } = {}): Promise<{ coverLetter: Bi; selfIntro: Bi; quality: KitQuality }> {
-  const src = resumeText(p, r);
-  // 只把 1–2 段与岗位最相关的真实经历作为重点（其余简历内容仍作为背景事实来源）
+  void r; // 事实来源是资料库（母库启用条目）；简历只是其子集
+  const ctx = buildKitContext(p, job);
   const plan = planResume(p, job, 'zh', 1);
-  const focus = plan.entries.filter((e) => e.kind !== 'education' && e.score > 0).sort((a, b) => b.score - a.score).slice(0, 2).map((e) => {
-    const x = [...p.work, ...p.projects].find((y) => y.id === e.id) as { company?: { zh?: string; en?: string }; name?: { zh?: string; en?: string } } | undefined;
-    return (x?.name?.zh || x?.company?.zh || x?.name?.en || x?.company?.en || e.id);
-  });
-  const gapTerms = [...job.mustHave, ...job.keywords, ...job.niceToHave].flatMap((k) => [k.zh, k.en]).filter((t): t is string => !!t && t.length >= 2 && !hasTerm(src, t));
-  const gapUnique = [...new Set(gapTerms)].filter((t) => !hasTerm(src, t)).slice(0, 20);
-  const ctx = { sourceText: src + '\n' + JSON.stringify(job.title), gapTerms: gapUnique };
-  const ask = (feedback: string) => chatJson<{ coverLetter?: Bi; selfIntro?: Bi }>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content: COVER_KIT_PROMPT + (feedback ? `\n\n上一版未通过检查，请修正：\n${feedback}` : '') + `\n重点经历（最多选 1–2 段来写）：${JSON.stringify(focus)}\n资料中没有体现的岗位要求（只能写「希望学习 / 有相关基础」，不得写成已有经验；拿不准就不提）：${JSON.stringify(gapUnique)}\n岗位：${jobBrief(job)}\n简历（唯一事实来源）：\n${src}` }]);
+  const focus = plan.entries.filter((e) => e.kind !== 'education' && e.score > 0).sort((a, b) => b.score - a.score).slice(0, 2).map((e) => e.id);
+  const factBlock = ctx.facts.map((f) => `[${f.id}] ${f.zh}${f.en && f.en !== f.zh ? `\n      ${f.en}` : ''}`).join('\n');
+  const degree = ctx.degreePending ? `\n学位状态：尚未授予，预计 ${ctx.degreePending}（只能写「预计」）。` : '';
+  const gaps = ctx.gapTerms.slice(0, 30);
+  const ask = (feedback: string) => chatJson<{ coverLetter?: Bi; selfIntro?: Bi }>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content:
+`${COVER_KIT_PROMPT}${feedback ? `\n\n上一版有句子未通过核对，请改正（不要再写这些内容）：\n${feedback}` : ''}
+
+【A 候选人事实——唯一可以支撑「我做过 / 会 / 有」的来源】${degree}
+重点经历（最多展开 1–2 段）：${focus.join('、') || '（自选）'}
+${factBlock}
+
+【B 岗位需求——只用于岗位需要什么、动机和学习方向，不是你的经历】
+${jobBrief(job)}
+
+【C A 中没有、只出现在 B 的技能 / 工具——不得写成已有能力或基础，只能写「希望学习」或不提】
+${JSON.stringify(gaps)}` }]);
   const max = Math.max(1, Math.min(2, opts.maxAttempts ?? 2));
-  let kit = { coverLetter: { zh: '', en: '' }, selfIntro: { zh: '', en: '' } };
-  let issues: string[] = []; let attempts = 0;
-  for (; attempts < max; ) {
+  type Kit = { coverLetter: Bi; selfIntro: Bi };
+  let best: { kit: Kit; v: ReturnType<typeof verifyKit>; w: string[] } | null = null;
+  const caught: string[][] = []; let feedback = ''; let attempts = 0;
+  const src = ctx.corpus + '\n' + JSON.stringify(job.title);
+  while (attempts < max) {
     attempts++;
-    const out = await ask(issues.join('\n'));
-    kit = { coverLetter: { zh: (out.coverLetter?.zh ?? '').trim(), en: (out.coverLetter?.en ?? '').trim() }, selfIntro: { zh: (out.selfIntro?.zh ?? '').trim(), en: (out.selfIntro?.en ?? '').trim() } };
-    issues = checkKit(kit, ctx);
-    if (!issues.length) break;
+    const out = await ask(feedback);
+    const kit: Kit = { coverLetter: { zh: (out.coverLetter?.zh ?? '').trim(), en: (out.coverLetter?.en ?? '').trim() }, selfIntro: { zh: (out.selfIntro?.zh ?? '').trim(), en: (out.selfIntro?.en ?? '').trim() } };
+    const v = verifyKit(kit, ctx);
+    const w = checkKit(kit, { sourceText: src, gapTerms: [] }).filter((x) => STYLE_ONLY.test(x));
+    const empty = w.filter((x) => /为空/.test(x));
+    if (empty.length) { v.issues.push(...empty); v.passed = false; }
+    caught.push(v.issues);
+    if (!best || (v.passed && !best.v.passed) || (v.passed === best.v.passed && v.issues.length + w.length * 0.1 < best.v.issues.length + best.w.length * 0.1)) best = { kit, v, w };
+    if (v.passed && !w.length) break;
+    feedback = [...v.issues, ...w].map((x, i) => `${i + 1}. ${x}`).join('\n');
   }
-  const degraded: string[] = [];
-  if (issues.length) {
-    for (const l of ['zh', 'en'] as const) {
-      const d1 = degradeText(kit.selfIntro[l], l, 'intro', ctx); if (d1 !== kit.selfIntro[l]) { kit.selfIntro[l] = d1; degraded.push(`selfIntro.${l}`); }
-      const d2 = degradeText(kit.coverLetter[l], l, 'cover', ctx); if (d2 !== kit.coverLetter[l]) { kit.coverLetter[l] = d2; degraded.push(`coverLetter.${l}`); }
-    }
-    issues = checkKit(kit, ctx);
-  }
-  return { ...kit, quality: { attempts, degraded, issues } };
+  const b = best!;
+  return { ...b.kit, quality: { attempts, status: b.v.passed ? 'verified' : 'blocked', issues: b.v.issues, warnings: b.w, trace: b.v.trace, safe: b.v.passed ? null : verifiedOnly(b.kit, ctx), caught } };
 }
 
 const norm = (t: string) => t.replace(/\s+/g, '').toLowerCase();
+/** 备考方向是「要准备什么」，不能替候选人声称已经具备某项能力（v1.10.1） */
+const PREP_CLAIM = /你已|您已|你有|您有|你具备|您具备|你熟悉|您熟悉|你掌握|已具备|已经具备|已有基础|你的(?:经历|项目|实习|背景)|候选人(?:已|具备|熟悉|有)|与你.{0,6}匹配|\byou (?:already|have|are (?:familiar|experienced|skilled))|\byour (?:experience|project|internship|background|skills?)\b|\bthe candidate (?:has|is)\b/i;
+export const prepClaims = (x: PrepDirection) => PREP_CLAIM.test(`${x.area?.zh ?? ''} ${x.area?.en ?? ''} ${x.why?.zh ?? ''} ${x.why?.en ?? ''}`);
 /** 备考大方向：只依据 JD 原文；每条必须给出 JD 原句，校验不在原文中的条目直接丢弃 */
 export async function generatePrep(s: Settings, job: JobParse): Promise<PrepDirection[]> {
   const out = await chatJson<{ items?: PrepDirection[] }>(s, [{ role: 'system', content: '你是严谨的求职辅导顾问。只依据给出的岗位描述原文，不推测公司内部情况、面试流程或题目。只输出 JSON。' }, { role: 'user', content:
@@ -110,10 +138,11 @@ export async function generatePrep(s: Settings, job: JobParse): Promise<PrepDire
 - 每条必须对应 JD 中明确写出的要求，source 字段逐字摘抄该要求所在的原句（不可改写、不可拼接）。
 - area 是方向名称（如“SQL 与数据建模”），why 用一句话说明为什么要准备、准备到什么程度，只基于原句内容。
 - 不要写具体面试题，不要写公司特定的猜测。
+- 只写「岗位需要什么、要准备到什么程度」，不要评价候选人，不要写「你已具备 / 你熟悉 / 你有基础 / 与你的经历匹配」之类的话。
 - 中英对应。
 输出 JSON：{"items":[{"area":{"zh":"","en":""},"why":{"zh":"","en":""},"source":"JD 原句"}]}
 岗位描述原文：
 ${job.rawText}` }]);
   const raw = norm(job.rawText);
-  return (out.items ?? []).filter((x) => x?.area && x.source && norm(x.source).length >= 4 && raw.includes(norm(x.source))).slice(0, 6);
+  return (out.items ?? []).filter((x) => x?.area && x.source && norm(x.source).length >= 4 && raw.includes(norm(x.source)) && !prepClaims(x)).slice(0, 6);
 }

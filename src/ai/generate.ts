@@ -6,7 +6,8 @@ import { lt, other, uid } from '../locale/text';
 import { mockTranslate } from './translate';
 import { isResumeSafe } from '../quality/contentQuality';
 import { guardRewrite } from '../quality/resumeGuard';
-import { compactSummary, conciseBi, jobTerms, overlap, planResume, relevance, type PlanEntry, LANG_TEST } from './relevance';
+import { buildKitContext, entityTokens, unsupportedEntities } from '../quality/kitVerify';
+import { compactSummary, hasTerm, conciseBi, jobTerms, overlap, planResume, relevance, type PlanEntry, LANG_TEST } from './relevance';
 /** v1.9 最后一道防线：核验说明 / 写作建议等元信息要点不进入简历（资料库原文不改） */
 const safeB = (bs: LocalizedText[]) => bs.filter((b) => isResumeSafe(b.zh || b.en || ''));
 
@@ -111,6 +112,12 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   const notes: string[] = [];
   const seen = new Set<string>();
   const items: GenItem[] = [];
+  // v1.10.1：工具 / 专业 / 机构只能来自资料；改写不能把 JD 关键词（如资料里没有的 NX、ROS）塞进要点
+  const kctx = buildKitContext(p, null);
+  const entityIssues = (orig: string, text: string) => [
+    ...(orig ? entityTokens(text, primary).filter((t) => !hasTerm(orig, t)).map((t) => `新增了原文没有的工具 / 专有名词：${t}`) : []),
+    ...unsupportedEntities(text, primary, kctx.corpus, [], kctx.majors).map((t) => `出现了资料中没有的：${t}`),
+  ];
   for (const it of out.items ?? []) {
     const inSelection = Object.values(exists).some((set) => set.has(it.sourceId));
     if (!idx.has(it.sourceId) || seen.has(it.sourceId) || !it.text?.trim()) { if (it.sourceId && !idx.has(it.sourceId) && !inSelection) notes.push(`已丢弃无来源条目：${it.sourceId}`); continue; }
@@ -120,11 +127,12 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
       // 资料库没有简介时允许 AI 依据资料撰写，但其中每个数字都必须在资料库中出现过
       const libNums = new Set(numberTokens(JSON.stringify(lib)));
       if (it.sourceId !== 'summary' || !numberTokens(it.text).every((n) => libNums.has(n))) { notes.push(`${it.sourceId} 原文为空且含资料库外的数字，已丢弃`); continue; }
+      const ei = entityIssues('', it.text); if (ei.length) { notes.push(`${it.sourceId}（AI 撰写的简介）${ei.join('；')}，已丢弃`); continue; }
       text = it.text.trim();
     } else {
       // v1.10：允许省略次要事实；不允许新增 / 改动数字、删除限定、抬高参与程度（guardRewrite）。
       // 未通过时不再回退整段原文，而是用确定性的精简原文（conciseBi，仍保证不丢限定）
-      const bad = guardRewrite(orig, it.text, primary);
+      const bad = [...guardRewrite(orig, it.text, primary), ...entityIssues(orig, it.text)];
       if (bad.length) { text = conciseBi(idx.get(it.sourceId)!.t, terms, primary)[primary] || orig; notes.push(`${it.sourceId} 改写未通过事实护栏（${bad.join('；')}），已改用精简原文`); }
       else text = it.text.trim();
     }
@@ -200,12 +208,14 @@ export async function localizeAi(s: Settings, p: ProfileDoc, job: JobParse | nul
     items: target.map((i) => ({ sourceId: i.sourceId, text: i[pri] })),
   };
   // 两次尝试中，每条保留第一份通过事实校验的译文；都没通过时保留最后一份 AI 译文供核对
-  const best = new Map<string, string>(); const passed = new Set<string>();
+  const best = new Map<string, string>(); const passed = new Set<string>(); const kctxL = buildKitContext(p, null);
   for (let attempt = 0; attempt < 2 && target.length; attempt++) {
     const out = await chatJson<{ items?: { sourceId: string; text: string }[] }>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content: `${LOCALIZE_PROMPT(NAME[pri], NAME[sec])}\n\n${JSON.stringify(payload)}` }], { model: s.translateModel || s.model });
     for (const x of out.items ?? []) {
       if (!x?.sourceId || !x.text?.trim() || passed.has(x.sourceId)) continue;
       const it = target.find((i) => i.sourceId === x.sourceId); if (!it) continue;
+      // v1.10.1：译文里出现资料中没有的工具 / 专业名（如把「轮机工程」译成别的专业）直接不采用
+      if (unsupportedEntities(x.text, sec, kctxL.corpus, [], kctxL.majors).length || entityTokens(x.text, sec).some((t) => !hasTerm(kctxL.corpus, t))) continue;
       best.set(x.sourceId, x.text.trim());
       if (!compareFacts(it[pri], x.text).length) passed.add(x.sourceId);
     }
