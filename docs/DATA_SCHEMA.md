@@ -47,6 +47,12 @@
 - 四类内容映射：factual_content = `factualContent`；resume_ready_content = `bullets` / `highlights`；internal_notes = `notes`；uncertain_facts = `uncertain`。
 - 旧 JSON 导入 / 导出兼容：字段全部可选，缺省即旧行为。
 
+## 岗位分析字段（v1.10.0，可选，不升级 Dexie，仍为 version 4）
+- `JobParse.responsibilities?: Bi[]`：岗位职责（与 mustHave / niceToHave 分开）。
+- `JobParse.textHash?: string`：规范化 JD 文字的哈希，用于复用分析结果、判断分析是否过期。
+- `JobParse.ocrRawText?: string`：截图识别原文（去噪声前），只存本机。
+- 旧记录没有这些字段时按旧行为处理（哈希按 `rawText` 现算）。
+
 ## 状态（10 种）
 `screening` 待筛选 · `saved` 已收藏 · `preparing` 准备材料 · `applied` 已投递 · `assessment` 在线测评/笔试 · `interviewing` 面试中 · `offer` Offer · `rejected` 已拒绝/未通过 · `withdrawn` 已撤回 · `closed` 已结束
 

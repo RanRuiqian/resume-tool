@@ -11,7 +11,7 @@ npm run verify:export # 导出回归
 ## 浏览器 e2e
 ```bash
 npm run build && npx vite preview --port 4173 &
-pip install playwright && python3 tests/e2e/tracker_e2e.py && python3 tests/e2e/release_e2e.py && python3 tests/e2e/api_profiles_e2e.py
+pip install playwright && python3 tests/e2e/jd_step2_e2e.py && python3 tests/e2e/tracker_e2e.py && python3 tests/e2e/release_e2e.py && python3 tests/e2e/api_profiles_e2e.py
 ```
 `release_e2e.py` 覆盖：空库首启；导航工具 1.0 导入（48 岗位、portals 不导入、未映射字段提示、状态转换、无虚假投递时间、重复导入）；PDF / DOCX / 图片附件 + 实际提交简历 + 状态历史的 ZIP 备份，恢复到全新隔离数据库后逐项比对与 SHA-256 校验、无 Key；390×844 与 1440×900 下 9 个主要页面无横向溢出、无遮挡。
 
