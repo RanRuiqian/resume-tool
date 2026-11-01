@@ -1,3 +1,5 @@
+import { compactGpaNote } from './resumeText';
+import { LANG_TEST } from '../ai/relevance';
 import { eduDateText } from './degree';
 import { inferWorkKind, isCampusKind } from './classify';
 import type { Lang, ProfileDoc, ResumeDoc, TemplateConfig, ModuleKey, LocalizedText, Typography, PhotoPosition } from '../types';
@@ -109,7 +111,8 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
     if (engineering && lang === 'en' && maj && deg) return `${deg} in ${maj}`;
     return [maj, deg].filter(Boolean).join(sep);
   };
-  const ed = byIds(p.education, sel.education).map((e) => ({ title: T(e.school), subtitle: eduSub(e), date: eduRange(e), bullets: pickBullets(e.highlights) }));
+  // v1.10：生成的简历副本里，GPA 后的核验说明只保留「估算 / 非官方」等必要限定（资料库原文不变）
+  const ed = byIds(p.education, sel.education).map((e) => ({ title: T(e.school), subtitle: eduSub(e), date: eduRange(e), bullets: resume ? pickBullets(e.highlights).map((x) => compactGpaNote(x, lang)) : pickBullets(e.highlights) }));
   if (ed.length) sections.education = { key: 'education', title: title('education'), blocks: ed };
   const sk = byIds(p.skills, sel.skills);
   if (sk.length) {
@@ -118,8 +121,18 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
     sk.forEach((s) => { const c = T(s.category); groups.set(c, [...(groups.get(c) ?? []), skillName(T(s.name), c)]); });
     sections.skills = { key: 'skills', title: title('skills'), blocks: [...groups].map(([c, names]) => ({ title: c || undefined, bullets: [], text: names.join(lang === 'zh' ? '、' : ', ') })) };
   }
+  // v1.10：PTE / IELTS / CET 等语言考试成绩不是职业资格证书——归入技能里的「语言」组（旧数据兼容：按名称识别）
+  const langCerts = !order.includes('skills') ? [] : byIds(p.certificates, sel.certificates).filter((e) => LANG_TEST.test(`${e.name.zh ?? ''} ${e.name.en ?? ''}`));
+  if (langCerts.length) {
+    const names = langCerts.map((e) => [T(e.name), formatDate(e.date, loc.dateFormat, loc.presentLabel)].filter(Boolean).join(lang === 'zh' ? '，' : ', '));
+    const blocks = sections.skills?.blocks ?? [];
+    const g = blocks.find((b) => /^(?:语言|语言能力|外语|languages?|language skills)$/i.test((b.title ?? '').trim()));
+    if (g) g.text = [g.text, ...names].filter(Boolean).join(lang === 'zh' ? '；' : '; ');
+    else blocks.push({ title: lang === 'zh' ? '语言' : 'Languages', bullets: [], text: names.join(lang === 'zh' ? '；' : '; ') });
+    sections.skills = { key: 'skills', title: title('skills'), blocks };
+  }
   const simple = (k: 'certificates' | 'awards') => {
-    const arr = byIds(p[k], sel[k]).map((e) => ({ title: T(e.name), subtitle: T(e.issuer), date: formatDate(e.date, loc.dateFormat, loc.presentLabel), bullets: [] }));
+    const arr = byIds(p[k], sel[k]).filter((e) => k !== 'certificates' || !langCerts.includes(e as never)).map((e) => ({ title: T(e.name), subtitle: T(e.issuer), date: formatDate(e.date, loc.dateFormat, loc.presentLabel), bullets: [] }));
     if (arr.length) sections[k] = { key: k, title: title(k), blocks: arr };
   };
   simple('certificates'); simple('awards');

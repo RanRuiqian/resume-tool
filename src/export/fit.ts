@@ -6,7 +6,7 @@ export function fitTemplate(tpl: TemplateConfig, lang: Lang, level: number): Tem
   if (level <= 0) return tpl;
   const t = structuredClone(tpl);
   const ty = t.locales[lang].typography;
-  const minBody = t.page.minBodyPt ?? 8.5;
+  const minBody = t.page.minBodyPt ?? 9; // v1.10：正文字号下限 9pt，放不下时提示删减低相关内容，而不是继续缩小
   ty.bodySizePt = Math.max(Math.min(minBody, ty.bodySizePt), ty.bodySizePt - 0.25 * level);
   ty.nameSizePt = Math.max(t.page.minBodyPt ? 18 : 15, ty.nameSizePt - 0.5 * level);
   ty.lineHeight = Math.max(t.page.minBodyPt ? 1.25 : 1.15, ty.lineHeight - 0.035 * level);

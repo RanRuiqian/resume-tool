@@ -220,6 +220,12 @@ export interface JobParse {
   yearsRequired: number | null;
   keywords: Bi[];
   summary: string;
+  /** v1.10 岗位职责（与必备要求、明确列出的加分项分开；旧数据没有此字段） */
+  responsibilities?: Bi[];
+  /** v1.10 分析所依据 JD 正文的规范化哈希：同一 JD 重复点击复用结果；JD 修改后据此提示「分析可能过期」 */
+  textHash?: string;
+  /** v1.10 截图识别的完整原文（可追溯依据；rawText 是用户确认后的岗位正文） */
+  ocrRawText?: string;
 }
 
 /** needs-review：副版本未通过数字 / 事实一致性校验，需要人工核对（A2） */

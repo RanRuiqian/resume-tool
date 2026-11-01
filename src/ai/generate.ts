@@ -5,6 +5,8 @@ import { checkConsistency, compareFacts, numberTokens } from './consistency';
 import { lt, other, uid } from '../locale/text';
 import { mockTranslate } from './translate';
 import { isResumeSafe } from '../quality/contentQuality';
+import { guardRewrite } from '../quality/resumeGuard';
+import { compactSummary, conciseBi, jobTerms, overlap, planResume, relevance, type PlanEntry, LANG_TEST } from './relevance';
 /** v1.9 最后一道防线：核验说明 / 写作建议等元信息要点不进入简历（资料库原文不改） */
 const safeB = (bs: LocalizedText[]) => bs.filter((b) => isResumeSafe(b.zh || b.en || ''));
 
@@ -25,36 +27,34 @@ export function textIndex(p: ProfileDoc): Map<string, { t: LocalizedText; parent
 const kwHit = (text: string, k: Bi) => { const l = text.toLowerCase(); return (!!k.zh && l.includes(k.zh.toLowerCase())) || (!!k.en && l.includes(k.en.toLowerCase())); };
 const entryText = (p: ProfileDoc) => JSON.stringify({ w: p.work, pr: p.projects, s: p.skills, e: p.education, c: p.certificates }).toLowerCase();
 
-/** 规则匹配（演示模式 / AI 失败降级，PRD 6.4）：关键词重叠打分 + 原文经历，不改写 */
-export function generateRules(p: ProfileDoc, job: JobParse, primary: Lang, maxBullets = 4): ResumeDoc {
-  const kws = [...job.mustHave, ...job.keywords, ...job.niceToHave];
-  const score = (t: string) => kws.reduce((s, k) => s + (kwHit(t, k) ? 1 : 0), 0);
-  const en = <T extends { enabled: boolean }>(a: T[]) => a.filter((x) => x.enabled);
+/**
+ * 规则匹配（演示模式 / AI 失败降级，PRD 6.4）：v1.10 改为按 JD 相关性挑选（planResume），
+ * 每段经历只取最相关、互不重复的要点，并按句精简（中英同步取舍）；不改写措辞，母库不变。
+ */
+export function generateRules(p: ProfileDoc, job: JobParse, primary: Lang, targetPages = 1): ResumeDoc {
+  const plan = planResume(p, job, primary, targetPages);
+  const terms = jobTerms(job);
+  const idx = textIndex(p);
   const items: GenItem[] = [];
-  const push = (id: string, t: LocalizedText) => items.push({ sourceId: id, zh: lt(t, 'zh', false), en: lt(t, 'en', false), syncStatus: 'in-sync' });
-  if (lt(p.profile.summary, primary)) push('summary', p.profile.summary);
-  const pickBullets = (bs: LocalizedText[], tags: string[]) => {
-    const ranked = safeB(bs).map((b, i) => ({ b, i, s: score(lt(b, 'zh') + ' ' + lt(b, 'en') + ' ' + tags.join(' ')) })).sort((a, b) => b.s - a.s || a.i - b.i);
-    return ranked.slice(0, maxBullets).sort((a, b) => a.i - b.i).map((x) => x.b);
-  };
-  const work = en(p.work);
-  work.forEach((w) => pickBullets(w.bullets, w.tags).forEach((b) => b.id && push(b.id, b)));
-  const projScored = en(p.projects).map((x) => ({ x, s: score(JSON.stringify(x)) })).sort((a, b) => b.s - a.s);
-  const projects = projScored.filter((x, i) => x.s > 0 || i < 2).map((x) => x.x);
-  projects.forEach((pr) => pickBullets(pr.bullets, pr.tags).forEach((b) => b.id && push(b.id, b)));
-  const edu = en(p.education);
-  edu.forEach((e) => safeB(e.highlights).forEach((b) => b.id && push(b.id, b)));
-  const skills = en(p.skills).map((x) => ({ x, s: score(lt(x.name, 'zh') + ' ' + lt(x.name, 'en')) })).sort((a, b) => b.s - a.s).map((x) => x.x);
+  const en = <T extends { enabled: boolean }>(a: T[]) => a.filter((x) => x.enabled);
+  const sumZh = lt(p.profile.summary, 'zh', false), sumEn = lt(p.profile.summary, 'en', false);
+  if (lt(p.profile.summary, primary)) items.push({ sourceId: 'summary', zh: sumZh ? compactSummary(sumZh, 'zh') : '', en: sumEn ? compactSummary(sumEn, 'en') : '', syncStatus: 'in-sync' });
+  for (const e of plan.entries) for (const id of e.bulletIds) {
+    const t = idx.get(id)?.t; if (!t) continue;
+    const c = e.kind === 'education' ? { zh: lt(t, 'zh', false), en: lt(t, 'en', false) } : conciseBi(t, terms, primary);
+    items.push({ sourceId: id, zh: c.zh, en: c.en, syncStatus: 'in-sync' });
+  }
   const all = entryText(p);
   const reqs = job.mustHave.length ? job.mustHave : job.keywords;
   const covered = reqs.filter((k) => kwHit(all, k));
   const gaps = reqs.filter((k) => !kwHit(all, k)).map((k) => k[primary] || k.zh || k.en);
+  const ids = (k: PlanEntry['kind']) => plan.entries.filter((e) => e.kind === k).map((e) => e.id);
   const res: ResumeDoc = {
     id: uid('resume'), jobId: job.id, templateId: '', primaryLanguage: primary, createdAt: new Date().toISOString(),
     matchScore: reqs.length ? Math.round((covered.length / reqs.length) * 100) : 0, gaps,
-    selection: { work: work.map((x) => x.id), projects: projects.map((x) => x.id), education: edu.map((x) => x.id), skills: skills.map((x) => x.id), certificates: en(p.certificates).map((x) => x.id), awards: en(p.awards).map((x) => x.id) },
+    selection: { work: ids('work'), projects: ids('projects'), education: ids('education').length ? ids('education') : en(p.education).map((x) => x.id), skills: plan.skills, certificates: plan.certificates, awards: plan.awards },
     items, consistency: { checkedAt: '', issues: [] }, generatedBy: 'rules',
-    notes: ['规则匹配：未改写措辞，副版本使用资料库已有译文'],
+    notes: ['规则匹配：按岗位相关性挑选并精简要点（未改写措辞），资料库原文不变；未选中的经历和要点可在左侧清单手动勾选'],
   };
   return res;
 }
@@ -96,12 +96,13 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
     certificates: p.certificates.filter((x) => x.enabled).map((k) => ({ id: k.id, name: T(k.name) })),
     awards: p.awards.filter((x) => x.enabled).map((k) => ({ id: k.id, name: T(k.name) })),
   };
-  const jobBrief = { title: job.title, mustHave: job.mustHave.map((k) => k[primary]), niceToHave: job.niceToHave.map((k) => k[primary]), yearsRequired: job.yearsRequired, keywords: job.keywords.map((k) => k[primary]), summary: job.summary };
+  const jobBrief = { title: job.title, mustHave: job.mustHave.map((k) => k[primary]), responsibilities: (job.responsibilities ?? []).map((k) => k[primary] || k[other(primary)]), niceToHave: job.niceToHave.map((k) => k[primary]), yearsRequired: job.yearsRequired, keywords: job.keywords.map((k) => k[primary]), summary: job.summary };
   type Out = { selection?: Partial<Sel>; items?: { sourceId: string; text: string }[]; matchScore?: number; gaps?: string[]; reasons?: string };
   const out = await chatJson<Out>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content: `${GENERATE_PROMPT(NAME[primary], targetPages > 1 ? 5 : 4)}\n\n目标页数：${targetPages}\n岗位：${JSON.stringify(jobBrief)}\n资料库：${JSON.stringify(lib)}` }]);
 
   // 校验：只保留资料库中真实存在的 id（防编造，PRD 6.1）
   const idx = textIndex(p);
+  const terms = jobTerms(job);
   const exists: Record<keyof Sel, Set<string>> = { work: new Set(p.work.map((x) => x.id)), projects: new Set(p.projects.map((x) => x.id)), education: new Set(p.education.map((x) => x.id)), skills: new Set(p.skills.map((x) => x.id)), certificates: new Set(p.certificates.map((x) => x.id)), awards: new Set(p.awards.map((x) => x.id)) };
   const selection = {} as Sel;
   for (const k of SEL_KEYS) selection[k] = [...new Set((out.selection?.[k] ?? []).filter((id) => exists[k].has(id)))];
@@ -121,21 +122,49 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
       if (it.sourceId !== 'summary' || !numberTokens(it.text).every((n) => libNums.has(n))) { notes.push(`${it.sourceId} 原文为空且含资料库外的数字，已丢弃`); continue; }
       text = it.text.trim();
     } else {
-      // 数字不得被改写：与原文数字集合不同则回退原文
-      text = numberTokens(orig).join() === numberTokens(it.text).join() ? it.text.trim() : orig;
-      if (text === orig && orig !== it.text.trim()) notes.push(`${it.sourceId} 改写改动了数字，已回退原文`);
+      // v1.10：允许省略次要事实；不允许新增 / 改动数字、删除限定、抬高参与程度（guardRewrite）。
+      // 未通过时不再回退整段原文，而是用确定性的精简原文（conciseBi，仍保证不丢限定）
+      const bad = guardRewrite(orig, it.text, primary);
+      if (bad.length) { text = conciseBi(idx.get(it.sourceId)!.t, terms, primary)[primary] || orig; notes.push(`${it.sourceId} 改写未通过事实护栏（${bad.join('；')}），已改用精简原文`); }
+      else text = it.text.trim();
     }
+    if (it.sourceId === 'summary') text = compactSummary(text, primary);
     seen.add(it.sourceId);
     items.push({ sourceId: it.sourceId, zh: primary === 'zh' ? text : '', en: primary === 'en' ? text : '', syncStatus: 'in-sync' });
   }
-  // 选中的经历若没有任何要点被保留，则带上其全部要点（避免空条目）
+  // v1.10 密度控制：每段经历按岗位相关性设软上限，去掉同一段里表达同一件事的要点
+  const plan = planResume(p, job, primary, targetPages);
+  // 语言成绩（PTE / IELTS / CET…）几乎所有岗位都需要；AI 漏选时补回（排版时归入技能「语言」组）
+  for (const id of p.certificates.filter((c) => c.enabled && LANG_TEST.test(`${c.name.zh} ${c.name.en}`)).map((c) => c.id)) if (!selection.certificates.includes(id)) selection.certificates.push(id);
+  const planOf = new Map(plan.entries.map((e) => [e.id, e]));
+  const byParent = new Map<string, GenItem[]>();
+  for (const i of items) { const par = idx.get(i.sourceId)?.parent ?? ''; byParent.set(par, [...(byParent.get(par) ?? []), i]); }
+  const drop = new Set<string>();
+  for (const [par, list] of byParent) {
+    if (par === 'profile') continue;
+    const pe = planOf.get(par);
+    const isEdu = p.education.some((e) => e.id === par);
+    const cap = isEdu ? plan.caps.core : pe?.core ? plan.caps.core : plan.caps.minor + 1;
+    const ranked = list.map((i, k) => ({ i, k, s: relevance(i[primary], terms) })).sort((a, b) => b.s - a.s || a.k - b.k);
+    const keep: GenItem[] = [];
+    for (const x of ranked) { if (keep.length >= cap || keep.some((y) => overlap(y[primary], x.i[primary]) > 0.45)) { drop.add(x.i.sourceId); continue; } keep.push(x.i); }
+  }
+  if (drop.size) notes.push(`按相关性与篇幅省略了 ${drop.size} 条次要或重复要点（资料库保留，可手动勾选）`);
+  const kept = items.filter((i) => !drop.has(i.sourceId));
+  items.length = 0; items.push(...kept);
+  // 修复（v1.10 bug A）：选中的经历若 AI 没有返回任何要点，不再整段带上全部原始要点，
+  // 只补入按相关性挑选的 1–2 条精简原文；与岗位无关的次要经历保持空要点（只显示标题），用户可手动勾选
   const withItems = new Set(items.map((i) => idx.get(i.sourceId)?.parent));
-  for (const e of [...p.work.filter((x) => selection.work.includes(x.id)), ...p.projects.filter((x) => selection.projects.includes(x.id))]) {
-    if (!withItems.has(e.id)) e.bullets.forEach((b) => b.id && items.push({ sourceId: b.id, zh: primary === 'zh' ? lt(b, 'zh') : '', en: primary === 'en' ? lt(b, 'en') : '', syncStatus: 'in-sync' }));
-  }
-  for (const e of p.education.filter((x) => selection.education.includes(x.id))) {
-    if (!withItems.has(e.id)) e.highlights.forEach((b) => b.id && items.push({ sourceId: b.id, zh: primary === 'zh' ? lt(b, 'zh') : '', en: primary === 'en' ? lt(b, 'en') : '', syncStatus: 'in-sync' }));
-  }
+  const fill = (id: string, bullets: LocalizedText[], kind: PlanEntry['kind']) => {
+    if (withItems.has(id)) return;
+    const ids = planOf.get(id)?.bulletIds ?? [];
+    const chosen = (ids.length ? ids.map((x) => bullets.find((b) => b.id === x)).filter((b): b is LocalizedText => !!b) : []).slice(0, kind === 'education' ? 3 : 2);
+    for (const b of chosen) { const c = kind === 'education' ? { zh: lt(b, 'zh'), en: lt(b, 'en') } : conciseBi(b, terms, primary); items.push({ sourceId: b.id!, zh: primary === 'zh' ? c.zh : '', en: primary === 'en' ? c.en : '', syncStatus: 'in-sync' }); }
+    if (chosen.length) notes.push(`${id} AI 未返回要点，已按相关性补入 ${chosen.length} 条精简原文`);
+  };
+  for (const e of p.work.filter((x) => selection.work.includes(x.id))) fill(e.id, e.bullets, 'work');
+  for (const e of p.projects.filter((x) => selection.projects.includes(x.id))) fill(e.id, e.bullets, 'projects');
+  for (const e of p.education.filter((x) => selection.education.includes(x.id))) fill(e.id, e.highlights, 'education');
   return {
     id: uid('resume'), jobId: job.id, templateId: '', primaryLanguage: primary, createdAt: new Date().toISOString(),
     matchScore: Math.max(0, Math.min(100, Math.round(out.matchScore ?? 0))), gaps: (out.gaps ?? []).map(String), selection, items,
@@ -214,7 +243,7 @@ export async function generateResume(s: Settings, p: ProfileDoc, job: JobParse, 
 async function generateResumeInner(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void): Promise<ResumeDoc> {
   if (s.demoMode) {
     onStep?.('演示模式：规则匹配中…');
-    const r = generateRules(p, job, primary);
+    const r = generateRules(p, job, primary, targetPages);
     fillSecondaryFromProfile(p, r, true);
     return runConsistency(r);
   }
@@ -224,7 +253,7 @@ async function generateResumeInner(s: Settings, p: ProfileDoc, job: JobParse, pr
     r = await generatePrimaryAi(s, p, job, primary, targetPages);
   } catch (e) {
     onStep?.('AI 生成失败，降级为规则匹配');
-    r = generateRules(p, job, primary);
+    r = generateRules(p, job, primary, targetPages);
     r.notes = [...(r.notes ?? []), `AI 错误：${(e as Error).message}`];
     fillSecondaryFromProfile(p, r, false);
     return runConsistency(r);

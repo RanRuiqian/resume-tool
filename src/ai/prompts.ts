@@ -17,25 +17,44 @@ export const JD_PARSE_PROMPT = `解析下面的岗位描述（JD），输出 JSO
  "company": { "full": "JD 中的公司全称，没有则空字符串", "short": "常用简称，去掉 有限公司/科技/Inc. 等后缀；不确定则空字符串，禁止臆造" },
  "roleAbbr": "行业通用英文岗位缩写，如 前端→FE 后端→BE 产品经理→PM 数据分析→DA 算法→MLE；无通用缩写用英文关键词驼峰简写；不确定则空字符串",
  "title": { "zh": "中文职位名", "en": "English job title" },
+ "responsibilities": [{ "zh": "...", "en": "..." }],
  "mustHave": [{ "zh": "...", "en": "..." }],
  "niceToHave": [{ "zh": "...", "en": "..." }],
  "yearsRequired": 数字或 null,
  "keywords": [{ "zh": "中文关键词", "en": "English keyword" }],
  "summary": "一句话岗位摘要（JD 语言）"
 }
-keywords 取 8–15 个，中英文分别使用该语言招聘中的习惯说法。`;
+分类规则（v1.10，必须严格遵守）：
+- responsibilities：岗位职责 / 工作内容（"负责…""Design…""You will…"）。
+- mustHave：任职要求中明确要求的学历、专业、经验、技能、语言等。
+- niceToHave：只收录 JD 明确标注为加分 / 优先 / preferred / plus / nice to have / desirable / advantage 的条目；JD 没有这类字样时必须输出空数组，不得把职责或必备要求归为加分项。
+- 每项只写 JD 原文中存在的内容，不推测、不补充。
+keywords 取 8–15 个 JD 原文中出现的核心技能 / 工具 / 领域词（不写泛泛的软技能），中英文分别使用该语言招聘中的习惯说法。`;
 
 export const TRANSLATE_PROMPT = (from: string, to: string) => `把下列简历字段从${from}翻译成${to}。要求：只翻译不润色，不增删信息，数字/日期/链接/技术名保持原样；专有名词表（glossary）中的词必须使用给定译法。英文简历 bullet 用具体动词开头、过去时（进行中的用现在时）、省略主语；不要每条都用同一个动词，不要逐字硬译中文结构。
 输入 JSON：{"glossary":[...],"items":[{"key":"...","text":"..."}]}
 输出 JSON：{"items":[{"key":"同输入","text":"译文"}]}，条目数量与 key 必须与输入完全一致。`;
 
+/** v1.10：简历副本是「招聘方 10 秒能读完」的精炼版本；母库保存完整事实，这里只挑选和改写。 */
+export const RESUME_STYLE = `简历写作（v1.10）：
+- 简历不是技术报告。每条优先表达「做了什么 → 主要方法 / 工具 → 可核实的结果或能力」，原文没有结果就只写任务和方法；不必每条三段齐全。
+- 一句话能说清的不要拆成多句；不要用长串逗号罗列参数。中文每条约 25–60 字，英文每条约 12–30 词（软限制，必要事实优先）。
+- 按岗位决定细节：与岗位直接相关的专业指标 / 标准 / 工具要保留（例如视觉岗保留成像测试指标，机械岗保留结构设计、CAD、原型与验证）；与岗位无关的测量参数、实验步骤、材料 / 尺寸清单、重复背景、解释性括号、失败方案细节不要写进简历（它们仍保存在资料库）。
+- 可以省略次要事实，但保留下来的事实必须原样保留其限定：约 / 估算 / 预计 / 仅 / 参与 / 协助 / 课程 / 实习 / 仿真 / 讨论过 / 考虑过 / 未完成；不得把「考虑过」写成「实现了」，「预计」写成「已完成」，课程作业写成企业项目，参与写成主导。
+- 用到的每个数字都必须来自原文；不得新增数字、工具、证书、场所、合作者或成果。
+- JD 中资料库没有体现的技能（例如资料里没有的软件 / 产品领域）只能放进 gaps，绝不写成已有经验，也不要把 JD 要求原句改写进经历。
+- 同一段经历的多条要点不要重复表达同一种能力；句式不要千篇一律。
+- 英文按英文简历习惯：强动词开头、过去时、省略主语，自然简洁，不逐字直译中文。`;
+
 export const GENERATE_PROMPT = (lang: string, maxBullets: number) => `根据岗位解析结果，从用户资料库中挑选最相关的经历并改写，生成${lang}简历主版本。
 要求：
-1. selection 中只能出现资料库里已有的条目 id，按与岗位相关度排序；work/education 通常全部保留，projects/skills/certificates/awards 只选相关的。
-2. items 为改写后的 bullet / highlight 以及 summary（sourceId 用 "summary"）。每条必须携带资料库原始条目的 sourceId，一个 sourceId 只出现一次；只能调整措辞，在与事实吻合处自然使用 keywords，严禁新增事实或修改任何数字、日期、公司、职位。
-3. 每段经历最多保留 ${maxBullets} 条最相关的 bullet；控制总篇幅在目标页数内，宁缺毋滥。
-4. summary 只在资料库中有与该岗位直接相关的具体信息（方向、技能、经历）时才写，1–2 句、不写自我评价套话；否则 summary 输出空字符串。
-5. matchScore 为 0–100 的匹配度；gaps 列出资料库无法覆盖的 mustHave（${lang}）。
+1. selection 中只能出现资料库里已有的条目 id，按与岗位相关度排序；work/education 通常全部保留；projects/skills/certificates/awards 只选与岗位相关的（无关的不选，用户可以手动加）。
+2. items 为改写后的 bullet / highlight 以及 summary（sourceId 用 "summary"）。每条必须携带资料库原始条目的 sourceId，一个 sourceId 只出现一次。
+3. 篇幅：核心经历 2–3 条（最多 ${maxBullets} 条），次要经历 1 条或不选；不要凑数。
+4. summary：1–2 句、中文不超过约 80 字 / 英文不超过约 45 词，只写与该岗位相关的方向和真实能力，不写技术报告式内容、不写自我评价套话；资料不足时输出空字符串。
+5. 教育 highlights 中的 GPA 只保留成绩本身与必要限定（如估算、非官方），不写核验说明。
+6. matchScore 为 0–100 的匹配度（工具内部估算，不是招聘方评分）；gaps 列出资料库无法覆盖的 mustHave（${lang}）。
+${RESUME_STYLE}
 ${WRITING_RULES}
 输出 JSON：{"selection":{"work":[],"projects":[],"education":[],"skills":[],"certificates":[],"awards":[]},"items":[{"sourceId":"...","text":"..."}],"matchScore":80,"gaps":["..."],"reasons":"简短挑选理由"}`;
 
@@ -69,3 +88,18 @@ export const ORGANIZE_PROMPT = `你在整理一位求职者已经导入的个人
 ${MASTER_WRITING_RULES}
 输入 JSON：{"items":[{"key":"...","section":"work|projects|education|profile","context":"所属经历（单位 / 项目名 / 性质）","zh":"...","en":"...","needEn":true}]}
 输出 JSON：{"items":[{"key":"同输入","category":"resume","zh":"...","en":"...","notes":[],"archive":[],"uncertain":[]}]}，条目数量与 key 必须与输入完全一致。`;
+
+/** v1.10 求职信 + 1 分钟自我介绍 */
+export const COVER_KIT_PROMPT = `根据下面这份简历（唯一事实来源）和目标岗位，撰写：
+1. coverLetter：求职信。中文约 250–380 字，英文约 170–260 words，分 3–4 段：
+   - 开头：应聘的岗位，以及一句为什么与自己的方向相关（只依据 JD 内容，不编造对公司的了解，不写公司历史、文化、产品细节）；
+   - 中间：只展开 1–2 段最相关的真实经历，说明「做了什么、用了什么方法」以及这和岗位的哪项需求有关；不要复述整份简历，不堆技术参数；
+   - 结尾：简短、礼貌地表达面试意愿。
+   中文按中文求职信习惯（「您好」开头、「此致 敬礼」可省略），英文按英文商务信件习惯（Dear Hiring Manager, … Sincerely,）；英文不要逐句直译中文。
+2. selfIntro：面试开场 1 分钟口头自我介绍。中文 180–220 字；英文 100–130 words。
+   结构：教育背景一句 → 一个最相关的真实项目（做了什么、怎么做）→ 能迁移到该岗位的能力 → 一句求职方向。
+   口语化、短句、容易说出口和记忆；英文用简单常见词，避免长从句和缩写堆叠；不要把简历念一遍。
+事实与语气（必须区分）：已经完成的工作 / 参与完成的工作 / 课程中接触的技术 / 有基础但没有项目经验 / 尚未掌握但准备学习。
+资料中没有的岗位技能、产品领域，只能写「希望学习」「有相关基础」，不能写成正在从事或已经掌握；预计毕业不能写成已毕业；课程项目不能写成公司项目。
+只使用简历里出现过的数字；不写「热爱」「激情」「深耕」「完美契合」「passionate」「perfect fit」等空泛套话。
+输出 JSON：{"coverLetter":{"zh":"","en":""},"selfIntro":{"zh":"","en":""}}`;

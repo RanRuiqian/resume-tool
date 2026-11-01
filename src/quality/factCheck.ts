@@ -52,7 +52,7 @@ const CATS: Cat[] = [
 ];
 const PART_ZH: [RegExp, number][] = [[/参与|配合|辅助/, 1], [/协助|支持/, 2], [/负责|承担/, 3], [/主导|牵头|主持|带领|领导|统筹/, 4], [/独立完成|独立开发|独立设计|独立|单独完成|个人完成|一人完成/, 5]];
 const PART_EN: [RegExp, number][] = [[/\b(?:participated|contributed|took part|involved)\b/i, 1], [/\b(?:assisted|supported|helped)\b/i, 2], [/\b(?:responsible|in charge|handled|maintained)\b/i, 3], [/\b(?:led|lead|headed|directed|managed|spearheaded|owned)\b/i, 4], [/\b(?:independently|single-handedly|solely|on (?:my|his|her) own|alone)\b/i, 5]];
-const levels = (s: string, lang: Lang) => new Set((lang === 'zh' ? PART_ZH : PART_EN).filter(([re]) => re.test(s)).map(([, n]) => n));
+export const levels = (s: string, lang: Lang) => new Set((lang === 'zh' ? PART_ZH : PART_EN).filter(([re]) => re.test(s)).map(([, n]) => n));
 const PART_NAME = ['', '参与', '协助', '负责', '主导', '独立完成'];
 const SOLO = { zh: /独立|个人|单独|一人/, en: /\b(?:independently|single-handedly|solely|alone|on (?:my|his|her) own)\b/i };
 const TEAM = { zh: /团队|小组|合作|协作|共同|与[^，。]{0,8}(?:一起|共同|合作)|[两二三四五六七八九十\d]人/, en: /\b(?:team|group|collaborat\w*|jointly|together|with (?:a|the|my)?\s*(?:team|colleagues|peers))\b/i };
@@ -102,7 +102,7 @@ export function lossReport(local: string, ai: string, lang: Lang): string[] {
 
 // ---- v1.9.2 中英交叉事实一致性（保守：任一概念只在一侧出现即判为待核对）----
 type Pair = [name: string, zh: RegExp, en: RegExp];
-const XPAIRS: Pair[] = [
+export const XPAIRS: Pair[] = [
   ['否定 / 未完成', /尚未|未完成|未能|没有|未经|无法|不能|未|不代表|并非|不是|非官方/, /\bnot\b|\bno\b|n't|\byet\b|\bpending\b|\bincomplete\b|\bunfinished\b|\bwithout\b|\bunable\b|\bnever\b/i],
   ['进行中', /正在|进行中|在研|持续/, /\bongoing\b|\bin progress\b|\bcurrently\b|\bongoing\b|\bcontinu\w*/i],
   ['仅 / 限定', /仅|只在|只对|只有|仅限/, /\bonly\b|\bsolely\b|\bmerely\b|\blimited to\b|\bexclusively\b/i],
