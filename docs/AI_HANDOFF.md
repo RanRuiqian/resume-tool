@@ -117,7 +117,7 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 描述的结构与映射规则见 `docs/DATA_SCHEMA.md`「导入格式」。实现：`src/tracker/importers.ts` 中 `handoff10()`、`HANDOFF_MAPPING`、`HANDOFF_STATUS`。
 
 ## 6. 测试现状
-单元 / 集成 439 项（vitest，v1.11.0），浏览器 e2e：`job_link_e2e.py` 13、`jd_step2_e2e.py` 17、`info_loss_e2e.py` 20、`organize_e2e.py` 36、`presets_e2e.py` 14、`kit_verify_e2e.py` 15、`tracker_e2e.py` 33、`release_e2e.py` 35、`api_profiles_e2e.py` 47、`smart_import_e2e.py` 41（Mock AI），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
+单元 / 集成 450 项（vitest，v1.11.0），浏览器 e2e：`job_link_e2e.py` 13、`jd_step2_e2e.py` 17、`info_loss_e2e.py` 20、`organize_e2e.py` 36、`presets_e2e.py` 14、`kit_verify_e2e.py` 15、`tracker_e2e.py` 33、`release_e2e.py` 35、`api_profiles_e2e.py` 47、`smart_import_e2e.py` 41（Mock AI），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
 
 ## 7. 待办与已知限制
 见 `docs/PROJECT_STATUS.md`。
