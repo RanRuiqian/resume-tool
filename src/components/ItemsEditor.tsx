@@ -3,6 +3,7 @@ import type { GenItem, Lang } from '../types';
 import { runConsistency, textIndex } from '../ai/generate';
 import { compareFacts } from '../ai/consistency';
 import { lt, other } from '../locale/text';
+import { sourceIdsOf, sourceText } from '../ai/provenance';
 
 const PARENT_LABEL = (id: string) => (id === 'profile' ? '个人简介' : id.startsWith('work') ? '工作' : id.startsWith('proj') ? '项目' : id.startsWith('edu') ? '教育' : id);
 
@@ -31,7 +32,7 @@ export function ItemsEditor() {
           const src = idx.get(it.sourceId);
           return (
             <tr key={it.sourceId} className={issueIds.has(it.sourceId) || it.syncStatus === 'needs-review' ? 'bad' : it.syncStatus === 'pending' ? 'pending' : ''}>
-              <td className="small" title={src ? '原文：' + lt(src.t, resume.primaryLanguage) : ''}>{PARENT_LABEL(src?.parent ?? '')}<div className="muted">{it.sourceId}</div>
+              <td className="small" title={src ? '原文：' + lt(sourceText(profile, it), resume.primaryLanguage) : ''}>{PARENT_LABEL(src?.parent ?? '')}<div className="muted">{sourceIdsOf(it).join(' + ')}</div>
                 {it.syncStatus === 'needs-review' && <div className="uncertain" data-testid="needs-review">⚠ 需人工核对译文{it.translation?.factIssues.length ? '：' + it.translation.factIssues.join('；') : ''}{it.translation?.aiText && it.translation.aiText !== it[other(resume.primaryLanguage)] ? <div className="muted">AI 译文：{it.translation.aiText}</div> : null}</div>}</td>
               <td><textarea rows={2} value={it.zh} onChange={(e) => editItem(i, 'zh', e.target.value)} /></td>
               <td><textarea rows={2} value={it.en} onChange={(e) => editItem(i, 'en', e.target.value)} /></td>

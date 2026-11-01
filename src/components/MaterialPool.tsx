@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useApp } from '../store';
+import { sourceIdsOf } from '../ai/provenance';
 import type { LocalizedText, ResumeDoc } from '../types';
 import { lt, formatRange } from '../locale/text';
 import { entryBullets, fillWithOriginal, matchHints, missingLang, SEL_KEYS, toggleBullet, toggleEntry, toggleSummary, type SelKey } from '../ai/selection';
@@ -14,7 +15,7 @@ export function MaterialPool() {
   const [translating, setTranslating] = useState(false);
   const [open, setOpen] = useState<Record<string, boolean>>({});
   if (!resume) return null;
-  const itemIds = new Set(resume.items.map((i) => i.sourceId));
+  const itemIds = new Set(resume.items.flatMap(sourceIdsOf));
 
   /** 更新后：缺少的语言用 AI 翻译（失败或演示模式则直接用原文） */
   const apply = async (next: ResumeDoc) => {
@@ -86,7 +87,7 @@ export function MaterialPool() {
     <div className="pool">
       <div className="pool-title">
         <b>📚 我的素材库</b>
-        <span className="muted small">勾选 = 放进简历，右侧实时更新。AI 已为这个岗位预先勾好最相关的。</span>
+        <span className="muted small">勾选 = 放进简历，右侧实时更新。AI 已综合岗位与个人背景选材，你可继续调整。</span>
         {translating && <span className="small"><span className="spinner" />正在翻译新加入的内容…</span>}
       </div>
       {hasSummary && (

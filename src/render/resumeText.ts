@@ -1,5 +1,11 @@
 import type { Lang } from '../types';
 
+/** 仅修正项目/课程标题中相邻的完全相同英文词；不改学校、机构或证书专名。 */
+export function tidyProjectTitle(text: string, lang: Lang): string {
+  if (lang !== 'en') return text;
+  return text.replace(/\b([A-Za-z]{3,})(\s+\1\b)+/gi, '$1');
+}
+
 const GPA = /GPA|绩点|均分|平均分|加权|WAM|\baverage\b|成绩(?!单)/i;
 const VERIFY = /核实|核验|核对|以.{0,12}为准|成绩单|自行|换算|计算|折算|仅供参考|参考|待确认|证明|verify|verif|transcript|calculat|convert|self[- ]?reported|for reference|subject to|official|pending|confirm/i;
 const EST = /估算|估计|约|换算|折算|自行计算|自算|\best\.|estimat|approx|calculat|convert/i;

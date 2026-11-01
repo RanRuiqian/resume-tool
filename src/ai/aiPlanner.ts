@@ -1,10 +1,12 @@
-import type { JobParse, Lang, ProfileDoc, Settings } from '../types';
+import type { JobParse, Lang, ProfileDoc, Settings, TemplateConfig } from '../types';
 import { other } from '../locale/text';
 import { isOfficialDeepSeek } from '../storage/defaults';
 import { analyzeJd, extractEvidence, rankEvidence } from './evidence';
 import { chatJson, type ChatMsg } from './provider';
 import { AI_PLAN_PROMPT, AI_PLAN_REPAIR_PROMPT, SYS_FACTS } from './prompts';
 import type { PlanEntry, ResumePlan } from './relevance';
+import { inferWorkKind } from '../render/classify';
+import { isProfessionalWork, isCampusWork, pageBudget, type ContentCategory } from './contentStrategy';
 
 /** AI 对岗位要求作出的可追溯判断：非官方 ATS 分数。 */
 export interface RequirementDecision {
@@ -17,6 +19,8 @@ export interface RequirementDecision {
 export interface AiSelectionOutput {
   requirements?: RequirementDecision[];
   entries?: { entryId: string; bulletIds: string[]; reason?: string }[];
+  reserveEntries?: { entryId: string; bulletIds: string[]; reason?: string }[];
+  omissions?: Partial<Record<ContentCategory, string>>;
   education?: { entryId: string; bulletIds: string[] }[];
   skills?: string[];
   certificates?: string[];
@@ -27,6 +31,8 @@ export interface AiSelectionOutput {
 
 export interface AiSelectionResult {
   plan: ResumePlan;
+  reserves: PlanEntry[];
+  omissions: Partial<Record<ContentCategory, string>>;
   requirements: RequirementDecision[];
   gaps: string[];
   matchScore: number;
@@ -56,7 +62,7 @@ function checkLibraryIds(p: ProfileDoc) {
 }
 
 /** 只发送完成任务需要的专业素材；不发送照片、联系方式、证件、原始文档全文或 API Key。 */
-export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetPages: number) {
+export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetPages: number, template?: TemplateConfig) {
   checkLibraryIds(p);
   const evid = extractEvidence(p);
   const byEntry = (id: string, section: 'work' | 'projects' | 'education') => evid.filter((e) => e.entryId === id && e.section === section).map((e) => ({
@@ -64,7 +70,7 @@ export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetP
     qualifiers: e.qualifiers, flags: e.flags,
   })).filter((x) => x.text);
   const work = p.work.filter((x) => x.enabled).map((x) => ({
-    entryId: x.id, company: textOf(x.company, lang), title: textOf(x.title, lang), kind: x.kind ?? '',
+    entryId: x.id, company: textOf(x.company, lang), title: textOf(x.title, lang), kind: inferWorkKind(x),
     start: x.start, end: x.end, uncertain: x.uncertain ?? [], facts: byEntry(x.id, 'work'),
   })).filter((x) => x.facts.length);
   const projects = p.projects.filter((x) => x.enabled).map((x) => ({
@@ -94,12 +100,11 @@ export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetP
   return {
     job: { title: job.title, rawText: job.rawText, responsibilities: job.responsibilities ?? [], mustHave: job.mustHave,
       niceToHave: job.niceToHave, keywords: job.keywords },
-    candidate: { summaryOriginal: textOf(p.profile.summary, lang), work, projects, education,
+    candidate: { work, projects, education,
       skills, certificates, awards },
     allowedIds,
-    constraints: { language: lang, pages: targetPages > 1 ? 2 : 1, maxFacts: targetPages > 1 ? 14 : 8,
-      maxFactsPerEntry: targetPages > 1 ? 5 : 3, maxEducationFacts: 3,
-      maxSkills: targetPages > 1 ? 14 : 9, maxCertificates: 6, maxAwards: 5 },
+    constraints: { language: lang, layout: pageBudget(targetPages, lang, template, p),
+      personalCompleteness: '先理解完整画像；直接相关 → 可迁移工程 → 职业/组织背景 → 低价值补充。工作与组织的详略随岗位及版面调整，不能只按关键词删除。' },
   };
 }
 
@@ -123,8 +128,8 @@ export class AiSelectionValidationError extends Error {
 type SelectionBrief = ReturnType<typeof selectionBrief>;
 
 /** 校验只承认实际发给 AI 的素材。收集所有错误后一次反馈，避免逐项盲目重跑。 */
-export function validateAiSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse, lang: Lang, targetPages: number): AiSelectionResult {
-  return validateSelection(raw, p, job, lang, targetPages, selectionBrief(p, job, lang, targetPages));
+export function validateAiSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse, lang: Lang, targetPages: number, template?: TemplateConfig): AiSelectionResult {
+  return validateSelection(raw, p, job, lang, targetPages, selectionBrief(p, job, lang, targetPages, template));
 }
 
 function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse, lang: Lang, targetPages: number, brief: SelectionBrief): AiSelectionResult {
@@ -145,11 +150,14 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
   const ev = extractEvidence(p).filter((x) => visibleFacts.has(x.id));
   const byId = new Map(ev.map((x) => [x.id, x]));
   const entrySet = new Map(allowed.entries.map((x) => [x.entryId, x.kind]));
-  const usedEntries = new Set<string>(), usedBullets = new Set<string>(), entries: PlanEntry[] = [];
+  const usedEntries = new Set<string>(), usedBullets = new Set<string>(), entries: PlanEntry[] = [], reserves: PlanEntry[] = [];
   const chosenReasons: string[] = [];
   if (!Array.isArray(raw.entries)) issue('/entries', 'format', 'AI 没有返回有效的经历选择方案');
-  for (const [i, e] of (Array.isArray(raw.entries) ? raw.entries : []).entries()) {
-    const path = `/entries/${i}`;
+  if (raw.reserveEntries !== undefined && !Array.isArray(raw.reserveEntries)) issue('/reserveEntries', 'format', '候补经历应为数组');
+  const pool = [...(Array.isArray(raw.entries) ? raw.entries : []).map((e, i) => ({ e, i, reserve: false })),
+    ...(Array.isArray(raw.reserveEntries) ? raw.reserveEntries : []).map((e, i) => ({ e, i, reserve: true }))];
+  for (const { e, i, reserve } of pool) {
+    const path = `/${reserve ? 'reserveEntries' : 'entries'}/${i}`;
     const kind = entrySet.get(e?.entryId);
     if (!kind) {
       issue(path, 'invalid_id', `无效或没有实际要点的经历 ID：${e?.entryId}`, [String(e?.entryId)]); continue;
@@ -157,7 +165,6 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     if (usedEntries.has(e.entryId)) issue(path, 'duplicate', `重复的经历 ID：${e.entryId}`, [e.entryId]);
     const bulletIds = idArray(e.bulletIds, path, `${e.entryId}.bulletIds`);
     if (!bulletIds.length) issue(path, 'inconsistent', `没有实际要点的经历：${e.entryId}`);
-    if (bulletIds.length > brief.constraints.maxFactsPerEntry) issue(path, 'limit', `经历 ${e.entryId} 的要点过多`);
     for (const id of bulletIds) {
       const source = byId.get(id);
       if (!source || source.entryId !== e.entryId || source.section !== kind)
@@ -166,11 +173,9 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
       usedBullets.add(id);
     }
     usedEntries.add(e.entryId);
-    entries.push({ kind, id: e.entryId, score: raw.entries!.length - i, core: i < (targetPages > 1 ? 3 : 2), bulletIds });
+    (reserve ? reserves : entries).push({ kind, id: e.entryId, score: pool.length - i, core: !reserve, bulletIds });
     if (typeof e.reason === 'string' && e.reason.trim()) chosenReasons.push(`${e.entryId}：${e.reason.trim()}`);
   }
-  const max = brief.constraints.maxFacts;
-  if (usedBullets.size > max) issue('/entries', 'limit', `AI 选择了 ${usedBullets.size} 条要点，超过目标页数允许的 ${max} 条`);
   if (Array.isArray(raw.entries) && !raw.entries.length && allowed.entries.length)
     issue('/entries', 'inconsistent', 'AI 未选择任何工作或项目事实');
   if (!Array.isArray(raw.education)) issue('/education', 'format', 'AI 未提供教育背景选择方案');
@@ -184,7 +189,6 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     if (seenEdu.has(e.entryId)) issue(path, 'duplicate', `重复的教育经历：${e.entryId}`, [e.entryId]);
     seenEdu.add(e.entryId);
     const ids = idArray(e.bulletIds, path, `${e.entryId}.bulletIds`);
-    if (ids.length > brief.constraints.maxEducationFacts) issue(path, 'limit', '教育高亮信息过多');
     for (const id of ids) {
       const b = byId.get(id);
       if (!b || b.section !== 'education' || b.entryId !== e.entryId)
@@ -194,16 +198,15 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
   }
   // 不选教育要点仍展示已启用学历主体，保持原有的预计学位状态处理。
   for (const id of eduIds) if (!seenEdu.has(id)) entries.push({ kind: 'education', id, score: 0, core: false, bulletIds: [] });
-  const selectSide = (v: unknown, pool: string[], path: string, name: string, limit: number) => {
+  const selectSide = (v: unknown, pool: string[], path: string, name: string) => {
     const ids = idArray(v, path, name), valid = new Set(pool);
     const invalid = ids.filter((id) => !valid.has(id));
     if (invalid.length) issue(path, 'invalid_id', `AI 选用了不存在、未启用或未提供的${name}：${invalid.join('、')}`, invalid);
-    if (ids.length > limit) issue(path, 'limit', `AI 选择的${name}过多，请控制简历篇幅`);
     return ids;
   };
-  const skills = selectSide(raw.skills, allowed.skills, '/skills', '技能', brief.constraints.maxSkills);
-  const certificates = selectSide(raw.certificates, allowed.certificates, '/certificates', '证书', brief.constraints.maxCertificates);
-  const awards = selectSide(raw.awards, allowed.awards, '/awards', '奖项', brief.constraints.maxAwards);
+  const skills = selectSide(raw.skills, allowed.skills, '/skills', '技能');
+  const certificates = selectSide(raw.certificates, allowed.certificates, '/certificates', '证书');
+  const awards = selectSide(raw.awards, allowed.awards, '/awards', '奖项');
 
   const proof = new Set(allowed.evidenceIds);
   const allEntryIds = new Set([...allowed.entries, ...allowed.education].map((x) => x.entryId));
@@ -228,6 +231,17 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     requirements.push({ text, tier: r.tier, assessment: r.assessment, evidenceIds: ids });
   }
   if (Array.isArray(raw.requirements) && !raw.requirements.length) issue('/requirements', 'format', 'AI 未分析任何岗位要求');
+  const omissions: Partial<Record<ContentCategory, string>> = {};
+  for (const key of ['education', 'professionalWork', 'campus', 'projects', 'skills', 'certificates'] as const) {
+    const reason = raw.omissions?.[key];
+    if (typeof reason === 'string' && reason.trim()) omissions[key] = reason.trim();
+  }
+  // 来源错误修复可能同时恢复职业背景，避免为同一根因再要求一次无意义的省略说明。
+  for (const [key, predicate] of (issues.some((x) => /^\/(?:entries|reserveEntries)/.test(x.path)) ? [] : [['professionalWork', isProfessionalWork], ['campus', isCampusWork]]) as ['professionalWork' | 'campus', typeof isProfessionalWork][]) {
+    const eligible = p.work.filter((x) => entrySet.has(x.id) && predicate(x));
+    if (eligible.length && ![...entries, ...reserves].some((x) => eligible.some((w) => w.id === x.id)) && !omissions[key])
+      issue('/entries', 'inconsistent', `${key === 'campus' ? '学生组织' : '工作 / 实习背景'}未纳入主要或候补选材，且没有明确的省略说明；请在主选经历中恢复有价值的真实背景，不得只因缺少 JD 关键词删除`);
+  }
   if (issues.length) throw new AiSelectionValidationError(issues);
   const weight = { must: 3, responsibility: 2, preferred: 1 };
   const total = requirements.reduce((n, r) => n + weight[r.tier], 0);
@@ -242,7 +256,7 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     .map((e) => ({ id: e.id, reason: 'AI 比较完整资料和岗位要求后认为优先级较低（母库保留）' }));
   const plan: ResumePlan = { entries, skills, certificates, awards, caps: { core: targetPages > 1 ? 4 : 3, minor: targetPages > 1 ? 2 : 1 },
     budgets, dropped, model, ranked };
-  return { plan, requirements, gaps: requirements.filter((r) => r.assessment === 'gap').map((r) => r.text).slice(0, 8),
+  return { plan, reserves, omissions, requirements, gaps: requirements.filter((r) => r.assessment === 'gap').map((r) => r.text).slice(0, 8),
     matchScore: total ? Math.round(100 * supported / total) : 0,
     summaryFocus: String(raw.summaryFocus ?? '').trim(), tradeoffs: String(raw.tradeoffs ?? '').trim(), chosenReasons };
 }
@@ -254,13 +268,13 @@ function applyRepairs(original: AiSelectionOutput, response: unknown, allowedPat
     throw new Error('AI 局部修复格式错误：必须且只能替换列出的错误位置');
   const pending = new Set(allowedPaths);
   const updated = JSON.parse(JSON.stringify(original)) as AiSelectionOutput;
-  const removals: { field: 'entries' | 'education'; index: number }[] = [];
+  const removals: { field: 'entries' | 'education' | 'reserveEntries'; index: number }[] = [];
   for (const repair of repairs) {
     if (!repair || typeof repair.path !== 'string' || !pending.delete(repair.path))
       throw new Error(`AI 局部修复包含未授权或重复的位置：${repair?.path}`);
     // path 只能由本地校验器产生，模型不能选择任意属性或嵌套路径。
     const [field, index] = repair.path.slice(1).split('/') as [keyof AiSelectionOutput, string | undefined];
-    if (repair.op === 'remove' && index !== undefined && (field === 'entries' || field === 'education')) {
+    if (repair.op === 'remove' && index !== undefined && (field === 'entries' || field === 'education' || field === 'reserveEntries')) {
       removals.push({ field, index: Number(index) }); continue;
     }
     if ((repair.op !== undefined && repair.op !== 'replace') || !Object.hasOwn(repair, 'value'))
@@ -279,8 +293,8 @@ function applyRepairs(original: AiSelectionOutput, response: unknown, allowedPat
   return updated;
 }
 
-export async function planWithAi(s: Settings, p: ProfileDoc, job: JobParse, lang: Lang, targetPages: number, onStep?: (m: string) => void): Promise<AiSelectionResult> {
-  const brief = selectionBrief(p, job, lang, targetPages);
+export async function planWithAi(s: Settings, p: ProfileDoc, job: JobParse, lang: Lang, targetPages: number, onStep?: (m: string) => void, template?: TemplateConfig): Promise<AiSelectionResult> {
+  const brief = selectionBrief(p, job, lang, targetPages, template);
   const messages: ChatMsg[] = [{ role: 'system', content: SYS_FACTS },
     { role: 'user', content: `${AI_PLAN_PROMPT}\n\n${JSON.stringify(brief)}` }];
   const options = { model: decisionModel(s), thinking: 'enabled' as const, timeoutMs: 240_000, maxTokens: 16_000 };

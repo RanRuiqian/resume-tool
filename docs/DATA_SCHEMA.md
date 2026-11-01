@@ -114,3 +114,10 @@
 
 ## AI 整理计划（v1.9.3，仅内存）
 `OrganizePlan.stats`（total / metaCleaned / improved / unchanged / rejected / review / aiSkipped）与 `OrganizePlan.rejectedItems`（entryTitle / text / reasons）只存在于整理预览的内存中，**不写入 IndexedDB**；Dexie 仍为 version 4，资料结构没有变化。
+
+## v1.12 固定简介与多来源概括（可选字段，Dexie 仍为 version 4）
+
+- `profile.summary` 继续使用现有 `LocalizedText` 和 `status`，不新增用户默认简介或用户专属内容。生成时复制人工/已确认的双语原文到 `ResumeDoc.items[sourceId='summary']`，不按岗位改写，不修改旧简历。
+- `GenItem.sourceIds?: string[]`：同一工作/项目内多个已选事实的概括，包含主 `sourceId`。所有来源必须有效、同父条目、唯一且未被其它生成要点使用；缺省表示旧单来源。审查/恢复使用全部来源，手动取消其中一条时拆回其它原文。
+- `ResumeDoc.layoutPolicy?: 'readable'`：仅新 AI 简历设置；适配间距时不缩小正文和行距。缺省保持旧简历的布局行为。
+- 数据库表、版本、资料 JSON 和备份格式均不变。`backup.ts` 的既有 `resumes` / `artifacts` sections 已完整序列化这些可选字段，`tests/dataSafety.test.ts` 验证 IndexedDB、JSON、备份恢复及旧快照不变；不需要新增 section。

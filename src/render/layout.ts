@@ -1,4 +1,4 @@
-import { compactGpaNote } from './resumeText';
+import { compactGpaNote, tidyProjectTitle } from './resumeText';
 import { LANG_TEST } from '../ai/relevance';
 import { eduDateText } from './degree';
 import { inferWorkKind, isCampusKind } from './classify';
@@ -86,7 +86,9 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   const pickBullets = (arr: LocalizedText[]) => {
     if (!resume) return arr.map(B).filter(Boolean);
     // 生成结果中只显示被选中的要点（用户可在素材池中勾选/取消）
-    return arr.filter((b) => b.id && itemMap.has(b.id)).map(B).filter(Boolean);
+    if (resume.layoutPolicy !== 'readable') return arr.filter((b) => b.id && itemMap.has(b.id)).map(B).filter(Boolean);
+    const originals = new Map(arr.filter((b) => b.id).map((b) => [b.id!, b]));
+    return resume.items.filter((i) => originals.has(i.sourceId)).map((i) => B(originals.get(i.sourceId)!)).filter(Boolean);
   };
   const range = (s: string, e: string) => formatRange(s, e, loc.dateFormat, loc.presentLabel);
   const byIds = <X extends { id: string }>(arr: X[], ids: string[]) => ids.map((id) => arr.find((x) => x.id === id)).filter((x): x is X => !!x);
@@ -95,12 +97,17 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   const DEFAULT_TITLES: Record<Lang, Partial<Record<ModuleKey, string>>> = { zh: { campus: '校园经历' }, en: { campus: 'Leadership & Activities' } };
   const title = (k: ModuleKey) => loc.sectionTitles[k] ?? DEFAULT_TITLES[lang][k] ?? k;
   const engineering = tpl.layout.style === 'engineering';
-  const order = moduleOrderFor(tpl, lang);
+  const order = [...moduleOrderFor(tpl, lang)];
+  // 新生成的简历按性质单列校园背景；旧简历及旧模板的历史预览仍保留原布局。
+  if (resume?.layoutPolicy === 'readable' && !order.includes('campus') && p.work.some((w) => sel.work.includes(w.id) && isCampusKind(inferWorkKind(w)))) {
+    const before = order.indexOf('certificates');
+    order.splice(before < 0 ? order.length : before, 0, 'campus');
+  }
   /** 只有模板顺序包含 campus 时，社团 / 志愿经历才单列为「校园经历」；旧模板仍归入 work */
   const splitCampus = order.includes('campus');
   /** 学位状态见 degree.ts：就读结束 / 预计授位 / 实际授位分开，不按今天日期推断 */
   const eduRange = (e: ProfileDoc['education'][number]) => eduDateText(e, lang, { range, date: (d) => formatDate(d, loc.dateFormat, loc.presentLabel) });
-  const summaryText = resume ? (itemMap.get('summary')?.[lang]?.trim() || (itemMap.has('summary') ? T(p.profile.summary) : '')) : T(p.profile.summary);
+  const summaryText = resume ? (itemMap.get('summary')?.[lang] ?? '') : T(p.profile.summary);
   if (summaryText) sections.summary = { key: 'summary', title: title('summary'), blocks: [{ bullets: [], text: summaryText }] };
   const sep = lang === 'zh' ? ' | ' : ', ';
   const wSel = byIds(p.work, sel.work);
@@ -111,8 +118,12 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   const cp = splitCampus ? wSel.filter(campusOf).map(wBlock) : [];
   if (cp.length) sections.campus = { key: 'campus', title: title('campus'), blocks: cp };
   /** engineering：课程实验 / 教学实训等项目性质随角色显示，避免把课程作业包装成商业项目 */
-  const prSub = (e: ProfileDoc['projects'][number]) => engineering ? [T(e.role), natureLabel(e.nature, lang)].filter(Boolean).join(sep) : T(e.role);
-  const pr = byIds(p.projects, sel.projects).map((e) => ({ title: T(e.name), subtitle: prSub(e), date: range(e.start, e.end), bullets: pickBullets(e.bullets), tags: engineering ? undefined : e.tags }));
+  const prSub = (e: ProfileDoc['projects'][number]) => {
+    const nature = natureLabel(e.nature, lang);
+    const alreadyNamed = resume?.layoutPolicy === 'readable' && lang === 'en' && nature && T(e.name).toLowerCase().includes(nature.toLowerCase());
+    return engineering ? [T(e.role), alreadyNamed ? '' : nature].filter(Boolean).join(sep) : T(e.role);
+  };
+  const pr = byIds(p.projects, sel.projects).map((e) => ({ title: resume?.layoutPolicy === 'readable' ? tidyProjectTitle(T(e.name), lang) : T(e.name), subtitle: prSub(e), date: range(e.start, e.end), bullets: pickBullets(e.bullets), tags: engineering ? undefined : e.tags }));
   if (pr.length) sections.projects = { key: 'projects', title: title('projects'), blocks: pr };
   const eduSub = (e: ProfileDoc['education'][number]) => {
     const maj = T(e.major), deg = T(e.degree);

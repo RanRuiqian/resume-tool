@@ -287,17 +287,21 @@ describe('v1.12 evidence catalog and bounded local correction', () => {
     await expect(planWithAi(S, library(), J, 'zh', 1)).rejects.toThrow('改换岗位要求或层级');
   });
 
-  it('keeps per-entry and overall fact budgets enforced after a repair', async () => {
+  it('treats fact counts as soft layout advice while continuing to reject fabricated facts', async () => {
     const p = library(), raw = proposal();
     raw.entries = [{ entryId: 'work-1', bulletIds: p.work[0].bullets.map((x) => x.id!), reason: '' },
       ...p.projects.slice(0, 3).map((x) => ({ entryId: x.id, bulletIds: x.bullets.map((b) => b.id!), reason: '' }))];
-    expect(() => validateAiSelection(raw, p, J, 'zh', 1)).toThrow('超过目标页数允许的 8 条');
-    api.mockResolvedValueOnce(raw).mockResolvedValueOnce({ repairs: [{ path: '/entries', value: raw.entries }] });
-    await expect(planWithAi(S, p, J, 'zh', 1)).rejects.toThrow('超过目标页数允许的 8 条');
+    const valid = validateAiSelection(raw, p, J, 'zh', 1);
+    expect(valid.plan.entries.flatMap((x) => x.bulletIds).length).toBeGreaterThan(8);
+    api.mockResolvedValueOnce(raw);
+    await expect(planWithAi(S, p, J, 'zh', 1)).resolves.toMatchObject({ plan: { skills: ['sk-1'] } });
+    expect(api).toHaveBeenCalledTimes(1);
     const perEntry = proposal();
     p.work[0].bullets.push({ id: 'work-1-b4', zh: '协助设计模拟支架。', en: '' });
     perEntry.entries[0].bulletIds = p.work[0].bullets.map((x) => x.id!);
-    expect(() => validateAiSelection(perEntry, p, J, 'zh', 1)).toThrow('要点过多');
+    expect(() => validateAiSelection(perEntry, p, J, 'zh', 1)).not.toThrow();
+    perEntry.entries[0].bulletIds.push('fabricated-fact');
+    expect(() => validateAiSelection(perEntry, p, J, 'zh', 1)).toThrow('fabricated-fact');
   });
 
   it('corrects a wrong-parent fact without replacing another valid entry', async () => {

@@ -1,3 +1,4 @@
+import { measurePages } from '../export/client';
 import { AiDisclosure } from '../components/AiDisclosure';
 import { AuditBadge, FactAudit } from '../components/FactAudit';
 import { useState } from 'react';
@@ -23,7 +24,7 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
   const run = async () => {
     if (!job) return;
     setErr('');
-    try { const r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy); setResume({ ...r, templateId }); }
+    try { const r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy, { template, measure: (r) => measurePages(profile, { ...template, page: { ...template.page, autoFit: false } }, r) }); setResume({ ...r, templateId }); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
   const resync = async () => {

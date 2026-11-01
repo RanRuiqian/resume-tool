@@ -5,6 +5,7 @@ import { SmartImport } from '../components/SmartImport';
 import { useApp } from '../store';
 import { useT } from '../i18n';
 import { LTField } from '../components/LTField';
+import { FixedSummaryEditor } from '../components/FixedSummaryEditor';
 import { EducationExtra, EvidenceList, ProjectDossierEditor, SkillExtra } from '../components/DossierFields';
 import type { LocalizedText, ProfileDoc, Lang } from '../types';
 import { uid, needsTranslation, forEachText } from '../locale/text';
@@ -51,7 +52,7 @@ export function ProfilePage() {
   const upd = (fn: (p: ProfileDoc) => void) => { const n = structuredClone(profile); fn(n); setProfile(n); };
 
   let pending: Record<Lang, number> = { zh: 0, en: 0 };
-  forEachText(profile, (x) => { (['zh', 'en'] as Lang[]).forEach((l) => { if (needsTranslation(x, l)) pending = { ...pending, [l]: pending[l] + 1 }; }); });
+  forEachText(profile, (x, path) => { if (path === 'profile.summary') return; (['zh', 'en'] as Lang[]).forEach((l) => { if (needsTranslation(x, l)) pending = { ...pending, [l]: pending[l] + 1 }; }); });
 
   const doTranslate = async (to: Lang) => {
     setBusy('翻译中…'); setMsg('');
@@ -148,7 +149,7 @@ export function ProfilePage() {
           </div>
           <LTField label="姓名" value={pr.name} onChange={(v) => upd((p) => { p.profile.name = v; })} />
           <LTField label="职业头衔" value={pr.headline} onChange={(v) => upd((p) => { p.profile.headline = v; })} />
-          <LTField label="个人简介" multiline value={pr.summary} onChange={(v) => upd((p) => { p.profile.summary = v; })} />
+          <FixedSummaryEditor value={pr.summary} settings={settings} onChange={(v) => upd((p) => { p.profile.summary = v; })} />
           <LTField label="所在城市" value={pr.contacts.location} onChange={(v) => upd((p) => { p.profile.contacts.location = v; })} />
           <div className="grid2">
             {(['email', 'phone', 'github', 'linkedin', 'website'] as const).map((f) => (

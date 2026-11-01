@@ -58,19 +58,20 @@ ${WRITING_RULES}
 输出 JSON：{"items":[{"sourceId":"...","text":"..."}],"reasons":"一句话说明措辞取舍"}`;
 
 /** v1.12：AI 先阅读完整有效经历，独立做语义匹配、取舍及一页篇幅规划。 */
-export const AI_PLAN_PROMPT = `你是负责筛选技术岗位简历的资深招聘顾问和工程师。请认真理解 JD，然后阅读候选人【全部可用经历】（不是预筛选过的材料），独立做取舍与一页简历规划。只输出 JSON。
-规则：
-1. 岗位要求要按真实重要性区分：岗位核心职责、必备条件、明确加分项；不要把通用软技能/英文文档写作排在机械设计、工程分析、原型验证等专业证据前面。不能因为某句有数字、软件关键词或重复出现就认为它重要。
-2. 逐个项目比较【实际做过的事】能否证明 JD 所需能力。识别可迁移经验、工作/课程/仿真/设想之间的界限；缺少直接证据就注明缺口，不要强行匹配。特别检查与岗位相关但术语不同的本科毕设和核心项目。
-3. 你有权自主选择、删除、调整不同经历的顺序和各经历篇幅，且必须克制：一页简历最多 8 个工作/项目要点，两页最多 14 个；一页通常 2–3 个重点项目、每个 1–3 个要点；工作经历没有实质相关内容就不要收录；不要凑数。
-4. 优先展示有动作、方法、工具、可验证结果的经历；无关材料成本、完整作者名单、日常事务、重复表述等即使真实也可不选。不能删除真正体现岗位匹配的核心毕设，只因另一个项目细节多。
-5. 所有选中的 entryId、bulletIds、技能、证书、奖项只能来自输入给出的精确 ID。无内容的工作条目不得入选；一个要点最多出现一次。禁止创建、推算、改造经历或技能。
-6. 教育背景默认展示已启用的教育条目，教育 highlights 只选有用的事实；非官方/估算 GPA 默认不选。对在读、预计授予、课程、仅仿真、参与、协助、讨论、未完成保持原始性质。
-7. 匹配判断是内部参考，不是官方 ATS 分数。明确列出有证据、可迁移、有缺口的关键要求。每项 requirements[].evidenceIds 只能从 allowedIds.evidenceIds 逐字复制：它包括已提供事实的 sourceId、技能/证书/奖项 ID，以及 educationEvidenceIds 中的教育主体 ID（只能证明输入中的学校、专业、学位及授予状态等主体字段，不能代替未提供的课程或 GPA 事实）。工作/项目 entryId 仅为分组标识，不能作为证据；经历名称、技能名称、usedIn 中的引用、自己编的别名或序号也不能作为证据 ID。不得引用未启用、未提供或已排除的事实。
-8. 选择经历只能用 allowedIds.entries 内的 entryId，bulletIds 必须属于该 entryId；教育使用 allowedIds.education。skills / certificates / awards 分别只能从对应的 allowedIds 清单选，严格遵守 constraints 中的各项数量上限。引用 ID 存在也不等于支持岗位要求，必须阅读对应原文再作判断；direct / transferable 至少引用一条实际支持结论的证据，gap 必须是空 evidenceIds。找不到证据应如实判断缺口，不得编造或猜测 ID。
-输出 JSON 格式：
-{"requirements":[{"text":"岗位要求简述","tier":"must|responsibility|preferred","assessment":"direct|transferable|gap","evidenceIds":["已有事实 id"]}],"entries":[{"entryId":"已有 work/project id","bulletIds":["已有 bullet id，按优先级排序"],"reason":"简短说明为什么写它"}],"education":[{"entryId":"已有 education id","bulletIds":["可选 highlight id"]}],"skills":["已有 skill id"],"certificates":["已有 certificate id"],"awards":["已有 award id"],"summaryFocus":"一句话说明个人简介应该突出哪些已证实的能力","tradeoffs":"一句话解释最重要的选材取舍"}。
-不要输出简历正文。`;
+export const AI_PLAN_PROMPT = `你是理解候选人职业发展背景的工程招聘顾问。先阅读完整候选人画像，再结合 JD 调整排序、详略和表达。真实性、岗位针对性、个人完整性必须同时满足；只输出 JSON。
+选材层次：
+1. 直接相关工作与项目：详细呈现专业对象、实际方法、工具和成果。
+2. 可迁移工程经历：即使没有 JD 精确关键词，尺寸测量、结构设计、装配验证、仿真、原型和制造问题分析仍能证明工程实践。
+3. 职业和综合背景：有实际内容的正式工作/实习默认优先保留至少一段，按岗位简写而非整体删除。不要因为生产技术工作不是设计岗，就抹去其真实职业背景。有空间时通常保留一段有价值的学生组织/志愿经历（简洁 1–2 条），体现真实沟通、协调和组织执行；空间不足先压缩它。work.kind 是性质提示，未区分的旧条目由你结合原文判断，不得猜成另一类任职。无关普通兼职可以省略，不得把社团冒充职业工作。
+4. 低价值或无关内容：版面不足时优先省略；不为填满而重复描述或写空话。
+篇幅：constraints.layout 给出目标页数、字体、行距、页边距、模块间隔及软参考。不要使用“一页最多 8 条”的硬限制。结合固定简介、教育、工作、项目、组织、技能和证书等模块及句长整体分配空间；宁可提示两页，也不删除重要职业身份或缩成难读的小字。
+entries 按优先级返回主选经历，每段可指定不同要点数；reserveEntries 可给出少量有价值的候补（优先其它专业实践/主要组织经历），会一起撰写，程序仅按版面决定是否补入，不另做关键词取舍。主选和候补不得重复条目或事实。若有有效正式工作或组织经历却两者均不收录，必须在 omissions.professionalWork / omissions.campus 说明结合个人画像和空间仍省略的具体原因，不能仅写“不相关”。其它缺失类别也请说明原因。
+个人简介是用户在资料库保存的固定双语内容，不参与选材或岗位改写，不生成 summaryFocus 或简介正文。
+所有 ID 只能逐字复制 allowedIds：entries / reserveEntries 使用 allowedIds.entries，bulletIds 必须属于该 entryId；education 使用 allowedIds.education，教育主体默认保留，非官方/估算 GPA 不选。skills / certificates / awards 使用各自列表。
+requirements[].evidenceIds 只用 allowedIds.evidenceIds，包括真实 sourceId、技能/证书/奖项 ID 和 educationEvidenceIds 中的教育主体 ID（只证明已提供的学校、专业、学位与授予状态，不能代替被排除的 GPA 或课程事实）。工作/项目 entryId 仅作分组，不是证据；名称、别名、usedIn 引用或编造的 ID 不可用。
+岗位要求分 must / responsibility / preferred；direct / transferable 必须引用确实支持结论的证据，gap 必须为空 evidenceIds。保留课程、仿真、参与/协助、讨论/未完成、预计授予等边界；不能把 JD 中的技能写成个人经历。
+输出 JSON：
+{"requirements":[{"text":"岗位要求","tier":"must|responsibility|preferred","assessment":"direct|transferable|gap","evidenceIds":["真实证据 ID"]}],"entries":[{"entryId":"真实经历 ID","bulletIds":["所属事实 ID"],"reason":"体现直接相关、可迁移工程或职业/组织背景的理由"}],"reserveEntries":[],"education":[{"entryId":"教育 ID","bulletIds":[]}],"skills":[],"certificates":[],"awards":[],"omissions":{"professionalWork":"未选时说明","campus":"未选时说明"},"tradeoffs":"概述完整画像与版面之间的取舍"}。`;
 
 export const AI_PLAN_REPAIR_PROMPT = `上一条 assistant 消息是你首次返回的选材方案。请结合原始岗位、素材、具体 issues 和 allowedIds，仅修复 allowedPaths 列出的错误位置，不要重新生成整份方案。
 你仍负责语义判断：检查无效证据实际应引用哪个合法 ID，不要只按相似拼写替换，也不要删除安全检查。工作/项目分组 entryId 不是事实 sourceId；只有明确列在 educationEvidenceIds 的教育主体 ID 可以证明该主体的学校/专业/学位及授予状态。若没有证据，只有确实存在能力缺口时才可改为 gap 并清空 evidenceIds，不得为了过校验把有证据的要求一律改成 gap。
@@ -78,14 +79,14 @@ export const AI_PLAN_REPAIR_PROMPT = `上一条 assistant 消息是你首次返�
 每个允许路径必须且只能出现一次；不要返回未列出的路径。/requirements/0 的 value 应为完整岗位判断对象（text、tier、assessment、evidenceIds），已有有效 text 与 tier 不得改变，只重新判断证据和匹配结论；不得删除岗位要求。/entries/0 或 /education/0 的 value 为完整条目；若该错误条目本来就不应入选，可返回 {"path":"对应的允许路径","op":"remove"}，不必强行用其它经历填满。顶层数组路径的 value 为该数组。合并后的整个方案会重新通过同样严格的 ID、来源归属、重复、篇幅与事实边界校验，失败将明确报错，不会规则降级。`;
 
 /** v1.12：已由 AI 做完选材，第二次 AI 专注专业、自然、凝练的表达。 */
-export const AI_WRITE_PROMPT = (lang: string) => `根据 JD 和已经由招聘顾问模型选定的真实要点，撰写${lang}正式求职简历。只输出 JSON。
-你可以决定每条要点的写法、内容侧重点、信息顺序和压缩程度；简历不是技术报告，绝不为了把原文全部塞进去而保留次要细节。优先写岗位真正关心的动作 + 工程方法/工具 + 有来源的结果；不写作者全名单、无关成本、无关课堂参数、泛泛软技能。
-不得增添来源不存在的技能、数字、工具、场景、成果、职责或经验；参与≠负责、仅仿真≠实机、预计≠已授予、课程项目≠企业项目。某条如果不适合浓缩，可以保守改写，但不要造事实。
-items 必须严格遵守输入中 facts 给定的 sourceId，一条 sourceId 最多写一条；不能凭空引入未选材料。中文通常每条 25–55 字、英文 12–28 个词，若源事实有限可更短。每个 sourceId 只对它自己的原文负责，禁止挪用其他条目事实。
-summary 以教育背景、已选事实和 summaryOriginal 为证据，突出 summaryFocus，1–2 句（中文不超过 80 字/英文不超过 45 词）。不照搬 JD 要求，不写空泛优势、不强调对岗位价值低的「撰写技术文档」等小事。
-${RESUME_STYLE}
-${WRITING_RULES}
-输出 JSON：{"items":[{"sourceId":"已选事实 id","text":"精炼表述"},{"sourceId":"summary","text":"简介"}],"reasons":"简述内容压缩策略"}。`;
+export const AI_WRITE_PROMPT = (lang: string) => `理解 JD 和已选真实素材，为${lang}简历写自然、专业、客观的工程表达；只输出 JSON。
+可以重新组织句法、用专业术语概括已有的技术对象/方法/结果、突出同一项目对本岗位有价值的不同侧面，减少实验报告细节。不要仅删字或逐句拼接，也不要过度营销。
+工作/实习体现真实职业与生产背景；组织经历简洁写真实协调、沟通和执行，不编人数、规模、经费或职责。
+每个要点必须指定 sourceId。允许把同一经历内已选的多个事实归纳成一个要点，此时提供 sourceIds，逐个列出真实支持该句的来源并包含主 sourceId；不得跨公司、跨项目归并。一个来源只使用一次，不能挪用未选事实。正文必须能被这些来源共同支持，不能因概括而新增事实。
+必须保留参与/协助、课程/仿真、预计/未授予、计划/讨论/未完成、估算等原有边界。不得添加未用软件、日期、量化成果、部署、独立主导或商业经历；语义专业化不等于事实升级。原文不能证明已完成的动作，不要写成完成。
+个人简介已固定，禁止返回 summary 或重新措辞简介。也不改写公司、职位、时间、项目名称、证书名称。英文避免相邻重复词、重复课程性质和直译式名词堆叠，保持语法与工程术语自然。
+长度按输入版面软预算和该段优先级调整，核心专业实践可以适当展开，背景经历简写；不要为固定字数牺牲事实。
+输出 JSON {"items":[{"sourceId":"真实主来源 ID","sourceIds":["同一经历内支持该句的全部真实 ID"],"text":"专业且可追溯的正文"}],"reasons":"措辞取舍"}。单来源可省略 sourceIds。`;
 
 export const LOCALIZE_PROMPT = (from: string, to: string) => `把下面的${from}简历主版本逐条本地化为${to}副版本。主版本是唯一事实源：
 - 逐条翻译/本地化，不得新增、删除、合并条目，sourceId 与顺序完全不变；

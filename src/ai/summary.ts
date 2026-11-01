@@ -6,7 +6,7 @@ import { hasTerm } from './relevance';
 import { familiesOf, isGeneralFamily, weightOf, type CapabilityModel } from './evidence';
 
 /**
- * v1.11 个人简介：按岗位能力模型逐分句取舍（不新增事实）。
+ * v1.11 旧简介工具，保留供旧版本回归检查；v1.12 生成路径使用 fixedSummary.ts，绝不按岗位调用这些精简函数。
  * - 没有能力词的身份分句（专业 / 在读）保留；
  * - 只涉及低价值能力（岗位不看重的「英文技术文档」等）的分句删掉；
  * - 工具清单只保留本岗位选中的技能。

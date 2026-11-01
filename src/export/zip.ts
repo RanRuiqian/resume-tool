@@ -23,7 +23,7 @@ export async function renderPdfFit(p: ProfileDoc, tpl: TemplateConfig, lang: Lan
   const auto = tpl.page.autoFit !== false;
   let level = 0;
   for (;;) {
-    const t = fitTemplate(tpl, lang, level);
+    const t = fitTemplate(tpl, lang, level, r?.layoutPolicy === 'readable');
     const bytes = await pdfBytes(p, t, lang, r);
     const pages = countPdfPages(bytes);
     if (!auto || pages <= target) return { bytes, pages, level, tpl: t, overflow: pages > target };
