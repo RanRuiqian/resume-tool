@@ -139,6 +139,7 @@ details summary { cursor: pointer; color: #2b6cb0; margin: 10px 0; }
 .ats .bar > div { height: 100%; transition: width .3s; }
 .insights .grid2 { gap: 24px; }
 .career-kit .kit-field { display: block; margin-top: 10px; }
+.kit-trace { width: 100%; border-collapse: collapse; margin-top: 6px; } .kit-trace td { border-top: 1px solid #edf2f7; padding: 3px 6px; vertical-align: top; } .kit-trace tr.bad td { background: #fff5f5; color: #c53030; } .kit-trace td:first-child { width: 1.2em; } .kit-trace td:nth-child(2) { white-space: nowrap; color: #718096; }
 .career-kit textarea { width: 100%; }
 .interview details { border-bottom: 1px solid #edf2f7; padding: 6px 0; }
 .interview summary { cursor: pointer; font-weight: 500; }
