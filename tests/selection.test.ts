@@ -27,8 +27,12 @@ describe('material pool selection', () => {
     expect(buildLayout(p, BUILTIN_TEMPLATES[0], 'en', r).main.find((s) => s.key === 'work')!.blocks[0].title).toBe('Galaxy Tech');
   });
   it('bullet toggles change only that bullet; checking a bullet selects its entry', () => {
-    let r = toggleBullet(p, r0, 'work', 'work-1', p.work[0].bullets[0], false);
-    expect(buildLayout(p, BUILTIN_TEMPLATES[0], 'zh', r).main.find((s) => s.key === 'work')!.blocks[0].bullets).toHaveLength(p.work[0].bullets.length - 1);
+    // v1.10：生成时按密度上限精选条目，所以以生成结果里的条数为基准（而不是母库全部条数）
+    const before = buildLayout(p, BUILTIN_TEMPLATES[0], 'zh', r0).main.find((s) => s.key === 'work')!.blocks[0].bullets.length;
+    const first = r0.items.find((i) => i.sourceId.startsWith('work-1-'))!;
+    const b0 = p.work[0].bullets.find((b) => first.sourceId === b.id) ?? p.work[0].bullets[0];
+    let r = toggleBullet(p, r0, 'work', 'work-1', b0, false);
+    expect(buildLayout(p, BUILTIN_TEMPLATES[0], 'zh', r).main.find((s) => s.key === 'work')!.blocks[0].bullets).toHaveLength(before - 1);
     r = toggleEntry(p, r, 'projects', 'proj-2', false);
     r = toggleBullet(p, r, 'projects', 'proj-2', p.projects[1].bullets[0], true);
     expect(r.selection.projects).toContain('proj-2');
