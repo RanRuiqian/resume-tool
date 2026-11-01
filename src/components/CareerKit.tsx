@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../store';
 import { useL } from '../i18n';
 import { FEATURES } from '../features';
-import { generateCoverKit, generatePrep } from '../ai/extras';
+import { enWords, generateCoverKit, generatePrep, zhLen, type KitQuality } from '../ai/extras';
 import type { Bi, Lang, ResumeDoc } from '../types';
 
 /** 求职信 / 自我介绍 / 面试准备（均基于当前简历事实，可编辑，可附带进 zip） */
@@ -12,6 +12,7 @@ export function CareerKit() {
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [lang, setLang] = useState<Lang>('zh');
+  const [quality, setQuality] = useState<KitQuality | null>(null);
   if (!resume || !job || (!FEATURES.coverLetter && !FEATURES.prepDirections)) return null;
   const ex = resume.extras ?? {};
   const save = (fn: (e: NonNullable<ResumeDoc['extras']>) => void) => { const n = structuredClone(resume); n.extras = n.extras ?? {}; fn(n.extras); setResume(n); };
@@ -19,7 +20,9 @@ export function CareerKit() {
     if (settings.demoMode) { setErr(L('演示模式不调用 AI，请先在「设置」连接 AI 服务。', 'Demo mode does not call AI. Connect an AI provider in Settings first.')); return; }
     setErr(''); setBusy(kind === 'cover' ? L('AI 正在写求职信和自我介绍…', 'Writing cover letter & self-intro…') : L('AI 正在根据岗位要求整理备考方向…', 'Deriving preparation areas from the job post…'));
     try {
-      if (kind === 'cover') { const k = await generateCoverKit(settings, profile, job, resume); save((e) => { e.coverLetter = k.coverLetter; e.selfIntro = k.selfIntro; }); }
+      // v1.10：已有内容（可能是用户手改过的）不无提示覆盖
+      if (kind === 'cover' && (ex.coverLetter || ex.selfIntro) && !confirm(L('重新生成会替换当前的求职信和自我介绍（包括你手动修改的内容），继续吗？', 'Regenerating will replace the current cover letter and intro, including your edits. Continue?'))) { setBusy(''); return; }
+      if (kind === 'cover') { const k = await generateCoverKit(settings, profile, job, resume); setQuality(k.quality); save((e) => { e.coverLetter = k.coverLetter; e.selfIntro = k.selfIntro; }); }
       else { const q = await generatePrep(settings, job); if (!q.length) throw new Error(L('没有得到能对应到岗位原文的方向，请检查岗位文字是否完整', 'No directions could be tied to the job text; check the job description')); save((e) => { e.prep = q; }); }
     } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
@@ -41,6 +44,8 @@ export function CareerKit() {
       {err && <div className="notice error">{err}</div>}
       {area(L('求职信', 'Cover letter'), ex.coverLetter, (t) => save((e) => { e.coverLetter![lang] = t; }), 10)}
       {area(L('1 分钟自我介绍', '1-minute self-introduction'), ex.selfIntro, (t) => save((e) => { e.selfIntro![lang] = t; }), 6)}
+      {ex.selfIntro?.[lang] && <div className="muted small" data-testid="intro-len">{lang === 'zh' ? `自我介绍 ${zhLen(ex.selfIntro.zh)} 字（建议 180–220 字，约 1 分钟）` : `Intro: ${enWords(ex.selfIntro.en)} words (aim for 100–130, about 1 minute)`}</div>}
+      {quality && (quality.issues.length > 0 || quality.degraded.length > 0) && <div className="notice warn small" data-testid="kit-quality">{L('自动检查：', 'Auto-check: ')}{quality.degraded.length ? L(`已对 ${quality.degraded.length} 处做安全精简（删去无来源数字 / 夸大表述 / 超长句）。`, `Safely trimmed ${quality.degraded.length} field(s).`) : ''}{quality.issues.map((x, i) => <div key={i}>· {x}</div>)}</div>}
       {ex.prep && ex.prep.length > 0 && (
         <div className="interview prep">
           <b>{L('备考大方向（每条均来自岗位原文）', 'What to prepare (each tied to the job post)')}</b>
