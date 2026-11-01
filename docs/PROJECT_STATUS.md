@@ -1,5 +1,9 @@
 # 项目状态（PROJECT_STATUS）
 
+> **2026-11-01 状态（v1.11.0 已发布）**：main = `64ceada52280aca94933fc9f4e1a600033c6b1d1`（PR #11 merge commit），Pages 部署 run 41294081074 成功（2026-11-01 17:40 UTC+8）。
+> 用户真实资料 + ABB 机械设计工程师 JD 验收**未通过**（11 项问题），生成结果不建议用于正式投递。后续由 Codex 接手，**先读 [`docs/CODEX_HANDOFF_2026-11-01.zh-CN.md`](CODEX_HANDOFF_2026-11-01.zh-CN.md)**。
+
+
 更新：2026-11-01（v1.11.0 简历分阶段选材 + DeepSeek 审计 + 岗位分析历史接入求职管理，分支 `feat/resume-v1.11-selection`，Draft PR，未合并未部署）
 
 ## 已完成
