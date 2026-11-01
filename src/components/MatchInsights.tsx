@@ -22,6 +22,7 @@ export function MatchInsights({ go }: { go: (p: string) => void }) {
   return (
     <div className="card insights">
       <h3>{L('📊 关键词匹配（ATS）', '📊 Keyword match (ATS)')}</h3>
+      <p className="muted small">{L('只统计岗位关键词在简历中出现的比例，用来提醒可补充的真实经历；不是招聘方或 ATS 系统的官方评分。', 'Share of job keywords found in the resume — a reminder, not an official employer or ATS score.')}</p>
       <div className="grid2">{meter(L('中文版', 'Chinese'), zh, 'zh')}{meter('English', en, 'en')}</div>
       {(resume.gaps.length > 0 || zh.missing.length > 0) && (
         <div className="notice">

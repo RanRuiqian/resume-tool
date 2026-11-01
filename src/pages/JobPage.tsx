@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { useApp } from '../store';
 import { useT } from '../i18n';
 import type { Bi, JobParse } from '../types';
-import { ocrImage, parseJdAi, parseJdRules } from '../ai/jd';
+import { analyzeJob, ocrImage } from '../ai/jd';
+import { db } from '../storage/db';
 import { SAMPLE_JD } from '../sample/sampleJd';
 import { fileToDataUrl } from '../utils/download';
 
@@ -26,10 +27,10 @@ export function JobPage({ go }: { go: (p: string) => void }) {
   const doParse = async () => {
     setErr(''); setBusy('正在解析岗位…');
     try {
-      setJob(settings.demoMode ? parseJdRules(text) : await parseJdAi(settings, text));
-    } catch (e) {
-      setErr(`AI 解析失败（${(e as Error).message}），已使用规则解析结果，请人工校对。`);
-      setJob(parseJdRules(text));
+      // v1.10：同一份 JD 文字复用已有分析，不重复调用 AI
+      const r = await analyzeJob(settings, text, { current: job, history: await db.jobs.toArray().catch(() => []) });
+      if (r.reused !== 'current') setJob(r.job);
+      if (r.aiError) setErr(`AI 解析失败（${r.aiError}），已使用规则解析结果，请人工校对。`);
     } finally { setBusy(''); }
   };
   const edit = (fn: (j: JobParse) => void) => { if (!job) return; const n = structuredClone(job); fn(n); setJob(n); };

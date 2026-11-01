@@ -89,12 +89,28 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
   - 报告分开显示：清理的不适合求职说明 / 实际改善表达 / 无需修改 / AI 建议因事实不完整被拒绝 / 需要用户审核（`plan.stats`，仅内存，不入库）。`QUALITY_VERSION` → q3。
   - 虚构 65 条数据集 + 坏习惯 mock（`tests/helpers/realRunLike.ts`）：v1.9.2 4 次调用 / 65 条发送 / 28 A / 16 B，全选会丢 11 项关键事实；v1.9.3 3 次调用 / 35 条发送 / 33 A / 0 B / 4 拒绝 / 32 无需修改，关键事实 0 丢失（`artifacts/p17/compare_*.json`）。
 
+## 4e. 简历内容质量（v1.10.0，2026-11-01）
+- `src/ai/relevance.ts`：`jobTerms`（mustHave 3 / keywords 2 / responsibilities 1.5 / niceToHave 1 / 领域扩展 1）、`relevance`（无关测量参数扣分）、`pickRelevant`、`planResume`（篇幅上限，不凑数）、`conciseBullet` / `conciseBi`（中英按同一组句子取舍，句数不同则都保留原文）、`compactSummary`。
+- `src/quality/resumeGuard.ts`：`guardRewrite` 生成简历副本的事实护栏（数字多重子集、限定必须保留、不得新增完成 / 场所 / 团队等事实、参与程度不得抬高）。只用于生成的简历；母库仍用 v1.9 的 `factCheck`。
+- `src/ai/generate.ts`：AI 路径护栏失败 → 精简原文；生成后按 `planResume` 上限与去重；AI 漏选的语言成绩补回。
+- `src/render/resumeText.ts` `compactGpaNote`、`src/render/layout.ts` 语言成绩归入技能「语言」组；`src/export/fit.ts` 最小字号 9pt。
+- `src/ai/extras.ts`：`checkKit` / `degradeText` / `generateCoverKit`（≤2 次 AI，之后确定性降级，返回 `quality`）；`COVER_KIT_PROMPT` 在 `prompts.ts`。
+- `src/ai/jd.ts`：`normalizeJob`（关键词去重排序、niceToHave 只在 JD 明写「优先 / 加分」时保留）、`jdHash` / `isAnalysisStale` / `analyzeJob`（复用当前或历史分析）；`src/ai/jdText.ts` `extractJdBody` 去网页噪声。
+- 测试：`tests/qualityV110.test.ts`（虚构资料 `tests/helpers/v110Fixture.ts`，场景 A 机械 / B 视觉 / C 机器人）、`tests/e2e/jd_step2_e2e.py`。
+
+## 4f. 求职信逐句事实核对（v1.10.1）
+- `src/quality/kitVerify.ts`：`buildKitContext`（资料事实 / 语料 / 专业 / JD 缺口词 / 学位是否未授予）、`splitSentences`、`verifySentence`、`verifyKit`（返回 trace）、`verifiedOnly`、`kitHash`、`kitFingerprint` / `makeKitReview` / `overrideValid`（人工确认绑定文本 + 资料 + 岗位 + 简历指纹）、`kitExportState`。
+- `src/ai/extras.ts` `generateCoverKit`：提示词分【A 候选人事实】【B 岗位需求】【C 缺口】三块；≤2 次，第 2 次带逐句反馈；返回 `quality.status: verified|blocked`、`safe`、`caught`。
+- `CareerKit.tsx`：blocked 不保存（kit-blocked / kit-trace / kit-use-safe / kit-discard），已保存文本现算状态（kit-status / kit-override）；`ExportDialog.tsx` 未通过且未放行时 Word 不含求职信（export-kit-blocked）。
+- `generate.ts`：`entityIssues` 拦截 AI 新增工具 / 机构 / 专业；`localizeAi` 拒绝引入资料外实体的翻译。
+- 测试：`tests/kitVerifyV1101.test.ts`、`tests/e2e/kit_verify_e2e.py`。
+
 ## 5. ran-application-handoff 1.0（旧导航工具）
 **重要：目前只按用户口头描述的结构实现和测试，尚未用真实导出文件验证。** 用户可以提供真实样本；拿到后请：把脱敏后的样本存为 fixture、跑 `tests/handoff10.test.ts` 同类测试、修正 `HANDOFF_MAPPING` / `HANDOFF_STATUS`。
 描述的结构与映射规则见 `docs/DATA_SCHEMA.md`「导入格式」。实现：`src/tracker/importers.ts` 中 `handoff10()`、`HANDOFF_MAPPING`、`HANDOFF_STATUS`。
 
 ## 6. 测试现状
-单元 / 集成 201 项（vitest），浏览器 e2e：`tracker_e2e.py` 33、`release_e2e.py` 35、`api_profiles_e2e.py` 47、`smart_import_e2e.py` 41（Mock AI），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
+单元 / 集成 386 项（vitest，v1.10.1），浏览器 e2e：`jd_step2_e2e.py` 17、`kit_verify_e2e.py` 15、`tracker_e2e.py` 33、`release_e2e.py` 35、`api_profiles_e2e.py` 47、`smart_import_e2e.py` 41（Mock AI），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
 
 ## 7. 待办与已知限制
 见 `docs/PROJECT_STATUS.md`。
