@@ -106,8 +106,7 @@ export function runConsistency(r: ResumeDoc): ResumeDoc {
 async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void): Promise<ResumeDoc> {
   // v1.9.1：主语言译文已过期（另一语言改过）时，改用最新的另一语言原文交给 AI 重写，不静默使用过期译文
   const T = (t: LocalizedText) => (t?.status?.[primary] === 'stale' ? lt(t, other(primary)) : lt(t, primary));
-  onStep?.('Pro 模型正在深入阅读岗位要求，比较全部有效经历并规划简历重点…');
-  const decision = await planWithAi(s, p, job, primary, targetPages);
+  const decision = await planWithAi(s, p, job, primary, targetPages, onStep);
   const plan = decision.plan;
   const idx = textIndex(p);
   const terms = jobTerms(job);
@@ -122,7 +121,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   const brief = { title: job.title, requirements: decision.requirements, summaryFocus: decision.summaryFocus,
     summaryOriginal: summaryOrig, summaryTools: tools, facts };
   type Out = { items?: { sourceId: string; text: string }[]; reasons?: string };
-  onStep?.('Pro 模型正在根据选材方案撰写精炼的岗位定制简历…');
+  onStep?.('2/3 正在撰写：AI 按已验证的选材方案编写岗位定制简历…');
   const out = await chatJson<Out>(s, [{ role: 'system', content: SYS_FACTS },
     { role: 'user', content: `${AI_WRITE_PROMPT(NAME[primary])}\n\n${JSON.stringify(brief)}` }],
   { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 16_000 });
@@ -149,6 +148,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   if (invalid.length) {
     // 只修复真正有事实风险的改写，仍让 Pro 模型尝试换一种精炼写法；通过同一护栏才采用。
     try {
+      onStep?.(`2/3 正在修复正文中的 ${invalid.length} 条事实风险，修复后将再次核验…`);
       const repairBrief = { job: job.title, selected: invalid.map(([sourceId, rejected]) => {
         const orig = facts.find((f) => f.sourceId === sourceId)?.text ?? summaryOrig;
         const issues = sourceId === 'summary'
@@ -297,7 +297,7 @@ async function generateResumeInner(s: Settings, p: ProfileDoc, job: JobParse, pr
     throw e;
   }
   try {
-    onStep?.(`本地化${NAME[other(primary)]}副版本…`);
+    onStep?.(`3/3 正在本地化${NAME[other(primary)]}副版本并核对双语事实…`);
     return await localizeAi(s, p, job, r);
   } catch (e) {
     r.notes = [...(r.notes ?? []), `副版本本地化失败，使用资料库译文：${(e as Error).message}`];

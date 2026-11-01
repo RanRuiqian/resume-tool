@@ -66,10 +66,16 @@ export const AI_PLAN_PROMPT = `你是负责筛选技术岗位简历的资深招�
 4. 优先展示有动作、方法、工具、可验证结果的经历；无关材料成本、完整作者名单、日常事务、重复表述等即使真实也可不选。不能删除真正体现岗位匹配的核心毕设，只因另一个项目细节多。
 5. 所有选中的 entryId、bulletIds、技能、证书、奖项只能来自输入给出的精确 ID。无内容的工作条目不得入选；一个要点最多出现一次。禁止创建、推算、改造经历或技能。
 6. 教育背景默认展示已启用的教育条目，教育 highlights 只选有用的事实；非官方/估算 GPA 默认不选。对在读、预计授予、课程、仅仿真、参与、协助、讨论、未完成保持原始性质。
-7. 匹配判断是内部参考，不是官方 ATS 分数。明确列出有证据、可迁移、有缺口的关键要求，每项引用真实 bulletId / skillId 作为证据。
+7. 匹配判断是内部参考，不是官方 ATS 分数。明确列出有证据、可迁移、有缺口的关键要求。每项 requirements[].evidenceIds 只能从 allowedIds.evidenceIds 逐字复制：它包括已提供事实的 sourceId、技能/证书/奖项 ID，以及 educationEvidenceIds 中的教育主体 ID（只能证明输入中的学校、专业、学位及授予状态等主体字段，不能代替未提供的课程或 GPA 事实）。工作/项目 entryId 仅为分组标识，不能作为证据；经历名称、技能名称、usedIn 中的引用、自己编的别名或序号也不能作为证据 ID。不得引用未启用、未提供或已排除的事实。
+8. 选择经历只能用 allowedIds.entries 内的 entryId，bulletIds 必须属于该 entryId；教育使用 allowedIds.education。skills / certificates / awards 分别只能从对应的 allowedIds 清单选，严格遵守 constraints 中的各项数量上限。引用 ID 存在也不等于支持岗位要求，必须阅读对应原文再作判断；direct / transferable 至少引用一条实际支持结论的证据，gap 必须是空 evidenceIds。找不到证据应如实判断缺口，不得编造或猜测 ID。
 输出 JSON 格式：
 {"requirements":[{"text":"岗位要求简述","tier":"must|responsibility|preferred","assessment":"direct|transferable|gap","evidenceIds":["已有事实 id"]}],"entries":[{"entryId":"已有 work/project id","bulletIds":["已有 bullet id，按优先级排序"],"reason":"简短说明为什么写它"}],"education":[{"entryId":"已有 education id","bulletIds":["可选 highlight id"]}],"skills":["已有 skill id"],"certificates":["已有 certificate id"],"awards":["已有 award id"],"summaryFocus":"一句话说明个人简介应该突出哪些已证实的能力","tradeoffs":"一句话解释最重要的选材取舍"}。
 不要输出简历正文。`;
+
+export const AI_PLAN_REPAIR_PROMPT = `上一条 assistant 消息是你首次返回的选材方案。请结合原始岗位、素材、具体 issues 和 allowedIds，仅修复 allowedPaths 列出的错误位置，不要重新生成整份方案。
+你仍负责语义判断：检查无效证据实际应引用哪个合法 ID，不要只按相似拼写替换，也不要删除安全检查。工作/项目分组 entryId 不是事实 sourceId；只有明确列在 educationEvidenceIds 的教育主体 ID 可以证明该主体的学校/专业/学位及授予状态。若没有证据，只有确实存在能力缺口时才可改为 gap 并清空 evidenceIds，不得为了过校验把有证据的要求一律改成 gap。
+保留其余要求、选材顺序和写作方向。仅输出 JSON，例如修复某项岗位判断时：{"repairs":[{"path":"/requirements/0","value":{"text":"原要求文本","tier":"must","assessment":"direct","evidenceIds":["从 allowedIds.evidenceIds 复制的实际证据 ID"]}}]}。示例中的路径和字段值都应按实际输入填写，value 是对象或数组本身，不是序列化后的 JSON 字符串。
+每个允许路径必须且只能出现一次；不要返回未列出的路径。/requirements/0 的 value 应为完整岗位判断对象（text、tier、assessment、evidenceIds），已有有效 text 与 tier 不得改变，只重新判断证据和匹配结论；不得删除岗位要求。/entries/0 或 /education/0 的 value 为完整条目；若该错误条目本来就不应入选，可返回 {"path":"对应的允许路径","op":"remove"}，不必强行用其它经历填满。顶层数组路径的 value 为该数组。合并后的整个方案会重新通过同样严格的 ID、来源归属、重复、篇幅与事实边界校验，失败将明确报错，不会规则降级。`;
 
 /** v1.12：已由 AI 做完选材，第二次 AI 专注专业、自然、凝练的表达。 */
 export const AI_WRITE_PROMPT = (lang: string) => `根据 JD 和已经由招聘顾问模型选定的真实要点，撰写${lang}正式求职简历。只输出 JSON。
