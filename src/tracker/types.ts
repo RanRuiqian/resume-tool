@@ -9,19 +9,19 @@ export type Priority = 1 | 2 | 3;
 export const PRIORITY_LABEL: Record<Priority, string> = { 1: '高', 2: '中', 3: '低' };
 
 /** 投递状态（顺序即 UI 顺序） */
-export const APP_STATUSES = ['screening', 'saved', 'preparing', 'applied', 'assessment', 'interviewing', 'offer', 'rejected', 'withdrawn', 'closed'] as const;
+export const APP_STATUSES = ['screening', 'saved', 'pending', 'preparing', 'applied', 'assessment', 'interviewing', 'offer', 'rejected', 'withdrawn', 'closed'] as const;
 export type AppStatus = (typeof APP_STATUSES)[number];
 export const STATUS_LABEL: Record<AppStatus, string> = {
-  screening: '待筛选', saved: '已收藏', preparing: '准备材料', applied: '已投递', assessment: '在线测评 / 笔试',
+  screening: '待筛选', saved: '已收藏', pending: '待投递', preparing: '准备材料', applied: '已投递', assessment: '在线测评 / 笔试',
   interviewing: '面试中', offer: 'Offer', rejected: '已拒绝 / 未通过', withdrawn: '已撤回', closed: '已结束',
 };
 export const STATUS_LABEL_EN: Record<AppStatus, string> = {
-  screening: 'To screen', saved: 'Saved', preparing: 'Preparing', applied: 'Applied', assessment: 'Assessment / test',
+  screening: 'To screen', saved: 'Saved', pending: 'To apply', preparing: 'Preparing', applied: 'Applied', assessment: 'Assessment / test',
   interviewing: 'Interviewing', offer: 'Offer', rejected: 'Rejected', withdrawn: 'Withdrawn', closed: 'Closed',
 };
 
 /** 来源信息：导入时保留原始来源与时间，便于追溯与幂等去重 */
-export interface SourceInfo { kind: 'manual' | 'csv' | 'json' | 'ran-application-handoff' | 'archive'; fileName?: string; importedAt?: string; rowKey?: string; raw?: Record<string, unknown>; /** 来源系统中的原始 ID（如导航工具记录 id） */ externalId?: string }
+export interface SourceInfo { kind: 'manual' | 'csv' | 'json' | 'ran-application-handoff' | 'archive' | 'analysis'; fileName?: string; importedAt?: string; rowKey?: string; raw?: Record<string, unknown>; /** 来源系统中的原始 ID（如导航工具记录 id） */ externalId?: string }
 
 /** 一个招聘岗位（只是岗位，不代表已申请） */
 export interface JobPosting {

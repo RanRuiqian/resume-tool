@@ -63,7 +63,7 @@ export function WizardPage({ go }: { go: (p: string) => void }) {
       {settings.demoMode && <div className="notice warn">{L('当前为演示模式：不调用 AI，只做关键词匹配，英文缺失处用占位文字。', 'Demo mode: no AI calls — keyword matching only, missing translations use placeholders.')}<button className="link" onClick={() => go('settings')}>{L('连接 AI 服务 →', 'Connect AI →')}</button></div>}
       {cur === 1 && <Step1 next={() => setStep(2)} go={go} hasProfile={hasProfile} />}
       {cur === 2 && <Step2 next={() => setStep(3)} back={() => setStep(1)} />}
-      {cur === 2 && <JobHistory onOpen={() => setStep(3)} />}
+      {cur === 2 && <JobHistory onOpen={() => setStep(3)} go={go} />}
       {cur === 3 && <Step3 next={() => setStep(4)} back={() => setStep(2)} go={go} />}
       {cur === 4 && <Step4 back={() => setStep(3)} restart={() => setStep(2)} />}
     </div>

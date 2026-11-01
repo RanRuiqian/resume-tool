@@ -155,3 +155,36 @@ export async function verifyAttachment(d: ResumeDB, id: string): Promise<boolean
   const [a, b] = await Promise.all([d.attachments.get(id), d.attachmentBlobs.get(id)]);
   return !!a && !!b && (await sha256Hex(b.data)) === a.sha256;
 }
+
+/**
+ * v1.11：从「岗位分析历史」加入求职管理。
+ * - 自动带入公司、岗位、JD 原文、要求；城市等 JD 没写清的字段留空，不猜测；
+ * - 默认建立「待投递」申请（不计入已投递统计）；
+ * - 同一岗位分析只关联一次（jobParseId）；同公司同岗位的已有记录由调用方提示用户选择，不自动合并或覆盖。
+ */
+export function postingFromAnalysis(job: JobParse): PostingInput {
+  const lang = job.jdLanguage === 'en' ? 'en' : 'zh';
+  const title = (job.title[lang] || job.title.zh || job.title.en || '').trim();
+  const req = [...job.mustHave, ...(job.responsibilities ?? [])].map((k) => k[lang] || k.zh || k.en).filter(Boolean).join('\n');
+  return { company: (job.company.full || job.company.short || '').trim(), title, city: '', jdText: job.rawText, requirements: req || undefined, jobParseId: job.id, source: { kind: 'analysis', importedAt: nowIso(), externalId: job.id } };
+}
+export async function findAnalysisLink(d: ResumeDB, jobId: string): Promise<JobPosting | undefined> {
+  return (await d.postings.toArray()).find((p) => p.jobParseId === jobId);
+}
+export async function analysisDuplicates(d: ResumeDB, job: JobParse): Promise<DuplicateHit[]> {
+  const c = postingFromAnalysis(job);
+  if (!norm(c.company) || !norm(c.title)) return [];
+  return (await d.postings.toArray()).filter((p) => norm(p.company) === norm(c.company) && norm(p.title) === norm(c.title)).map((posting) => ({ posting, reason: 'same-key' as const }));
+}
+export async function addFromAnalysis(d: ResumeDB, job: JobParse, note = '从岗位分析历史加入'): Promise<{ posting: JobPosting; application?: Application; existed: boolean }> {
+  const linked = await findAnalysisLink(d, job.id);
+  if (linked) return { posting: linked, existed: true };
+  const r = await addPosting(d, postingFromAnalysis(job), 'pending', note);
+  return { ...r, existed: false };
+}
+/** 已有同公司同岗位记录时，用户选择「关联到已有记录」：只补 jobParseId（已有字段一律不改） */
+export async function linkAnalysis(d: ResumeDB, postingId: string, jobId: string): Promise<JobPosting> {
+  const p = await d.postings.get(postingId); if (!p) throw new Error('岗位不存在');
+  if (p.jobParseId) return p;
+  return updatePosting(d, { ...p, jobParseId: jobId });
+}

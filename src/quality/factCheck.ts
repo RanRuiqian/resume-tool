@@ -113,7 +113,8 @@ export const XPAIRS: Pair[] = [
   ['已完成', /已完成|完成了|已经完成|完成/, /\bcompleted\b|\bfinished\b|\baccomplished\b|\bdelivered\b/i],
   ['估算 / 约数', /(?<![预节制契])约(?![束定])|大约|左右|估算|估计|预估|粗略/, /\babout\b|\bapprox\w*|\baround\b|\broughly\b|\bestimat\w*|~/i],
   ['非官方 / 不代表', /非官方|并非官方|不是官方|不代表|并不代表/, /unofficial|not (?:an |the )?official|non-official|not represent|does not represent|not reflect|not indicative/i],
-  ['讨论 / 设想', /讨论|探讨|考虑|设想|构想|提出/, /discuss\w*|consider\w*|explor\w*|propos\w*|envision\w*/i],
+  // v1.11：「考虑装配间隙」是设计时的考量、不是设想；只有「考虑（过）加入 / 采用…」才算未实现的设想
+  ['讨论 / 设想', /讨论|探讨|考虑(?:过|了)?(?:加入|引入|采用|增加|改用|后续|是否|将来)|设想|构想|提出(?:了)?(?:方案|设想|想法|思路)/, /discuss\w*|consider(?:ed|ing)? (?:\w+ing\b|whether|the idea)|explor\w*|propos\w*|envision\w*/i],
   ['实现', /实现/, /implement\w*|realiz\w*|achiev\w*|\benabled\b/i],
   ['实习', /实习/, /\bintern\w*/i],
   ['全职 / 正式', /全职|正式员工|正式工作|正式入职/, /full[- ]time|\bpermanent\b|\bemployment\b|\bemployee\b/i],
@@ -125,7 +126,7 @@ export const XPAIRS: Pair[] = [
   ['公司', /公司|企业/, /\bcompany\b|\bcorporate\b|\bfirm\b|\benterprise\b/i],
   ['医院', /医院|临床/, /\bhospital\b|\bclinic\w*/i],
   ['实验室', /实验室/, /\blab\b|\blaboratory\b/i],
-  ['工厂 / 车间 / 现场', /工厂|车间|产线|现场/, /\bfactory\b|\bplant\b|\bworkshop\b|\bproduction line\b|\bon[- ]site\b|\bfield\b|\bshop floor\b/i],
+  ['工厂 / 车间 / 现场', /工厂|车间|产线|现场/, /\bfactory\b|\bplant\b|\bworkshop\b|\bproduction line\b|\bon[- ]site\b|\bfield\b(?![- ]of[- ]view)|\bshop floor\b/i],
   ['学校 / 校内', /学校|校内|校园/, /\bschool\b|\bcampus\b|\buniversity\b/i],
   ['导师', /导师/, /\badvisor\b|\badviser\b|\bsupervisor\b|\bmentor\b/i],
   ['医生', /医生|医师/, /\bdoctor\w*|\bphysician\w*|\bclinician\w*/i],

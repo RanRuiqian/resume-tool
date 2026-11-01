@@ -6,7 +6,7 @@ import { enWords, generateCoverKit, generatePrep, zhLen, type KitQuality } from 
 import { kitExportState, makeKitReview, type SentenceTrace } from '../quality/kitVerify';
 import type { Bi, Lang, ResumeDoc } from '../types';
 
-const KIND: Record<SentenceTrace['kind'], string> = { closing: '称呼 / 结尾', self: '自述', reflection: '概括前文', motivation: '动机 / 岗位 / 学习', other: '其他陈述' };
+const KIND: Record<SentenceTrace['kind'], string> = { closing: '称呼 / 结尾', self: '自述', reflection: '概括前文', motivation: '动机', jd: '岗位 / 公司描述（对照 JD）', learning: '学习意愿', future: '未来计划 / 兴趣', other: '其他陈述' };
 function TraceTable({ trace, lang }: { trace: SentenceTrace[]; lang: Lang }) {
   const rows = trace.filter((t) => t.lang === lang);
   return (

@@ -1,19 +1,17 @@
-import type { Bi, GenItem, JobParse, Lang, LocalizedText, ProfileDoc, ResumeDoc, Settings } from '../types';
+import type { GenItem, JobParse, Lang, LocalizedText, ProfileDoc, ResumeDoc, Settings } from '../types';
 import { chatJson } from './provider';
 import { GENERATE_PROMPT, LOCALIZE_PROMPT, SYS_FACTS } from './prompts';
-import { checkConsistency, compareFacts, numberTokens } from './consistency';
+import { checkConsistency, compareFacts } from './consistency';
 import { lt, other, uid } from '../locale/text';
 import { mockTranslate } from './translate';
-import { isResumeSafe } from '../quality/contentQuality';
 import { guardRewrite } from '../quality/resumeGuard';
 import { buildKitContext, entityTokens, unsupportedEntities } from '../quality/kitVerify';
-import { compactSummary, hasTerm, conciseBi, jobTerms, overlap, planResume, relevance, type PlanEntry, LANG_TEST } from './relevance';
-/** v1.9 最后一道防线：核验说明 / 写作建议等元信息要点不进入简历（资料库原文不改） */
-const safeB = (bs: LocalizedText[]) => bs.filter((b) => isResumeSafe(b.zh || b.en || ''));
+import { compactSummary, hasTerm, conciseBi, jobTerms, planResume, type PlanEntry, type ResumePlan, LANG_TEST } from './relevance';
+import { capabilityBrief, coverage, stripAuthorList } from './evidence';
+import { focusSummary, guardSummary } from './summary';
 
 type Sel = ResumeDoc['selection'];
 const NAME: Record<Lang, string> = { zh: '中文', en: '英文' };
-const SEL_KEYS = ['work', 'projects', 'education', 'skills', 'certificates', 'awards'] as const;
 
 /** 资料库中所有可改写文本（summary / bullet / highlight），按 sourceId 索引 */
 export function textIndex(p: ProfileDoc): Map<string, { t: LocalizedText; parent: string }> {
@@ -25,12 +23,30 @@ export function textIndex(p: ProfileDoc): Map<string, { t: LocalizedText; parent
   return m;
 }
 
-const kwHit = (text: string, k: Bi) => { const l = text.toLowerCase(); return (!!k.zh && l.includes(k.zh.toLowerCase())) || (!!k.en && l.includes(k.en.toLowerCase())); };
-const entryText = (p: ProfileDoc) => JSON.stringify({ w: p.work, pr: p.projects, s: p.skills, e: p.education, c: p.certificates }).toLowerCase();
+
+/** v1.11：本简历选中技能的名称（简介里的工具清单只保留这些） */
+const toolNames = (p: ProfileDoc, plan: ResumePlan) => p.skills.filter((k) => plan.skills.includes(k.id)).flatMap((k) => [k.name.zh, k.name.en]).filter((x): x is string => !!x);
+/** v1.11：未选要点的原因（写进 notes，母库保留、可手动勾选） */
+function dropNotes(p: ProfileDoc, plan: ResumePlan): string[] {
+  const idx = textIndex(p);
+  const name = (id: string) => { const e = [...p.work, ...p.projects].find((x) => x.id === id); if (e) return lt('name' in e ? e.name : e.title, 'zh') || id; const t = idx.get(id)?.t; return t ? `「${(lt(t, 'zh') || lt(t, 'en')).slice(0, 18)}…」` : id; };
+  const ds = plan.dropped ?? [];
+  return ds.length ? [`未放进本简历（资料库保留，可在左侧手动勾选）：${ds.slice(0, 12).map((d) => `${name(d.id)}：${d.reason}`).join('；')}`] : [];
+}
+/** v1.11：公司名称 / 工作日期与岗位记录不一致时只提示核对，不猜测、不改写 */
+function conflictNotes(p: ProfileDoc, job: JobParse): string[] {
+  const out: string[] = [];
+  for (const w of p.work.filter((x) => x.enabled)) {
+    if (!w.start) out.push(`${lt(w.company, 'zh') || w.id}：缺少开始日期，待用户核对（未自动补全）`);
+    if (w.start && w.end && w.end !== 'present' && w.end < w.start) out.push(`${lt(w.company, 'zh') || w.id}：结束日期早于开始日期，待用户核对（保留原始数据）`);
+  }
+  void job;
+  return out;
+}
 
 /**
- * 规则匹配（演示模式 / AI 失败降级，PRD 6.4）：v1.10 改为按 JD 相关性挑选（planResume），
- * 每段经历只取最相关、互不重复的要点，并按句精简（中英同步取舍）；不改写措辞，母库不变。
+ * 规则匹配（演示模式 / AI 失败降级，PRD 6.4）：v1.11 改为分阶段选材（planResume → evidence.ts），
+ * 每段经历按价值和篇幅预算挑选要点，并按句精简（中英同步取舍）；不改写措辞，母库不变。
  */
 export function generateRules(p: ProfileDoc, job: JobParse, primary: Lang, targetPages = 1): ResumeDoc {
   const plan = planResume(p, job, primary, targetPages);
@@ -39,23 +55,22 @@ export function generateRules(p: ProfileDoc, job: JobParse, primary: Lang, targe
   const items: GenItem[] = [];
   const en = <T extends { enabled: boolean }>(a: T[]) => a.filter((x) => x.enabled);
   const sumZh = lt(p.profile.summary, 'zh', false), sumEn = lt(p.profile.summary, 'en', false);
-  if (lt(p.profile.summary, primary)) items.push({ sourceId: 'summary', zh: sumZh ? compactSummary(sumZh, 'zh') : '', en: sumEn ? compactSummary(sumEn, 'en') : '', syncStatus: 'in-sync' });
+  const tools = toolNames(p, plan);
+  const fs = (t: string, l: Lang) => (t ? (plan.model ? focusSummary(t, l, plan.model, tools) : null) ?? compactSummary(t, l) : '');
+  if (lt(p.profile.summary, primary)) items.push({ sourceId: 'summary', zh: fs(sumZh, 'zh'), en: fs(sumEn, 'en'), syncStatus: 'in-sync' });
   for (const e of plan.entries) for (const id of e.bulletIds) {
     const t = idx.get(id)?.t; if (!t) continue;
-    const c = e.kind === 'education' ? { zh: lt(t, 'zh', false), en: lt(t, 'en', false) } : conciseBi(t, terms, primary);
+    const c = e.kind === 'education' ? { zh: lt(t, 'zh', false), en: lt(t, 'en', false) } : conciseBi(t, terms, primary, plan.budgets?.[id]);
     items.push({ sourceId: id, zh: c.zh, en: c.en, syncStatus: 'in-sync' });
   }
-  const all = entryText(p);
-  const reqs = job.mustHave.length ? job.mustHave : job.keywords;
-  const covered = reqs.filter((k) => kwHit(all, k));
-  const gaps = reqs.filter((k) => !kwHit(all, k)).map((k) => k[primary] || k.zh || k.en);
+  const cov = plan.model && plan.ranked ? coverage(p, job, plan.model, plan.ranked, primary) : { matchScore: 0, gaps: [] };
   const ids = (k: PlanEntry['kind']) => plan.entries.filter((e) => e.kind === k).map((e) => e.id);
   const res: ResumeDoc = {
     id: uid('resume'), jobId: job.id, templateId: '', primaryLanguage: primary, createdAt: new Date().toISOString(),
-    matchScore: reqs.length ? Math.round((covered.length / reqs.length) * 100) : 0, gaps,
+    matchScore: cov.matchScore, gaps: cov.gaps,
     selection: { work: ids('work'), projects: ids('projects'), education: ids('education').length ? ids('education') : en(p.education).map((x) => x.id), skills: plan.skills, certificates: plan.certificates, awards: plan.awards },
     items, consistency: { checkedAt: '', issues: [] }, generatedBy: 'rules',
-    notes: ['规则匹配：按岗位相关性挑选并精简要点（未改写措辞），资料库原文不变；未选中的经历和要点可在左侧清单手动勾选'],
+    notes: ['规则匹配：按岗位能力分层挑选并精简要点（未改写措辞），资料库原文不变；未选中的经历和要点可在左侧清单手动勾选', ...dropNotes(p, plan), ...conflictNotes(p, job)],
   };
   return res;
 }
@@ -83,100 +98,75 @@ export function runConsistency(r: ResumeDoc): ResumeDoc {
   return { ...r, consistency: { checkedAt: new Date().toISOString(), issues: checkConsistency(r.items) } };
 }
 
-/** AI 生成主版本（F5.6 第一步） */
+/**
+ * AI 生成主版本（F5.6 第一步）。v1.11 阶段 E：选材由本地分阶段算法确定（planResume），
+ * AI 只对已选事实做排序内的精简 / 改写 / 合并措辞，不再挑选条目；随后逐条过事实护栏（guardRewrite + 实体检查），
+ * 不通过的用按预算精简的原文。matchScore / gaps 由本地计算。
+ */
 async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number): Promise<ResumeDoc> {
   // v1.9.1：主语言译文已过期（另一语言改过）时，改用最新的另一语言原文交给 AI 重写，不静默使用过期译文
   const T = (t: LocalizedText) => (t?.status?.[primary] === 'stale' ? lt(t, other(primary)) : lt(t, primary));
-  // 不发送照片、出生年月、性别、籍贯等敏感信息（PRD 8）
-  const lib = {
-    summary: T(p.profile.summary), headline: T(p.profile.headline),
-    work: p.work.filter((x) => x.enabled).map((w) => ({ id: w.id, company: T(w.company), title: T(w.title), start: w.start, end: w.end, tags: w.tags, bullets: safeB(w.bullets).map((b) => ({ sourceId: b.id, text: T(b) })) })),
-    projects: p.projects.filter((x) => x.enabled).map((w) => ({ id: w.id, name: T(w.name), role: T(w.role), tags: w.tags, bullets: safeB(w.bullets).map((b) => ({ sourceId: b.id, text: T(b) })) })),
-    education: p.education.filter((x) => x.enabled).map((e) => ({ id: e.id, school: T(e.school), major: T(e.major), degree: T(e.degree), highlights: safeB(e.highlights).map((b) => ({ sourceId: b.id, text: T(b) })) })),
-    skills: p.skills.filter((x) => x.enabled).map((k) => ({ id: k.id, name: T(k.name) })),
-    certificates: p.certificates.filter((x) => x.enabled).map((k) => ({ id: k.id, name: T(k.name) })),
-    awards: p.awards.filter((x) => x.enabled).map((k) => ({ id: k.id, name: T(k.name) })),
-  };
-  const jobBrief = { title: job.title, mustHave: job.mustHave.map((k) => k[primary]), responsibilities: (job.responsibilities ?? []).map((k) => k[primary] || k[other(primary)]), niceToHave: job.niceToHave.map((k) => k[primary]), yearsRequired: job.yearsRequired, keywords: job.keywords.map((k) => k[primary]), summary: job.summary };
-  type Out = { selection?: Partial<Sel>; items?: { sourceId: string; text: string }[]; matchScore?: number; gaps?: string[]; reasons?: string };
-  const out = await chatJson<Out>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content: `${GENERATE_PROMPT(NAME[primary], targetPages > 1 ? 5 : 4)}\n\n目标页数：${targetPages}\n岗位：${JSON.stringify(jobBrief)}\n资料库：${JSON.stringify(lib)}` }]);
-
-  // 校验：只保留资料库中真实存在的 id（防编造，PRD 6.1）
+  const plan = planResume(p, job, primary, targetPages);
   const idx = textIndex(p);
   const terms = jobTerms(job);
-  const exists: Record<keyof Sel, Set<string>> = { work: new Set(p.work.map((x) => x.id)), projects: new Set(p.projects.map((x) => x.id)), education: new Set(p.education.map((x) => x.id)), skills: new Set(p.skills.map((x) => x.id)), certificates: new Set(p.certificates.map((x) => x.id)), awards: new Set(p.awards.map((x) => x.id)) };
-  const selection = {} as Sel;
-  for (const k of SEL_KEYS) selection[k] = [...new Set((out.selection?.[k] ?? []).filter((id) => exists[k].has(id)))];
-  if (!selection.work.length) selection.work = p.work.filter((x) => x.enabled).map((x) => x.id);
-  if (!selection.education.length) selection.education = p.education.filter((x) => x.enabled).map((x) => x.id);
+  const rankOf = new Map((plan.ranked ?? []).map((r, i) => [r.id, { r, i }]));
+  const entryName = (id: string) => { const w = p.work.find((x) => x.id === id); if (w) return { entry: T(w.company), role: T(w.title) }; const pr = p.projects.find((x) => x.id === id); if (pr) return { entry: T(pr.name), role: T(pr.role) }; const ed = p.education.find((x) => x.id === id); return { entry: ed ? T(ed.school) : id, role: ed ? T(ed.major) : '' }; };
+  // 不发送照片、出生年月、性别、籍贯等敏感信息（PRD 8）；只发送本简历选中的事实
+  const facts = plan.entries.filter((e) => e.kind !== 'education').flatMap((e) => e.bulletIds.map((id) => ({ sourceId: id, ...entryName(e.id), text: T(idx.get(id)!.t), priority: (rankOf.get(id)?.i ?? 99) + 1, budget: plan.budgets?.[id], qualifiers: rankOf.get(id)?.r.qualifiers ?? [] }))).filter((f) => f.text);
+  const summaryOrig = T(p.profile.summary);
+  const tools = toolNames(p, plan);
+  const model = plan.model!;
+  const focus = capabilityBrief(model, primary).filter((x) => x.tier !== '一般协作' && x.tier !== '低价值补充');
+  const avoid = capabilityBrief(model, primary).filter((x) => x.tier === '一般协作' || x.tier === '低价值补充').map((x) => x.capability);
+  const brief = { title: job.title, focus, avoid, summaryOriginal: summaryOrig, summaryTools: tools, facts };
+  type Out = { items?: { sourceId: string; text: string }[]; reasons?: string };
+  const out = await chatJson<Out>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content: `${GENERATE_PROMPT(NAME[primary], targetPages > 1 ? 5 : 4)}\n\n${JSON.stringify(brief)}` }]);
+
   const notes: string[] = [];
-  const seen = new Set<string>();
-  const items: GenItem[] = [];
-  // v1.10.1：工具 / 专业 / 机构只能来自资料；改写不能把 JD 关键词（如资料里没有的 NX、ROS）塞进要点
   const kctx = buildKitContext(p, null);
   const entityIssues = (orig: string, text: string) => [
     ...(orig ? entityTokens(text, primary).filter((t) => !hasTerm(orig, t)).map((t) => `新增了原文没有的工具 / 专有名词：${t}`) : []),
     ...unsupportedEntities(text, primary, kctx.corpus, [], kctx.majors).map((t) => `出现了资料中没有的：${t}`),
   ];
-  for (const it of out.items ?? []) {
-    const inSelection = Object.values(exists).some((set) => set.has(it.sourceId));
-    if (!idx.has(it.sourceId) || seen.has(it.sourceId) || !it.text?.trim()) { if (it.sourceId && !idx.has(it.sourceId) && !inSelection) notes.push(`已丢弃无来源条目：${it.sourceId}`); continue; }
-    const orig = lt(idx.get(it.sourceId)!.t, primary);
+  const aiText = new Map<string, string>();
+  for (const it of out.items ?? []) if (it?.sourceId && it.text?.trim() && !aiText.has(it.sourceId)) aiText.set(it.sourceId, it.text.trim());
+  const allowed = new Set(['summary', ...plan.entries.flatMap((e) => e.bulletIds)]);
+  const extra = [...aiText.keys()].filter((k) => !allowed.has(k));
+  if (extra.length) notes.push(`已丢弃 AI 返回的未选 / 无来源条目：${extra.join(', ')}`);
+  const items: GenItem[] = [];
+  let fallback = 0;
+  // 简介：AI 版本须通过 guardSummary；否则用按岗位精简的原文
+  if (summaryOrig || aiText.get('summary')) {
+    const a = aiText.get('summary');
+    const sources = facts.map((f) => f.text).concat(p.education.filter((e) => e.enabled).map((e) => `${T(e.school)} ${T(e.major)} ${T(e.degree)}`), tools);
+    const bad = a ? [...guardSummary(summaryOrig, a, primary, sources, model.jdTools), ...unsupportedEntities(a, primary, kctx.corpus, [], kctx.majors).map((t) => `出现了资料中没有的：${t}`)] : ['AI 未返回简介'];
+    const text = a && !bad.length ? a : (summaryOrig ? (focusSummary(summaryOrig, primary, model, tools) ?? compactSummary(summaryOrig, primary)) : '');
+    if (a && bad.length) notes.push(`简介改写未通过事实护栏（${bad.join('；')}），已改用按岗位精简的原文`);
+    if (text) items.push({ sourceId: 'summary', zh: primary === 'zh' ? text : '', en: primary === 'en' ? text : '', syncStatus: 'in-sync' });
+  }
+  for (const e of plan.entries) for (const id of e.bulletIds) {
+    const t = idx.get(id)?.t; if (!t) continue;
+    const orig = T(t);
     let text: string;
-    if (!orig) {
-      // 资料库没有简介时允许 AI 依据资料撰写，但其中每个数字都必须在资料库中出现过
-      const libNums = new Set(numberTokens(JSON.stringify(lib)));
-      if (it.sourceId !== 'summary' || !numberTokens(it.text).every((n) => libNums.has(n))) { notes.push(`${it.sourceId} 原文为空且含资料库外的数字，已丢弃`); continue; }
-      const ei = entityIssues('', it.text); if (ei.length) { notes.push(`${it.sourceId}（AI 撰写的简介）${ei.join('；')}，已丢弃`); continue; }
-      text = it.text.trim();
-    } else {
-      // v1.10：允许省略次要事实；不允许新增 / 改动数字、删除限定、抬高参与程度（guardRewrite）。
-      // 未通过时不再回退整段原文，而是用确定性的精简原文（conciseBi，仍保证不丢限定）
-      const bad = [...guardRewrite(orig, it.text, primary), ...entityIssues(orig, it.text)];
-      if (bad.length) { text = conciseBi(idx.get(it.sourceId)!.t, terms, primary)[primary] || orig; notes.push(`${it.sourceId} 改写未通过事实护栏（${bad.join('；')}），已改用精简原文`); }
-      else text = it.text.trim();
+    if (e.kind === 'education') text = orig;
+    else {
+      const a = aiText.get(id);
+      const bad = a ? [...guardRewrite(orig, a, primary), ...entityIssues(orig, a)] : ['AI 未返回'];
+      if (!bad.length) text = a!;
+      else { text = conciseBi(t, terms, primary, plan.budgets?.[id])[primary] || orig; fallback++; if (a) notes.push(`${id} 改写未通过事实护栏（${bad.join('；')}），已改用精简原文`); }
     }
-    if (it.sourceId === 'summary') text = compactSummary(text, primary);
-    seen.add(it.sourceId);
-    items.push({ sourceId: it.sourceId, zh: primary === 'zh' ? text : '', en: primary === 'en' ? text : '', syncStatus: 'in-sync' });
+    if (text) items.push({ sourceId: id, zh: primary === 'zh' ? text : '', en: primary === 'en' ? text : '', syncStatus: 'in-sync' });
   }
-  // v1.10 密度控制：每段经历按岗位相关性设软上限，去掉同一段里表达同一件事的要点
-  const plan = planResume(p, job, primary, targetPages);
-  // 语言成绩（PTE / IELTS / CET…）几乎所有岗位都需要；AI 漏选时补回（排版时归入技能「语言」组）
+  if (fallback) notes.push(`${fallback} 条要点使用了精简原文（AI 未返回或未通过护栏）`);
+  const cov = coverage(p, job, model, plan.ranked ?? [], primary);
+  const ids = (k: PlanEntry['kind']) => plan.entries.filter((e) => e.kind === k).map((e) => e.id);
+  const selection: Sel = { work: ids('work'), projects: ids('projects'), education: ids('education').length ? ids('education') : p.education.filter((x) => x.enabled).map((x) => x.id), skills: plan.skills, certificates: plan.certificates, awards: plan.awards };
+  // 语言成绩（PTE / IELTS / CET…）几乎所有岗位都需要；排版时归入技能「语言」组
   for (const id of p.certificates.filter((c) => c.enabled && LANG_TEST.test(`${c.name.zh} ${c.name.en}`)).map((c) => c.id)) if (!selection.certificates.includes(id)) selection.certificates.push(id);
-  const planOf = new Map(plan.entries.map((e) => [e.id, e]));
-  const byParent = new Map<string, GenItem[]>();
-  for (const i of items) { const par = idx.get(i.sourceId)?.parent ?? ''; byParent.set(par, [...(byParent.get(par) ?? []), i]); }
-  const drop = new Set<string>();
-  for (const [par, list] of byParent) {
-    if (par === 'profile') continue;
-    const pe = planOf.get(par);
-    const isEdu = p.education.some((e) => e.id === par);
-    const cap = isEdu ? plan.caps.core : pe?.core ? plan.caps.core : plan.caps.minor + 1;
-    const ranked = list.map((i, k) => ({ i, k, s: relevance(i[primary], terms) })).sort((a, b) => b.s - a.s || a.k - b.k);
-    const keep: GenItem[] = [];
-    for (const x of ranked) { if (keep.length >= cap || keep.some((y) => overlap(y[primary], x.i[primary]) > 0.45)) { drop.add(x.i.sourceId); continue; } keep.push(x.i); }
-  }
-  if (drop.size) notes.push(`按相关性与篇幅省略了 ${drop.size} 条次要或重复要点（资料库保留，可手动勾选）`);
-  const kept = items.filter((i) => !drop.has(i.sourceId));
-  items.length = 0; items.push(...kept);
-  // 修复（v1.10 bug A）：选中的经历若 AI 没有返回任何要点，不再整段带上全部原始要点，
-  // 只补入按相关性挑选的 1–2 条精简原文；与岗位无关的次要经历保持空要点（只显示标题），用户可手动勾选
-  const withItems = new Set(items.map((i) => idx.get(i.sourceId)?.parent));
-  const fill = (id: string, bullets: LocalizedText[], kind: PlanEntry['kind']) => {
-    if (withItems.has(id)) return;
-    const ids = planOf.get(id)?.bulletIds ?? [];
-    const chosen = (ids.length ? ids.map((x) => bullets.find((b) => b.id === x)).filter((b): b is LocalizedText => !!b) : []).slice(0, kind === 'education' ? 3 : 2);
-    for (const b of chosen) { const c = kind === 'education' ? { zh: lt(b, 'zh'), en: lt(b, 'en') } : conciseBi(b, terms, primary); items.push({ sourceId: b.id!, zh: primary === 'zh' ? c.zh : '', en: primary === 'en' ? c.en : '', syncStatus: 'in-sync' }); }
-    if (chosen.length) notes.push(`${id} AI 未返回要点，已按相关性补入 ${chosen.length} 条精简原文`);
-  };
-  for (const e of p.work.filter((x) => selection.work.includes(x.id))) fill(e.id, e.bullets, 'work');
-  for (const e of p.projects.filter((x) => selection.projects.includes(x.id))) fill(e.id, e.bullets, 'projects');
-  for (const e of p.education.filter((x) => selection.education.includes(x.id))) fill(e.id, e.highlights, 'education');
   return {
     id: uid('resume'), jobId: job.id, templateId: '', primaryLanguage: primary, createdAt: new Date().toISOString(),
-    matchScore: Math.max(0, Math.min(100, Math.round(out.matchScore ?? 0))), gaps: (out.gaps ?? []).map(String), selection, items,
-    consistency: { checkedAt: '', issues: [] }, generatedBy: 'ai', notes: [...(out.reasons ? [out.reasons] : []), ...notes],
+    matchScore: cov.matchScore, gaps: cov.gaps, selection, items,
+    consistency: { checkedAt: '', issues: [] }, generatedBy: 'ai', notes: [...(out.reasons ? [String(out.reasons)] : []), ...notes, ...dropNotes(p, plan), ...conflictNotes(p, job)],
   };
 }
 
@@ -248,7 +238,11 @@ export function flagStale(p: ProfileDoc, r: ResumeDoc): ResumeDoc {
 }
 
 export async function generateResume(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void): Promise<ResumeDoc> {
-  return flagStale(p, await generateResumeInner(s, p, job, primary, targetPages, onStep));
+  const r = await generateResumeInner(s, p, job, primary, targetPages, onStep);
+  let cut = 0;
+  r.items = r.items.map((i) => { const zh = stripAuthorList(i.zh), en = stripAuthorList(i.en); if (zh !== i.zh || en !== i.en) cut++; return zh !== i.zh || en !== i.en ? { ...i, zh, en } : i; });
+  if (cut) r.notes = [...(r.notes ?? []), `已在简历中省略论文作者名单（${cut} 条；资料库原文未改）`];
+  return flagStale(p, r);
 }
 async function generateResumeInner(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void): Promise<ResumeDoc> {
   if (s.demoMode) {

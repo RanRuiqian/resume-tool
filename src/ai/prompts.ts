@@ -46,17 +46,16 @@ export const RESUME_STYLE = `简历写作（v1.10）：
 - 同一段经历的多条要点不要重复表达同一种能力；句式不要千篇一律。
 - 英文按英文简历习惯：强动词开头、过去时、省略主语，自然简洁，不逐字直译中文。`;
 
-export const GENERATE_PROMPT = (lang: string, maxBullets: number) => `根据岗位解析结果，从用户资料库中挑选最相关的经历并改写，生成${lang}简历主版本。
+export const GENERATE_PROMPT = (lang: string, maxBullets: number) => `下面是已经按岗位挑选好的${lang}简历事实（facts，按 priority 从高到低）。条目已经选定，你只做措辞：精简、改写、调整句内顺序、把同一要点里的半句合并，并写一段个人简介。
 要求：
-1. selection 中只能出现资料库里已有的条目 id，按与岗位相关度排序；work/education 通常全部保留；projects/skills/certificates/awards 只选与岗位相关的（无关的不选，用户可以手动加）。
-2. items 为改写后的 bullet / highlight 以及 summary（sourceId 用 "summary"）。每条必须携带资料库原始条目的 sourceId，一个 sourceId 只出现一次。
-3. 篇幅：核心经历 2–3 条（最多 ${maxBullets} 条），次要经历 1 条或不选；不要凑数。
-4. summary：1–2 句、中文不超过约 80 字 / 英文不超过约 45 词，只写与该岗位相关的方向和真实能力，不写技术报告式内容、不写自我评价套话；资料不足时输出空字符串。
-5. 教育 highlights 中的 GPA 只保留成绩本身与必要限定（如估算、非官方），不写核验说明。
-6. matchScore 为 0–100 的匹配度（工具内部估算，不是招聘方评分）；gaps 列出资料库无法覆盖的 mustHave（${lang}）。
+1. items 中每个 fact 输出一条，sourceId 原样返回，不得新增、删除或拆分条目；不要输出 facts 以外的 sourceId（简介用 "summary"）。
+2. 字数：每条不超过各自的 budget（中文按字、英文按词）；priority 高的写得更完整，低的写短。同一段经历最多 ${maxBullets} 条。
+3. 只用 fact 原文里的信息：不得新增或改动数字、工具、单位、结果；qualifiers 中的限定（课程 / 仅仿真 / 协助 / 参与 / 讨论 / 计划）必须保留同等含义；参与程度不得抬高。
+4. 按 focus 中的岗位能力组织措辞（必备核心优先）；avoid 中的能力不要强调。
+5. summary：基于 summaryOriginal 与 facts 写 1–2 句（中文约 80 字以内 / 英文约 45 词以内），只写与 focus 相关的方向和真实能力；工具只能从 summaryTools 中选；不得写 avoid 中的能力、JD 要求但资料没有的东西、也不得用「精通 / 专家 / 卓越 / expert」等夸大词。
 ${RESUME_STYLE}
 ${WRITING_RULES}
-输出 JSON：{"selection":{"work":[],"projects":[],"education":[],"skills":[],"certificates":[],"awards":[]},"items":[{"sourceId":"...","text":"..."}],"matchScore":80,"gaps":["..."],"reasons":"简短挑选理由"}`;
+输出 JSON：{"items":[{"sourceId":"...","text":"..."}],"reasons":"一句话说明措辞取舍"}`;
 
 export const LOCALIZE_PROMPT = (from: string, to: string) => `把下面的${from}简历主版本逐条本地化为${to}副版本。主版本是唯一事实源：
 - 逐条翻译/本地化，不得新增、删除、合并条目，sourceId 与顺序完全不变；
