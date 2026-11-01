@@ -7,7 +7,7 @@ import { mockTranslate } from './translate';
 import { guardRewrite } from '../quality/resumeGuard';
 import { buildKitContext, entityTokens, unsupportedEntities } from '../quality/kitVerify';
 import { compactSummary, hasTerm, conciseBi, jobTerms, planResume, type PlanEntry, type ResumePlan, LANG_TEST } from './relevance';
-import { capabilityBrief, coverage } from './evidence';
+import { capabilityBrief, coverage, stripAuthorList } from './evidence';
 import { focusSummary, guardSummary } from './summary';
 
 type Sel = ResumeDoc['selection'];
@@ -238,7 +238,11 @@ export function flagStale(p: ProfileDoc, r: ResumeDoc): ResumeDoc {
 }
 
 export async function generateResume(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void): Promise<ResumeDoc> {
-  return flagStale(p, await generateResumeInner(s, p, job, primary, targetPages, onStep));
+  const r = await generateResumeInner(s, p, job, primary, targetPages, onStep);
+  let cut = 0;
+  r.items = r.items.map((i) => { const zh = stripAuthorList(i.zh), en = stripAuthorList(i.en); if (zh !== i.zh || en !== i.en) cut++; return zh !== i.zh || en !== i.en ? { ...i, zh, en } : i; });
+  if (cut) r.notes = [...(r.notes ?? []), `已在简历中省略论文作者名单（${cut} 条；资料库原文未改）`];
+  return flagStale(p, r);
 }
 async function generateResumeInner(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void): Promise<ResumeDoc> {
   if (s.demoMode) {

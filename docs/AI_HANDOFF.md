@@ -1,6 +1,6 @@
 # AI 交接说明（AI_HANDOFF）
 
-本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-10-31（v1.6.1 智能导入修正）。
+本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-11-01（v1.11.0 分阶段选材 / DeepSeek 审计 / 岗位分析接入求职管理）。
 
 ## 1. 产品
 面向中国求职者（主要是 2027 届机械 / 机器视觉方向）的双语简历工具：
@@ -105,12 +105,19 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 - `generate.ts`：`entityIssues` 拦截 AI 新增工具 / 机构 / 专业；`localizeAi` 拒绝引入资料外实体的翻译。
 - 测试：`tests/kitVerifyV1101.test.ts`、`tests/e2e/kit_verify_e2e.py`。
 
+## 4g. 分阶段选材与 DeepSeek（v1.11.0）
+- 选材是确定性的：`evidence.ts`（`analyzeJd` 能力族 → `extractEvidence` / `rankEvidence` 证据分 → `allocate` 预算两轮分配 → `coverage` 匹配度 / 缺口），`relevance.planResume` 委托给它；AI（`GENERATE_PROMPT`）只拿到已选事实的 brief（sourceId / 角色 / 原文 / 预算 / 限定），只改写不挑选，结果逐条过 `guardRewrite` + 实体检查。
+- 简介：`summary.ts` 的 `focusSummary`（逐分句精简，只删不加）与 `guardSummary`（AI 简介的护栏）。
+- `generateResume` 最后统一 `stripAuthorList`（简历不放论文作者名单）。
+- Provider：`finish_reason=length` → `AiError('format')`；非法 JSON → `AiError('json')` 并在 `chatJson` 内重试 1 次；`onAiUsage(fn)` 监听用量（无 Key）；`RETIRED_DEEPSEEK_MODELS` 迁移旧模型名。
+- 求职管理：`tracker/repo.ts` 的 `addFromAnalysis` / `linkAnalysis` / `analysisDuplicates` / `findAnalysisLink`；`JobHistory.tsx` 是「岗位分析历史 / 制作历史」，不是投递记录。
+
 ## 5. ran-application-handoff 1.0（旧导航工具）
 **重要：目前只按用户口头描述的结构实现和测试，尚未用真实导出文件验证。** 用户可以提供真实样本；拿到后请：把脱敏后的样本存为 fixture、跑 `tests/handoff10.test.ts` 同类测试、修正 `HANDOFF_MAPPING` / `HANDOFF_STATUS`。
 描述的结构与映射规则见 `docs/DATA_SCHEMA.md`「导入格式」。实现：`src/tracker/importers.ts` 中 `handoff10()`、`HANDOFF_MAPPING`、`HANDOFF_STATUS`。
 
 ## 6. 测试现状
-单元 / 集成 386 项（vitest，v1.10.1），浏览器 e2e：`jd_step2_e2e.py` 17、`kit_verify_e2e.py` 15、`tracker_e2e.py` 33、`release_e2e.py` 35、`api_profiles_e2e.py` 47、`smart_import_e2e.py` 41（Mock AI），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
+单元 / 集成 439 项（vitest，v1.11.0），浏览器 e2e：`job_link_e2e.py` 13、`jd_step2_e2e.py` 17、`info_loss_e2e.py` 20、`organize_e2e.py` 36、`presets_e2e.py` 14、`kit_verify_e2e.py` 15、`tracker_e2e.py` 33、`release_e2e.py` 35、`api_profiles_e2e.py` 47、`smart_import_e2e.py` 41（Mock AI），导出回归 3 模板 × 中英 PDF / Word。具体覆盖见 `docs/DEVELOPMENT.md`。
 
 ## 7. 待办与已知限制
 见 `docs/PROJECT_STATUS.md`。

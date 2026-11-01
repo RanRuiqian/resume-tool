@@ -93,6 +93,11 @@ const QUALS: [string, RegExp][] = [
   ['协助 / 参与', /协助|参与|assist|took part|helped|participat/i],
   ['失败', /失败|未成功|放弃|failed|abandon|unsuccessful/i],
 ];
+/** v1.11：简历要点里不放论文完整作者名单（「第一作者」等身份保留）；资料库原文不改 */
+export function stripAuthorList(t: string): string {
+  return t.replace(/\s*[（(]\s*(?:作者名单|作者|authors?|author list)\s*[:：][^）)]*[）)]/gi, '')
+    .replace(/[，,；;]\s*(?:作者名单|作者|authors?)\s*[:：][^。；;.]*/gi, '').trim();
+}
 const AUTHOR_LIST = /作者[:：]|作者名单|authors?:|author list|(?:[A-Z][a-z]+ [A-Z][a-z]+, ){3,}/i;
 const GPA_CONV = /(?:GPA|绩点)[^。]*(?:换算|自行|估算|非官方|converted|self-converted|estimat|unofficial)/i;
 const GENERIC = /积极|认真负责|热情|吃苦耐劳|学习能力强|hard-working|passionate|motivated|detail-oriented/i;

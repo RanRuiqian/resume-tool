@@ -126,7 +126,7 @@ export const XPAIRS: Pair[] = [
   ['公司', /公司|企业/, /\bcompany\b|\bcorporate\b|\bfirm\b|\benterprise\b/i],
   ['医院', /医院|临床/, /\bhospital\b|\bclinic\w*/i],
   ['实验室', /实验室/, /\blab\b|\blaboratory\b/i],
-  ['工厂 / 车间 / 现场', /工厂|车间|产线|现场/, /\bfactory\b|\bplant\b|\bworkshop\b|\bproduction line\b|\bon[- ]site\b|\bfield\b|\bshop floor\b/i],
+  ['工厂 / 车间 / 现场', /工厂|车间|产线|现场/, /\bfactory\b|\bplant\b|\bworkshop\b|\bproduction line\b|\bon[- ]site\b|\bfield\b(?![- ]of[- ]view)|\bshop floor\b/i],
   ['学校 / 校内', /学校|校内|校园/, /\bschool\b|\bcampus\b|\buniversity\b/i],
   ['导师', /导师/, /\badvisor\b|\badviser\b|\bsupervisor\b|\bmentor\b/i],
   ['医生', /医生|医师/, /\bdoctor\w*|\bphysician\w*|\bclinician\w*/i],

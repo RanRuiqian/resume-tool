@@ -71,12 +71,14 @@ const inCorpus = (corpus: string, s: string) => corpus.toLowerCase().includes(s.
 const suffixIn = (corpus: string, s: string, min: number) => { for (let k = s.length; k >= Math.min(min, s.length); k--) if (corpus.includes(s.slice(s.length - k))) return true; return false; };
 
 /** 资料中没有的工具、机构、专业（不分句子类型；JD 缺口词由调用方另行判断学习表述） */
+/** v1.11：「船舶修造公司」是资料中「虚构船舶修造有限公司」的简称——去掉公司后缀后的主体（≥4 字）出现在资料的机构名里即视为同一机构 */
+const orgStemIn = (corpus: string, core: string) => { const stem = core.replace(/(?:股份)?(?:有限)?(?:责任)?(?:公司|集团)$/, ''); return stem.length >= 4 && stem !== core && new RegExp(`${stem.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\u4e00-\u9fa5]{0,6}(?:公司|集团)`).test(corpus); };
 export function unsupportedEntities(s: string, lang: Lang, corpus: string, allow: string[] = [], majors?: string[]): string[] {
   const majorText = majors ? majors.join('\n') : corpus;
   const bad: string[] = [];
   for (const t of entityTokens(s, lang)) if (!hasTerm(corpus, t) && !allow.some((a) => hasTerm(a, t))) bad.push(t);
   if (lang === 'zh') {
-    for (const m of s.match(ORG_ZH) ?? []) { const core = m.replace(/^.*?(?:在|于|到|是|为|和|与|的)/, ''); if (core.length > 3 && !/^(?:贵|该|本|这家|一家|大型)/.test(core) && !/(?:贵|该|本|这家|一家|贵司)(?:公司|集团|大学|学院|研究院|研究所|实验室|医院|工厂)$/.test(core) && !suffixIn(corpus, core, 5)) bad.push(core); }
+    for (const m of s.match(ORG_ZH) ?? []) { const core = m.replace(/^.*?(?:在|于|到|是|为|和|与|的)/, ''); if (core.length > 3 && !/^(?:贵|该|本|这家|一家|大型)/.test(core) && !/(?:贵|该|本|这家|一家|贵司)(?:公司|集团|大学|学院|研究院|研究所|实验室|医院|工厂)$/.test(core) && !suffixIn(corpus, core, 5) && !orgStemIn(corpus, core)) bad.push(core); }
     for (const m of s.matchAll(MAJOR_ZH)) { const core = m[1].replace(/^.*?(?:是|读|学|的|在|于)/, ''); if (core.length >= 2 && !/^(?:相关|对口|本|该|这个|所学)$/.test(core) && !suffixIn(majorText, core, 4)) bad.push(`${core}专业`); }
     if (/主修|就读|在读|攻读|读的是|学的是/.test(s)) for (const m of s.match(/[\u4e00-\u9fa5]{2,6}工程/g) ?? []) if (!suffixIn(majorText, m, 4)) bad.push(m);
   } else {
@@ -114,23 +116,23 @@ const SELF = {
 };
 const REFLECT = { zh: /^(?:这段|这些|这次|这个|通过这|这让我|由此|从中)/, en: /^(?:This|These|That|Through (?:this|these|that))\b/i };
 const MOTIVE = { zh: /希望|期待|愿意|想要|渴望|期望|计划|打算|入职后|未来|接下来|将来|求职方向|应聘|申请|贵公司|贵岗位|贵团队|该岗位|这个岗位|此岗位|岗位(?:要求|职责|关注|需要|看重)|学习/, en: /\b(?:eager|hope|hoping|look(?:ing)? forward|would like|wish|plan to|aim to|apply|applying|the role|this role|this position|the position|your team|keen to|want to|excited|interested)\b/i };
-const LEARN_FRAME = { zh: /(?:希望|愿意|计划|打算|想要|想|准备|正在|继续|进一步|系统地?|尽快|入职后)[^。！？]{0,14}(?:学习|学会|补齐|补上|掌握|提升|积累)|(?:想|要|去|多|再)学(?![校位历生院科])|学习[^。！？]{0,8}(?:并|再)/, en: /\b(?:eager|keen|hope|hoping|want|plan|would like|look(?:ing)? forward|ready|willing|intend)\b[^.!?]{0,40}\b(?:to learn|to pick up|to build|to develop|to gain|learning|to study)\b|\bto learn\b/i };
+const LEARN_FRAME = { zh: /(?:希望|愿意|计划|打算|想要|想|准备|正在|继续|进一步|系统地?|尽快|入职后)[^。！？]{0,14}(?:学习|学会|补齐|补上|掌握|提升|积累)|(?:在工作中|在实践中|在项目中|工作中)(?:继续)?学习|(?:想|要|去|多|再)学(?![校位历生院科])|学习[^。！？]{0,8}(?:并|再)/, en: /\b(?:eager|keen|hope|hoping|want|plan|would like|look(?:ing)? forward|ready|willing|intend)\b[^.!?]{0,40}\b(?:to learn|to pick up|to build|to develop|to gain|learning|to study)\b|\bto learn\b/i };
 const PSEUDO = { zh: /基础|熟悉|了解|接触过|接触|掌握|具备|会用|能够使用|能用|有.{0,4}经验|入门|懂/, en: /\bfoundation|\bfamiliar|\bexposure|\bexposed\b|\bbasic\b|\bknowledge of|\bunderstanding of|\bexperience (?:with|in)\b|\bproficien|\bknow how\b|\bbackground in\b|\bskilled\b|\bcomfortable with\b/i };
-const NEG = { zh: /(?:没有|尚无|还没有|暂无|并无|未曾|尚未|还未|不具备|缺少|缺乏)[^，。,.；;]{0,14}/g, en: /\b(?:no|not yet|don't have|do not have|haven't|have not|without|lack|lacking|not)\b[^,.;]{0,40}/gi };
+const NEG = { zh: /(?:没有|尚无|还没有|暂无|并无|未曾|尚未|还未|不具备|缺少|缺乏|还没|从没|从未|没(?=做|用|接触|学|参与|实践))[^，。,.；;]{0,14}/g, en: /\b(?:no|not yet|don't have|do not have|haven't|have not|without|lack|lacking|not)\b[^,.;]{0,40}/gi };
 const JD_DESC = { zh: /岗位|职位|JD|招聘|贵公司|贵司|贵团队/, en: /\b(?:the role|this role|the position|this position|the job|job description|requirements?|requires?|calls for|asks for)\b/i };
-const MOTIVE_LEAD = { zh: /^(?:我?(?:希望|期待|盼望|很希望|非常希望|也希望|愿意)|如有机会|若有机会)/, en: /^(?:I (?:would|'d) (?:be glad|welcome|like|love|appreciate)|I hope|I look forward|Looking forward|I am (?:eager|keen|excited|happy|glad) to)\b/i };
-const JD_INTRO = { zh: /我(?:了解到|注意到|看到)/g, en: /\bI (?:understand|see|noticed|note|learned)(?: that)?\b/gi };
+const MOTIVE_LEAD = { zh: /^(?:我?(?:希望|期待|盼望|很希望|非常希望|也希望|愿意)|如有机会|若有机会|我?的?求职(?:的)?方向是[^，。]{1,16}[，,](?=[^，。]*(?:希望|愿意|计划|打算|想)[^，。]{0,8}学))/, en: /^(?:I (?:would|'d) (?:be glad|welcome|like|love|appreciate)|I hope|I look forward|Looking forward|I am (?:eager|keen|excited|happy|glad) to)\b/i };
+const JD_INTRO = { zh: /我?(?:了解到|注意到|看到)/g, en: /\bI (?:understand|see|noticed|note|learned)(?: that)?\b/gi };
 const APPLY = { zh: /应聘|申请|投递/, en: /\b(?:apply|applying|application)\b/i };
 const ACT = { zh: /完成|设计了|设计|编写|搭建|开发|制作|实现|测量|建模|做了|做过|负责|主导|带领|编程|调试|测试|整理|绘制|打印/, en: /\b(?:designed|built|wrote|developed|completed|created|ran|measured|modeled|made|implemented|programmed|conducted|performed|did|tested|compiled|prepared|printed|iterated|validated|led)\b/i };
 const GENERIC_ORG = { zh: /贵公司|贵司|贵团队|该公司|贵单位/g, en: /\byour (?:company|team|organization)\b/gi };
 const DEPLOY = { zh: /部署|上线|实机|真机|实物机器人|产线|生产线|现场调试|量产|落地|交付/, en: /\bdeploy\w*|\breal (?:robot|hardware|line)|\bphysical robot|\bproduction line|\bon[- ]site\b|\bcommission\w*|\bshop floor\b|\bmass production\b/i };
 const GRAD = { zh: /已毕业|毕业于|已经毕业|已获得.{0,8}学位|获得了?.{0,8}学位|取得了?.{0,8}学位|学位已/, en: /\bgraduated\b|\bhold(?:s|ing)? an? .{0,30}\bdegree\b|\b(?:have|has) (?:earned|received|obtained|been awarded)\b.{0,30}\b(?:degree|bachelor)|\bearned my\b|\bdegree (?:was )?(?:awarded|conferred)\b/i };
 /** 未来计划 / 兴趣（D 类）：不含「继续」——「继续做 X」暗示做过，按自述严格核对 */
-const FUTURE = { zh: /^(?:我)?(?:也|还)?(?:希望|期待|计划|打算|想|愿意|准备)?(?:在)?(?:未来|今后|将来|入职后|以后|加入后)|对[^，。]{1,24}(?:很|非常|十分|也)?(?:感兴趣|有兴趣|充满兴趣|有热情)|(?:希望|期待|计划|打算)(?:能|可以)?(?:在|把|将|参与|投入|从事|成为|加入)(?![^，。]{0,10}继续)/, en: /^(?:In the future|Going forward|Looking ahead|In the long term)\b|\bI(?: am|'m) (?:very |particularly |also |especially )?(?:interested in|passionate about|curious about)\b|\bI (?:hope|would like|'d like|want|plan|aim|intend) to (?!continue\b)|\bmy (?:goal|aim|plan) is\b/i };
+const FUTURE = { zh: /^(?:我)?(?:也|还)?(?:希望|期待|计划|打算|想|愿意|准备)?(?:在)?(?:未来|今后|将来|入职后|以后|加入后)|对[^，。]{1,24}(?:很|非常|十分|也)?(?:感兴趣|有兴趣|充满兴趣|有热情)|(?:希望|期待|计划|打算)(?:能|可以|有机会|能有机会)?(?:在|把|将|参与|投入|从事|成为|加入)(?![^，。]{0,10}继续)/, en: /^(?:In the future|Going forward|Looking ahead|In the long term)\b|\bI(?: am|'m) (?:very |particularly |also |especially )?(?:interested in|passionate about|curious about)\b|\bI (?:hope|would like|'d like|want|plan|aim|intend) to (?!continue\b)|\bmy (?:goal|aim|plan) is\b/i };
 /** 坦白「还没做过 / 没有接触」：否定的是候选人自己的经历 */
 const SELF_NEG = { zh: /(?:我)?(?:目前|暂时|还|尚)?(?:没有|尚无|还没有|暂无|并无|未曾|尚未|还未|不具备|缺少|缺乏)(?:实际)?(?:使用|做|接触|学习|参与|掌握|用)?过?/, en: /I (?:have|'ve|had)? ?(?:not|never|n't)(?: yet)? (?:worked|used|had|done|touched|learned|been)|I (?:do not|don't|did not|didn't) (?:yet )?(?:have|know)|I have no|I lack|not yet (?:worked|used|had)|haven't (?:yet )?(?:worked|used|had)/i };
 /** 「岗位要求 X，这我已经具备」：把 JD 里的要求整体认领为已有能力 */
-const POSSESS = { zh: /我(?:都|也)?(?:已经|已)(?:具备|拥有|有|满足|符合|掌握)|我(?:完全)?(?:具备|拥有|满足|符合)(?:这|此|该|上述|以上)|这些我(?:都)?(?:有|会|具备)/, en: /\b(?:which|that) I (?:already )?(?:have|possess|meet|bring)\b|\bI (?:already )?(?:have|possess|meet|bring) (?:this|these|that|it|them|all)\b|\bI already (?:have|possess|meet)\b/i };
+const POSSESS = { zh: /我(?:都|也)?(?:已经|已)(?:具备|拥有|有|满足|符合|掌握)|我(?:完全)?(?:具备|拥有|满足|符合)(?:这|此|该|上述|以上)|这些我(?:都)?(?:有|会|具备)/, en: /\b(?:which|that) I (?:already )?(?:have|possess|meet|bring)\b(?! not\b| never\b| yet to\b| no\b)|\bI (?:already )?(?:have|possess|meet|bring) (?:this|these|that|it|them|all)\b|\bI already (?:have|possess|meet)\b/i };
 const FP_RE = /我|\bI\b|\bmy\b|\bme\b|\bI'm\b|\bI've\b/i;
 const KEEP_CORE = new Set(['否定 / 未完成', '进行中', '仅 / 限定', '仿真 / 模拟', '预计 / 尚未授予', '讨论 / 设想']);
 const NO_GAIN = new Set(['已完成', '已获得 / 已授予', '实现', '全职 / 正式', '商业', '独立 / 个人', '公司', '医院', '实验室', '工厂 / 车间 / 现场', '导师']);
@@ -158,7 +160,7 @@ const kindOf = (s: string, l: Lang, ctx: KitContext): SentenceKind => {
   if (!FP_RE.test(s) && (JD_DESC[l].test(s) || /^(?:该公司|公司|团队|贵公司|贵司|贵团队|The company|Your company|Your team|The team)/i.test(s))) return 'jd';
   // C 类：坦白「还没做过 X」+ 学习意愿；去掉否定片段和学习表述后不再含动作 / 能力 / 数字
   if (SELF_NEG[l].test(s) && (LEARN_FRAME[l].test(s) || MOTIVE[l].test(s))) { const rest = stripNeg(s, l).replace(LEARN_FRAME[l], ' '); if (!ACT[l].test(rest) && !PSEUDO[l].test(rest) && !numberTokens(rest).length && !DEPLOY[l].test(rest)) return 'learning'; }
-  if (LEARN_FRAME[l].test(s)) { const rest = stripNeg(s, l).replace(LEARN_FRAME[l], ' '); if (!ACT[l].test(rest) && !PSEUDO[l].test(rest) && !numberTokens(rest).length && !DEPLOY[l].test(rest) && !/继续|continue/i.test(s)) return 'learning'; }
+  if (LEARN_FRAME[l].test(s)) { const ns = stripNeg(s, l); const mi = ns.search(LEARN_FRAME[l]); /* v1.11：学习框架之后是「要学的内容」，只看之前的部分有没有自述动作；「求职方向是 X」不是经历 */ const rest = (mi >= 0 && ACT[l].test(ns.slice(mi)) && !/[，,;；。](?=[^，,;；。]*$)/.test(ns.slice(mi, -1)) ? ns.slice(0, mi) : ns.replace(LEARN_FRAME[l], ' ')).replace(/我?的?求职(?:的)?方向是[^，。,]*/, ' '); if (!ACT[l].test(rest) && !PSEUDO[l].test(rest) && !numberTokens(rest).length && !DEPLOY[l].test(rest) && !/继续|continue/i.test(s)) return 'learning'; }
   if (FUTURE[l].test(s) && !(l === 'zh' ? /继续|仍然|一直|再次/ : /\bcontinu|\bagain\b|\bkeep\b/i).test(s) && !numberTokens(s.replace(l === 'zh' ? /\d{4}\s*年|\d{1,2}\s*月/g : /\b20\d\d\b/g, ' ')).length) return 'future';
   if (REFLECT[l].test(s) && !unsupportedEntities(s, l, ctx.corpus, [], ctx.majors).length && !ctx.gapTerms.some((g) => hasTerm(s, g)) && !numberTokens(s).length && !DEPLOY[l].test(stripNeg(s, l))) return 'reflection';
   if (MOTIVE_LEAD[l].test(s) && !ACT[l].test(s)) return 'motivation';
@@ -204,13 +206,23 @@ export function verifySentence(s: string, l: Lang, field: SentenceTrace['field']
   const isJdClause = (c: string) => wholeJd || (JD_DESC[l].test(c) && !FP.test(c));
   const selfPart = () => sj.split(/[，,；;：:]/).filter((c) => !isJdClause(c) && !LEARN_FRAME[l].test(c)).join('，') || s;
   const clauses = sj.split(/[，,；;：:]|(?<=[A-Za-z]) (?=and |but |which )/);
-  const selfClauses = clauses.filter((c) => !isJdClause(c));
-  const pseudoSelf = selfClauses.some((c) => PSEUDO[l].test(stripNeg(c, l).replace(LEARN_FRAME[l], ' ')));
+  // v1.11：「the role involves X and ROS」被 and 切开后，「and ROS」承接前一个复述 JD 的分句
+  const jdAt: boolean[] = []; clauses.forEach((c, i) => { jdAt[i] = isJdClause(c) || (i > 0 && jdAt[i - 1] && (l === 'zh' ? /^\s*(?:需要|要求|涉及|包括|主要|并要求|以及|并且需要)/ : /^\s*(?:and|or|together with|as well as|along with|including|plus)\b/i).test(c) && !FP.test(c)); });
+  const selfClauses = clauses.filter((_, i) => !jdAt[i]);
+  // v1.11：「基础 / 熟悉 / exposure」只对它自己所在的分句（或悬空的「familiar with and …」前一分句）生效，
+  // 不再因为同句另一分句里对资料内经历的 exposure，就把后面「希望学习 X」的 X 判成伪装
+  const pseudoOf = (c: string) => PSEUDO[l].test(stripNeg(c, l).replace(LEARN_FRAME[l], ' ').replace(/了解到?(?=岗位|贵|该|这|此|职位|公司|团队|你们)|\bI understand (?:that )?(?=the|this|your)/gi, ' ').replace(/\b(?:gain|gaining|build|building|get|getting|acquire|acquiring)\s+(?:[\w-]+\s+)?experience (?:with|in)\b/gi, ' '));
+  const dangling = (c: string) => { const m = stripNeg(c, l).match(PSEUDO[l]); if (!m || m.index === undefined) return false; const after = c.slice(m.index + m[0].length).replace(/\b(?:with|in|of|to|and)\b/gi, '').replace(/[\s，,]/g, ''); return after.length < 2; };
+  // 学习框架之后的内容是「要学什么」（如「学习 NX 和基础有限元」「learn NX and basic FEA」），其中的「基础 / basic」不是自述
+  const learnAt: boolean[] = []; selfClauses.forEach((c, i) => { learnAt[i] = LEARN_FRAME[l].test(c) || (i > 0 && learnAt[i - 1] && !FP.test(c) && !ACT[l].test(stripNeg(c, l))); });
+  const ownPart = (c: string, i: number) => { if (!learnAt[i]) return c; const k = c.search(LEARN_FRAME[l]); return k > 0 ? c.slice(0, k) : ''; };
+  const pseudoFor = (g: string) => selfClauses.some((c, i) => pseudoOf(ownPart(c, i)) && (hasTerm(c, g) || (dangling(ownPart(c, i)) && selfClauses.slice(i + 1).some((d) => hasTerm(d, g)))));
   for (const g of gaps) {
     const own = selfClauses.filter((c) => hasTerm(c, g));
     if (!own.length) continue; // 只在复述 JD 的分句里出现
-    if (learn && !pseudoSelf) continue;
-    reasons.push(learn ? `资料中没有「${g}」，同句又写了「基础 / 了解 / 熟悉」类表述，只能写成希望学习` : `资料中没有「${g}」（只出现在 JD），不能写成已有能力或基础，只能放在「希望学习」的表述里`);
+    const li = sj.search(LEARN_FRAME[l]); const actFor = li > 0 && own.some((c) => { const at = sj.indexOf(c); return at >= 0 && at + c.length <= li && (l === 'zh' ? /(?:做|用|参与|完成|负责|设计|测|开发|搭建|编写|调试|测试|实现)(?:过|了)|已(?:经)?(?:完成|做|实现|掌握)/ : ACT.en).test(stripNeg(c, l)) && !JD_DESC[l].test(c); }); // 「我做过 X，希望学习 Y」：X 仍是自述
+    if (learn && !pseudoFor(g) && !actFor) continue;
+    reasons.push(learn && !actFor ? `资料中没有「${g}」，同句又写了「基础 / 了解 / 熟悉」类表述，只能写成希望学习` : `资料中没有「${g}」（只出现在 JD），不能写成已有能力或基础，只能放在「希望学习」的表述里`);
   }
   if (POSSESS[l].test(s)) for (const g of gaps) reasons.push(`「${g}」只出现在 JD，不能声称已经具备`);
   if (POSSESS[l].test(s) && JD_DESC[l].test(s)) { const jdN = numberTokens(s).filter((n) => !numberTokens(ctx.corpus).includes(n)); if (jdN.length) reasons.push(`把 JD 的要求（${jdN.join(', ')}）写成了自己已具备`); }
@@ -243,7 +255,7 @@ export function verifySentence(s: string, l: Lang, field: SentenceTrace['field']
       const union = sup.map((x) => x.ft).join('\n');
       const exN = numberTokens(s).filter((n) => !numberTokens(union).includes(n) && !numberTokens(ctx.corpus).includes(n));
       if (exN.length) reasons.push(`使用了资料中没有的数字：${[...new Set(exN)].join(', ')}`);
-      else { const dateCtx = /年|月|\b(?:19|20)\d\d\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(s); const exT = numberTokens(s).filter((n) => !numberTokens(union).includes(n) && !(dateCtx && (ctx.dateNums ?? []).includes(n))); if (exT.length) reasons.push(`数字 ${[...new Set(exT)].join(', ')} 与所述经历对不上`); }
+      else { const dateCtx = /年|月|\b(?:19|20)\d\d\b|\b(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)/i.test(s); const wide = scored.filter((x) => x.score >= thr).map((x) => x.ft).join('\n'); /* v1.11：一句合并两条事实时，数字可来自任一条本身就能对上的事实 */ const exT = numberTokens(s).filter((n) => !numberTokens(union).includes(n) && !numberTokens(wide).includes(n) && !(dateCtx && (ctx.dateNums ?? []).includes(n))); if (exT.length) reasons.push(`数字 ${[...new Set(exT)].join(', ')} 与所述经历对不上`); }
       const topText = top.f.core?.[l] || ''; const sNoNegForKeep = s; const sOrg = s.replace(GENERIC_ORG[l], ' ');
       const bulletTop = top.f.type === 'bullet' || (top.f.type === 'entry' && /^edu/.test(top.f.id));
       const degreeTalk = /学位|毕业|degree|graduat|conferr/i.test(s);

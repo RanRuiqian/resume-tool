@@ -10,6 +10,11 @@
 | v3 | 历史简历条目补齐 `syncStatus`；事实审查 `audit` 为可选字段 |
 | v4 | 新增 `postings, applications, appEvents, artifacts, attachments, attachmentBlobs`（只新增，不改旧表） |
 
+## v1.11.0（无结构变更，仍为 version 4）
+- `applications.status` 新增可选值 **`pending`（待投递）**，排在 `saved` 之后；统计中单独计数，**不计入**已投递 / 等待回复。旧记录不受影响。
+- `postings.source.kind` 新增 **`analysis`**（来自岗位分析历史）；`postings.jobParseId` 指向 `jobs` 表中的岗位分析记录（已有可选字段）。「关联到已有」只写入 `jobParseId`，不改写已有岗位的其他字段。
+- `ResumePlan`（`relevance.ts`，仅内存，不写入 IndexedDB）新增可选 `budgets`、`dropped`、`model`、`ranked`；落选原因写入简历 `notes`（已有字段）。
+
 ## v4 新表
 | 表 | 索引 | 说明 |
 |---|---|---|

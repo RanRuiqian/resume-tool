@@ -90,3 +90,85 @@ describe('v1.11 kitVerify — 整篇与精简版', () => {
     expect(safe?.coverLetter.en).not.toMatch(/NX experience/);
   });
 });
+
+describe('v1.11 kitVerify — 本轮真实运行发现的误杀（exposure 只作用于本分句）', () => {
+  it('passes a learning clause after an exposure clause about a profile-backed experience', () => {
+    const v = check('In a digital otoscope prototype project, I took part in imaging tests, which gave me direct exposure to imaging-quality test workflows and motivated me to learn more about image acquisition and distortion analysis.', 'en', 'B');
+    expect(v.reasons.filter((r) => /distortion|image acquisition/.test(r))).toEqual([]);
+  });
+  it('passes 希望有机会参与…并在工作中学习 X', () => {
+    const v = check('希望有机会参与机器人工作站现场调试，并在工作中学习 ROS 与路径规划。', 'zh', 'C');
+    expect(v.reasons.filter((r) => /ROS|路径规划|现场调试/.test(r))).toEqual([]);
+  });
+  it('still blocks a gap dressed up as basis, even when a learning phrase follows', () => {
+    expect(check('I have basic knowledge of ROS and want to learn more about it.', 'en', 'C').ok).toBe(false);
+    expect(check('I am familiar with and want to learn more about ROS.', 'en', 'C').ok).toBe(false);
+    expect(check('我有 ROS 基础，希望入职后继续学习。', 'zh', 'C').ok).toBe(false);
+  });
+});
+
+describe('v1.11 kitVerify — 第二轮真实运行的误杀', () => {
+  it('「我了解岗位需要 X，希望入职后学习」不是伪装基础', () => {
+    const v = check('我了解岗位需要Python自动化测试脚本与畸变等测试项目，希望入职后学习这些内容。', 'zh', 'B');
+    expect(v.reasons.filter((r) => /畸变/.test(r))).toEqual([]);
+  });
+  it('公司简称（去掉「有限」）不算资料中没有的机构；编造的机构仍拦', () => {
+    expect(check('此外，我在船舶修造公司做过轮机实习生，参与主机与辅机拆装检修。', 'zh', 'B').reasons.filter((r) => /船舶修造公司/.test(r))).toEqual([]);
+    expect(check('此外，我在远洋航运公司做过轮机实习生，参与主机与辅机拆装检修。', 'zh', 'B').ok).toBe(false);
+  });
+});
+
+describe('v1.11 kitVerify — 第三轮真实运行的误杀', () => {
+  it('field of view 不是「现场」', () => {
+    const v = check('I also took part in building the imaging test flow, measuring MTF50 and SNR per ISO 12233 to compare 2 lens modules, with a 70° field of view, 10–30 mm working distance, 500 lux illumination and 10 ms exposure.', 'en', 'B');
+    expect(v.reasons.filter((r) => /现场/.test(r))).toEqual([]);
+  });
+  it('gain experience in X 是学习意愿；I have experience in X 仍拦', () => {
+    expect(check('I am eager to learn ROS and gain experience in on-site commissioning of robot cells.', 'en', 'C').reasons.filter((r) => /commissioning|ROS/.test(r))).toEqual([]);
+    expect(check('I have experience in ROS and want to learn more.', 'en', 'C').ok).toBe(false);
+  });
+});
+
+describe('v1.11 kitVerify — 「which I have not yet worked with」不是声称具备', () => {
+  it('passes the honest sentence, still blocks the possessive one', () => {
+    expect(check('I understand the role also involves on-site commissioning and ROS, which I have not yet worked with; I am eager to learn them on the job.', 'en', 'C').ok).toBe(true);
+    expect(check('The role requires ROS, which I already have.', 'en', 'C').ok).toBe(false);
+  });
+});
+describe('v1.11 kitVerify — 被分号切开的诚实句', () => {
+  it('「I understand the role also involves X and ROS, which I have not yet worked with;」通过', () => {
+    expect(check('I understand the role also involves on-site commissioning and ROS, which I have not yet worked with;', 'en', 'C').ok).toBe(true);
+    expect(check('I have used ROS and on-site commissioning tools in my projects.', 'en', 'C').ok).toBe(false);
+  });
+});
+describe('v1.11 kitVerify — 第四轮真实运行的误杀', () => {
+  it('一句合并两条事实时数字不误拦', () => {
+    expect(check('同时，我参与搭建成像测试流程，按 ISO 12233 测量 MTF50 与 SNR，对比 2 款镜头模组的成像质量，测试条件为视场角 70°、工作距离 10–30 mm、照度 500 lux、曝光 10 ms，结果为 MTF50 0.32 cycles/pixel、SNR 38 dB。', 'zh', 'B').ok).toBe(true);
+    expect(check('我参与搭建成像测试流程，按 ISO 12233 测量 MTF50 与 SNR，对比 5 款镜头模组。', 'zh', 'B').ok).toBe(false);
+  });
+  it('JD 复述被 together with 切开', () => {
+    const v = check("The role's focus on building imaging-quality test flows for cameras and lens modules, together with image acquisition and test data analysis, connects directly with the imaging test work I took part in during a digital otoscope prototype project.", 'en', 'B');
+    expect(v.reasons.filter((r) => /image acquisition/.test(r))).toEqual([]);
+  });
+  it('「我求职的方向是 X，希望入职后学习 Y」是学习意愿', () => {
+    expect(check('我求职的方向是机器视觉测试，希望入职后学习图像采集、畸变测试和用Python写自动化测试脚本。', 'zh', 'B').ok).toBe(true);
+    expect(check('我做过畸变测试，希望入职后学习图像采集。', 'zh', 'B').ok).toBe(false);
+  });
+});
+describe('v1.11 kitVerify — 还没做过', () => {
+  it('「X 这块我还没做过，希望入职后跟着学习」通过；「我做过 X」仍拦', () => {
+    expect(check('我想往机器人应用方向发展，现场调试这块我还没做过，希望入职后跟着学习。', 'zh', 'C').ok).toBe(true);
+    expect(check('我做过现场调试，希望入职后继续学习 ROS。', 'zh', 'C').ok).toBe(false);
+  });
+});
+describe('v1.11 kitVerify — 第五轮真实运行的误杀', () => {
+  it('「看到贵公司…岗位，需要 3D CAD…」是复述 JD', () => {
+    expect(check('看到贵公司机械设计工程师岗位，需要3D CAD、原型制作与英文技术文档能力，这与我在结构设计和原型开发方面的经历方向一致，特此应聘。', 'zh', 'A').reasons.filter((r) => /CAD/.test(r))).toEqual([]);
+  });
+  it('学习对象里的「基础 / basic」不是伪装基础', () => {
+    expect(check('我求职方向是机械设计，也希望入职后学习NX、公差分析和基础有限元仿真。', 'zh', 'A').ok).toBe(true);
+    expect(check('I am eager to learn NX, tolerance analysis and basic FEA.', 'en', 'A').ok).toBe(true);
+    expect(check('我有有限元仿真基础，也希望入职后学习NX。', 'zh', 'A').ok).toBe(false);
+    expect(check('I have a basic foundation in FEA, and I am eager to learn NX.', 'en', 'A').ok).toBe(false);
+  });
+});

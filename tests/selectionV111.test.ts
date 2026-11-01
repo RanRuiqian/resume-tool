@@ -65,3 +65,24 @@ describe('v1.11 staged selection (fictional fixture)', () => {
     expect(coverage(P, J.C, pl.model!, pl.ranked!, 'zh')).toEqual(coverage(P, J.C, pl.model!, pl.ranked!, 'zh'));
   });
 });
+
+import { stripAuthorList } from '../src/ai/evidence';
+describe('v1.11 author list', () => {
+  it('strips the full author list from a bullet but keeps 第一作者 / first author', () => {
+    expect(stripAuthorList('以第一作者撰写会议论文《X》，已被会议录用（作者：沈一帆、赵明、钱晓、孙立）。')).toBe('以第一作者撰写会议论文《X》，已被会议录用。');
+    expect(stripAuthorList('First author of the paper "X", accepted (authors: Yifan Shen, Ming Zhao, Xiao Qian, Li Sun).')).toBe('First author of the paper "X", accepted.');
+  });
+});
+
+import { guardRewrite, truncatedNames } from '../src/quality/resumeGuard';
+describe('v1.11 机构 / 会议名称不得被缩写', () => {
+  it('flags 虚构国际医学工程会议 → 国际医学工程会议 and the English equivalent', () => {
+    const zh = '以第一作者撰写会议论文《X》，已被虚构国际医学工程会议录用。';
+    expect(guardRewrite(zh, '以第一作者撰写会议论文《X》，已被国际医学工程会议录用。', 'zh').some((r) => /名称被缩写/.test(r))).toBe(true);
+    expect(truncatedNames(zh, '以第一作者撰写会议论文《X》，已被虚构国际医学工程会议录用。')).toEqual([]);
+    const en = 'First author of the paper "X", accepted by the Fictional International Conference on Medical Engineering.';
+    expect(truncatedNames(en, 'First author of "X", accepted by the International Conference on Medical Engineering.')).toEqual(['Fictional International Conference on Medical Engineering']);
+    expect(truncatedNames(en, en)).toEqual([]);
+    expect(truncatedNames('在虚构船舶修造有限公司参与主机检修。', '于虚构船舶修造有限公司参与主机检修。')).toEqual([]);
+  });
+});

@@ -1,7 +1,7 @@
 import type { Settings } from '../types';
 import { baseUrlProblem, isOfficialDeepSeek } from '../storage/defaults';
 
-export type AiErrorKind = 'nokey' | 'auth' | 'balance' | 'rate' | 'model' | 'timeout' | 'network' | 'server' | 'format' | 'other';
+export type AiErrorKind = 'nokey' | 'auth' | 'balance' | 'rate' | 'model' | 'timeout' | 'network' | 'server' | 'format' | 'json' | 'other';
 export class AiError extends Error {
   kind: AiErrorKind; status?: number;
   constructor(msg: string, kind: AiErrorKind = 'other', status?: number) { super(msg); this.kind = kind; this.status = status; }
@@ -86,8 +86,14 @@ export function parseJson<T>(s: string): T {
   const m = s.match(/```(?:json)?\s*([\s\S]*?)```/);
   const raw = (m ? m[1] : s).trim();
   const start = raw.search(/[[{]/);
-  try { return JSON.parse(start > 0 ? raw.slice(start) : raw) as T; }
-  catch { throw new AiError('AI 输出不是合法 JSON'); }
+  const body = start > 0 ? raw.slice(start) : raw;
+  try { return JSON.parse(body) as T; }
+  catch {
+    // v1.11：模型偶尔在 JSON 后追加说明文字——只截取到最后一个闭合括号再试，不做任何内容修补
+    const end = Math.max(body.lastIndexOf('}'), body.lastIndexOf(']'));
+    if (end > 0 && end < body.length - 1) { try { return JSON.parse(body.slice(0, end + 1)) as T; } catch { /* 落到下方 */ } }
+    throw new AiError('AI 输出不是合法 JSON', 'json');
+  }
 }
 
 export async function chatJson<T>(s: Settings, messages: ChatMsg[], opts: { model?: string; maxTokens?: number; timeoutMs?: number } = {}): Promise<T> {
@@ -95,6 +101,8 @@ export async function chatJson<T>(s: Settings, messages: ChatMsg[], opts: { mode
   catch (e) {
     // 部分服务不支持 response_format，降级重试一次
     if (e instanceof AiError && /400/.test(e.message)) return parseJson<T>(await chat(s, messages, opts));
+    // v1.11：输出不是合法 JSON（非截断）时整次重试一次，而不是静默丢弃该步骤结果
+    if (e instanceof AiError && e.kind === 'json') return parseJson<T>(await chat(s, messages, { ...opts, json: true }));
     throw e;
   }
 }

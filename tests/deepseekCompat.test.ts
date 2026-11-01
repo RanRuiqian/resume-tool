@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_SETTINGS, migrateSettings, PROVIDERS, RETIRED_DEEPSEEK_MODEL } from '../src/storage/defaults';
-import { chat, onAiUsage, AiError } from '../src/ai/provider';
+import { chat, chatJson, parseJson, onAiUsage, AiError } from '../src/ai/provider';
 import type { Settings } from '../src/types';
 
 // 模拟测试：不访问网络，fetch 被替换为假实现；不使用真实 API Key
@@ -85,5 +85,15 @@ describe('v1.11 DeepSeek compatibility', () => {
     await expect(chat(s, [{ role: 'user', content: 'x' }])).rejects.toBeInstanceOf(AiError);
     expect(seen).toHaveLength(1); expect(JSON.stringify(seen)).not.toContain('sk-test-fake'); expect((seen[0] as { cacheHitTokens: number }).cacheHitTokens).toBe(4);
     off(); vi.unstubAllGlobals();
+  });
+  it('invalid JSON is retried once instead of silently dropping the step; trailing prose is tolerated', async () => {
+    expect(parseJson<{ a: number }>('{"a":1}\n以上为结果。')).toEqual({ a: 1 });
+    const outs = ['{"a": 1, "b": ', '{"a":2}']; let n = 0;
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({ model: 'deepseek-flash', choices: [{ finish_reason: 'stop', message: { content: outs[n++] } }] }), { status: 200 })));
+    const s = { ...DEFAULT_SETTINGS, apiKey: 'sk-test-fake' };
+    await expect(chatJson<{ a: number }>(s, [{ role: 'user', content: 'x' }])).resolves.toEqual({ a: 2 }); expect(n).toBe(2);
+    n = 0; outs[1] = 'still not json';
+    await expect(chatJson(s, [{ role: 'user', content: 'x' }])).rejects.toMatchObject({ kind: 'json' }); expect(n).toBe(2);
+    vi.unstubAllGlobals();
   });
 });
