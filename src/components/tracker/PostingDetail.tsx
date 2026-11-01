@@ -23,7 +23,14 @@ function guessKind(name: string, mime: string): AttachmentKind {
 }
 
 export function PostingDetail({ posting, go, onEdit, onDelete, onChanged }: { posting: JobPosting; go: (p: string) => void; onEdit: () => void; onDelete: () => void; onChanged: () => void }) {
-  const { profile, resume, job, templates, template } = useApp();
+  const { profile, resume, job, templates, template, setJob, setResume } = useApp();
+  /** v1.11：回到对应的岗位分析 / 简历制作记录（只读取，不修改） */
+  const openAnalysis = async () => {
+    const j = posting.jobParseId ? await db.jobs.get(posting.jobParseId) : undefined;
+    if (!j) { setMsg({ t: 'warn', m: '对应的岗位分析记录不存在（可能已删除），求职记录本身不受影响' }); return; }
+    const r = (await db.resumes.where('jobId').equals(j.id).toArray()).sort((a, b) => (b.createdAt ?? '').localeCompare(a.createdAt ?? ''))[0];
+    setJob(j); setResume(r ?? null); go('wizard');
+  };
   const [apps, setApps] = useState<Application[]>([]);
   const [appId, setAppId] = useState('');
   const [events, setEvents] = useState<ApplicationEvent[]>([]);
@@ -110,8 +117,9 @@ export function PostingDetail({ posting, go, onEdit, onDelete, onChanged }: { po
         <div className="grid2 small">
           <div>投递网址：<ExtLink url={posting.applyUrl} /></div><div>官方招聘：<ExtLink url={posting.officialUrl} /></div>
           <div>来源平台：{posting.sourcePlatform || '—'}</div><div>截止日期：{posting.deadline || '—'}　发布：{posting.publishedAt || '—'}</div>
-          <div>薪资：{posting.salary || '—'}</div><div className="muted">创建 {fmt(posting.createdAt)} · 更新 {fmt(posting.updatedAt)} · 来源 {posting.source.kind === 'manual' ? '手动' : `${posting.source.kind}${posting.source.fileName ? `（${posting.source.fileName}）` : ''}`}</div>
+          <div>薪资：{posting.salary || '—'}</div><div className="muted">创建 {fmt(posting.createdAt)} · 更新 {fmt(posting.updatedAt)} · 来源 {posting.source.kind === 'manual' ? '手动' : posting.source.kind === 'analysis' ? '岗位分析历史' : `${posting.source.kind}${posting.source.fileName ? `（${posting.source.fileName}）` : ''}`}</div>
         </div>
+        {posting.jobParseId && <div className="small"><button className="link" data-testid="open-analysis" onClick={openAnalysis}>↩ 打开对应的岗位分析 / 简历制作记录</button></div>}
         {posting.notes && <div className="notice">{posting.notes}</div>}
       </div>
       {msg && <div className={`notice ${msg.t}`} data-testid="detail-msg">{msg.m}</div>}

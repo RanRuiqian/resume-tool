@@ -3,7 +3,7 @@ import { APP_STATUSES, type Application, type AppStatus, type JobPosting } from 
 export const WAITING: AppStatus[] = ['applied'];
 export const ACTIVE_STAGE: AppStatus[] = ['assessment', 'interviewing'];
 
-/** 统计面板：只基于真实记录计算，不填充任何演示数字 */
+/** 统计面板：只基于真实记录计算，不填充任何演示数字。v1.11：「待投递」（从岗位分析加入）单独计数，不计入已投递 / 等待回复 */
 export function computeStats(postings: JobPosting[], apps: Application[], today = new Date()) {
   const latest = latestByPosting(apps);
   const byStatus = Object.fromEntries(APP_STATUSES.map((s) => [s, 0])) as Record<AppStatus, number>;
@@ -30,7 +30,7 @@ export function computeStats(postings: JobPosting[], apps: Application[], today 
   const recent = [...postings].sort((a, b) => (latest.get(b.id)?.updatedAt ?? b.updatedAt).localeCompare(latest.get(a.id)?.updatedAt ?? a.updatedAt)).slice(0, 5);
   return {
     postings: postings.length, tracked: latest.size, untracked: postings.length - latest.size,
-    saved: byStatus.saved, applied: everApplied, waiting: byStatus.applied, testOrInterview: byStatus.assessment + byStatus.interviewing,
+    saved: byStatus.saved, pending: byStatus.pending, applied: everApplied, waiting: byStatus.applied, testOrInterview: byStatus.assessment + byStatus.interviewing,
     offer: byStatus.offer, rejected: byStatus.rejected, byStatus, byCity, byCompany, upcoming, recent,
   };
 }
