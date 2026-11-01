@@ -1,6 +1,6 @@
 # AI 交接说明（AI_HANDOFF）
 
-本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-11-01（v1.11.0 分阶段选材 / DeepSeek 审计 / 岗位分析接入求职管理）。
+本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-11-01（v1.12 Draft：固定双语简介、完整职业背景、软版面预算与多来源概括；未合并未部署）。
 
 ## 1. 产品
 面向中国求职者（主要是 2027 届机械 / 机器视觉方向）的双语简历工具：
@@ -121,3 +121,7 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 
 ## 7. 待办与已知限制
 见 `docs/PROJECT_STATUS.md`。
+
+## v1.12 当前接手入口
+
+当前开发分支 `feat/ai-led-resume-planning` / Draft PR #13。先读 `docs/V112_PERSONAL_COMPLETENESS.zh-CN.md`：简介固定复用、工作/组织主选与候补、无硬条数配额、同经历 `sourceIds`、完整校验与局部修复。`summary.ts` 的旧岗位简介工具不再由生成流程调用。真实资料/真实 Pro 和 Word 最终视觉仍需人工验收。

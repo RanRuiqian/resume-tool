@@ -4,6 +4,7 @@ import { JD_PARSE_PROMPT, OCR_PROMPT } from './prompts';
 import { KEYWORD_DICT } from './keywords';
 import { guessRoleAbbr, shortCompanyName } from '../export/naming';
 import { uid } from '../locale/text';
+import { decisionModel } from './aiPlanner';
 
 export async function ocrImage(s: Settings, dataUrl: string): Promise<string> {
   return (await chat(s, [{ role: 'user', content: [{ type: 'text', text: OCR_PROMPT }, { type: 'image_url', image_url: { url: dataUrl } }] }], { model: s.visionModel || s.model })).trim();
@@ -106,7 +107,8 @@ export async function analyzeJob(s: Settings, text: string, opts: { current: Job
 }
 
 export async function parseJdAi(s: Settings, text: string): Promise<JobParse> {
-  const r = await chatJson<Partial<JobParse>>(s, [{ role: 'system', content: '你是招聘信息解析助手，只输出 JSON。' }, { role: 'user', content: `${JD_PARSE_PROMPT}\n\nJD：\n"""\n${text}\n"""` }]);
+  const r = await chatJson<Partial<JobParse>>(s, [{ role: 'system', content: '你是资深工程招聘岗位分析顾问。精确区分职责、硬性要求与加分项；只输出 JSON。' }, { role: 'user', content: `${JD_PARSE_PROMPT}\n\nJD：\n"""\n${text}\n"""` }],
+    { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 12_000 });
   const bi = (a: unknown): Bi[] => (Array.isArray(a) ? a.filter((x) => x && (x.zh || x.en)).map((x) => ({ zh: String(x.zh ?? ''), en: String(x.en ?? '') })) : []);
   return normalizeJob({
     id: uid('job'), createdAt: new Date().toISOString(), rawText: text,

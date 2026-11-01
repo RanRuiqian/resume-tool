@@ -1,4 +1,4 @@
-import type { Lang, LocalizedText, ProfileDoc } from '../types';
+import type { GenItem, Lang, LocalizedText, ProfileDoc } from '../types';
 import { lt } from '../locale/text';
 
 /** 事实来源记录（B2）：复用资料库已有的稳定 id（要点 id / 条目 id / 'summary'），不另建数据库 */
@@ -28,7 +28,7 @@ const status = (t?: LocalizedText): FactSource['confirmationStatus'] => {
 };
 const nm = (t?: LocalizedText) => lt(t ?? {}, 'zh') || lt(t ?? {}, 'en');
 
-export function buildSourceIndex(p: ProfileDoc): Map<string, FactSource> {
+export function buildSourceIndex(p: ProfileDoc, items: GenItem[] = []): Map<string, FactSource> {
   const m = new Map<string, FactSource>();
   const add = (s: FactSource) => { if (s.sourceId) m.set(s.sourceId, s); };
   add({ sourceId: 'summary', sourceType: 'summary', sourcePath: 'profile.summary', originalText: both(p.profile.summary), relatedEvidenceIds: [], confirmationStatus: status(p.profile.summary) });
@@ -57,6 +57,24 @@ export function buildSourceIndex(p: ProfileDoc): Map<string, FactSource> {
   for (const c of p.certificates) add({ sourceId: c.id, sourceType: 'certificate', sourcePath: `certificates[${nm(c.name)}]`, originalText: both(c.name), relatedEvidenceIds: [], confirmationStatus: status(c.name), dates: [c.date].filter(Boolean) });
   for (const c of p.awards) add({ sourceId: c.id, sourceType: 'award', sourcePath: `awards[${nm(c.name)}]`, originalText: both(c.name), relatedEvidenceIds: [], confirmationStatus: status(c.name), dates: [c.date].filter(Boolean) });
   for (const ev of p.evidence ?? []) add({ sourceId: ev.id, sourceType: 'evidence', sourcePath: `evidence[${ev.fileName}]`, originalText: { zh: ev.proves, en: '' }, relatedProjectId: ev.projectIds[0], relatedEvidenceIds: [ev.id], confirmationStatus: ev.confirmed ? 'confirmed' : 'unknown' });
+  // 用原始索引合成多来源视图；无效、跨经历、重复引用不能假装拥有合法出处。
+  const originals = new Map(m), claims = new Set<string>();
+  for (const item of items) {
+    const ids = Array.isArray(item.sourceIds) ? item.sourceIds : item.sourceIds === undefined ? [item.sourceId] : [];
+    const sources = Array.isArray(ids) ? ids.map((id) => originals.get(id)) : [];
+    const parent = sources[0]?.parentId;
+    const valid = ids.length && ids.includes(item.sourceId) && new Set(ids).size === ids.length
+      && sources.every((x) => x && (ids.length === 1 || (parent && x.parentId === parent && (x.sourceType === 'work-bullet' || x.sourceType === 'project-bullet'))))
+      && ids.every((id) => !claims.has(id));
+    if (!valid) { m.delete(item.sourceId); continue; }
+    ids.forEach((id) => claims.add(id));
+    if (sources.length < 2) continue;
+    const ss = sources as FactSource[];
+    add({ ...ss[0], sourceId: item.sourceId, sourcePath: ss.map((x) => x.sourcePath).join(' + '),
+      originalText: { zh: ss.map((x) => x.originalText.zh).filter(Boolean).join('\n'), en: ss.map((x) => x.originalText.en).filter(Boolean).join('\n') },
+      confirmationStatus: ss.some((x) => x.confirmationStatus === 'machine') ? 'machine' : ss.every((x) => x.confirmationStatus === 'confirmed') ? 'confirmed' : ss.every((x) => ['manual', 'confirmed'].includes(x.confirmationStatus)) ? 'manual' : 'unknown',
+      relatedEvidenceIds: [...new Set(ss.flatMap((x) => x.relatedEvidenceIds))] });
+  }
   return m;
 }
 

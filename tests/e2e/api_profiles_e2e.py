@@ -112,7 +112,12 @@ with sync_playwright() as p:
     chk('12 402 → 余额不足', '余额不足' in T['欠费'])
     chk('12 网络故障 → 无法连接（不说 Key 无效）', '无法连接' in T['断网'] and 'Key' not in T['断网'])
     chk('12 测试不改变当前启用配置', cur(pg)['activeProfileId']==act and item(pg,'Qwen 备用（Max）').locator('[data-testid=api-active]').count()==1)
-    tr=[r for r in reqs if 'max_tokens' in r['body']]; chk('测试请求为最小请求（max_tokens=8）', len(tr)>=4 and all('"max_tokens":8' in r['body'] for r in tr))
+    # 只检查连接测试请求；JD 解析有独立的 token 预算，不能被误当成连接测试。
+    connection_messages=[{'role':'user','content':'只回复 OK'}]
+    tr=[json.loads(r['body']) for r in reqs if json.loads(r['body']).get('messages')==connection_messages]
+    chk('测试请求为最小请求（max_tokens=8）', len(tr)>=4 and all(r.get('max_tokens')==8 for r in tr))
+    analysis=[json.loads(r['body']) for r in new]
+    chk('JD 分析使用独立预算，不冒充 8 token 连接测试', len(analysis)>0 and all(r.get('max_tokens')==12000 and r.get('messages')!=connection_messages for r in analysis))
     pg.locator('[data-testid=api-list]').screenshot(path=S+'p7_test_results.png'); chk('测试结果截图不含 Key', no_key_visible(pg))
     # 超时（模拟：路由挂起 > 20 秒）
     c.unroute('https://api.deepseek.com/**'); c.route('https://api.deepseek.com/**', lambda r: None if 'SLOW' in r.request.headers.get('authorization','') else ai_route(r))

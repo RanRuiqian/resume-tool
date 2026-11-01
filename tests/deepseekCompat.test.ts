@@ -64,6 +64,13 @@ describe('Chat Completions 请求（模拟 fetch）', () => {
     expect(calls[0].body).toMatchObject({ model: 'deepseek-flash', thinking: { type: 'disabled' }, response_format: { type: 'json_object' } });
     expect(Object.keys(calls[0].body).sort()).toEqual(['messages', 'model', 'response_format', 'temperature', 'thinking']);
   });
+  it('深度选材可以显式使用 Pro 并开启思考模式', async () => {
+    const calls = capture();
+    await chatJson(S(), [{ role: 'user', content: '返回 JSON {"ok":true}' }],
+      { model: 'deepseek-v4-pro', thinking: 'enabled', maxTokens: 12000 });
+    expect(calls[0].body).toMatchObject({ model: 'deepseek-v4-pro', thinking: { type: 'enabled' },
+      response_format: { type: 'json_object' }, max_tokens: 12000 });
+  });
   it('其他服务商不发送 DeepSeek 专用的 thinking 参数', async () => {
     const calls = capture();
     await chat(S({ provider: 'openai', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' }), [{ role: 'user', content: 'hi' }]);

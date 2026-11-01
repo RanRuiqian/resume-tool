@@ -2,14 +2,14 @@ import type { Lang, TemplateConfig } from '../types';
 
 export const MAX_FIT_LEVEL = 6;
 /** 自动适配页数：逐级收紧字号、行高、间距与页边距（每级约 4–6%） */
-export function fitTemplate(tpl: TemplateConfig, lang: Lang, level: number): TemplateConfig {
+export function fitTemplate(tpl: TemplateConfig, lang: Lang, level: number, preserveType = false): TemplateConfig {
   if (level <= 0) return tpl;
   const t = structuredClone(tpl);
   const ty = t.locales[lang].typography;
   const minBody = t.page.minBodyPt ?? 9; // v1.10：正文字号下限 9pt，放不下时提示删减低相关内容，而不是继续缩小
-  ty.bodySizePt = Math.max(Math.min(minBody, ty.bodySizePt), ty.bodySizePt - 0.25 * level);
+  ty.bodySizePt = preserveType ? ty.bodySizePt : Math.max(Math.min(minBody, ty.bodySizePt), ty.bodySizePt - 0.25 * level);
   ty.nameSizePt = Math.max(t.page.minBodyPt ? 18 : 15, ty.nameSizePt - 0.5 * level);
-  ty.lineHeight = Math.max(t.page.minBodyPt ? 1.25 : 1.15, ty.lineHeight - 0.035 * level);
+  ty.lineHeight = preserveType ? ty.lineHeight : Math.max(t.page.minBodyPt ? 1.25 : 1.15, ty.lineHeight - 0.035 * level);
   const k = Math.pow(0.85, level);
   t.spacing = { sectionGapMm: Math.max(1.5, t.spacing.sectionGapMm * k), itemGapMm: Math.max(0.8, t.spacing.itemGapMm * k) };
   const mk = Math.pow(0.92, level);

@@ -241,6 +241,8 @@ export interface TranslationCheck {
 }
 export interface GenItem {
   sourceId: string; zh: string; en: string; syncStatus: SyncStatus;
+  /** v1.12：同一经历内多事实概括；包含主 sourceId，所有来源必须真实、已选且各只使用一次。缺省即单来源。 */
+  sourceIds?: string[];
   translation?: TranslationCheck;
   /** 用户人工确认过的语言版本：重新本地化时优先保留（B6） */
   confirmedLangs?: Lang[];
@@ -260,6 +262,8 @@ export interface ResumeDoc {
   items: GenItem[];
   consistency: { checkedAt: string; issues: ConsistencyIssue[] };
   generatedBy: 'ai' | 'rules';
+  /** v1.12：新生成简历保持用户设置的正文字号，超页用提示或两页，不靠继续缩字容纳。旧记录缺省沿用原逻辑。 */
+  layoutPolicy?: 'readable';
   notes?: string[];
   /** 求职信 / 自我介绍 / 面试准备（可选功能） */
   /** kitReview（v1.10.1，可选）：用户对「逐句核对未通过」的求职信/自我介绍做了人工核对并允许导出；只对 textHash 对应的那份文本有效 */

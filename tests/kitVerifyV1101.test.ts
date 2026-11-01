@@ -213,7 +213,13 @@ describe('v1.10.1 prep directions never claim skills', () => {
 describe('v1.10.1 resume: no keyword-injected tools, degree / major exact', () => {
   const txt = (p: ProfileDoc, r: ResumeDoc, l: 'zh' | 'en') => layoutToText(buildLayout(p, BUILTIN_TEMPLATES[0], l, r));
   it('AI rewrite that injects NX / ROS is rejected; AI summary with another major is dropped; translation with another major is not used', async () => {
-    mock.mockResolvedValueOnce({ selection: { work: ['work-1'], projects: ['proj-1', 'proj-3'], education: ['edu-1'], skills: [], certificates: [] }, matchScore: 70, gaps: [], items: [
+    mock.mockResolvedValueOnce({
+      requirements: [{ text: '结构设计', tier: 'must', assessment: 'direct', evidenceIds: ['work-1-b1'] }],
+      entries: [{ entryId: 'work-1', bulletIds: ['work-1-b1'] }, { entryId: 'proj-3', bulletIds: ['proj-3-b1'] }],
+      education: [{ entryId: 'edu-1', bulletIds: [] }], skills: [], certificates: [], awards: [],
+      summaryFocus: '结构设计和仿真', tradeoffs: '重点展示实习和仿真',
+    });
+    mock.mockResolvedValueOnce({ items: [
       { sourceId: 'work-1-b1', text: '实习期间协助完成发电机支架的 SolidWorks 与 NX 结构设计；参与 2 轮原型验证并整理装配图纸。' },
       { sourceId: 'proj-3-b1', text: '在 RobotStudio 与 ROS 中参与六轴机械臂抓取路径的离线编程与仿真（仅仿真，未上实机）。' },
       { sourceId: 'summary', text: '船舶与海洋工程专业应届生，熟悉 NX 与 ROS。' },

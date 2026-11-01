@@ -106,8 +106,20 @@ describe('v1.10 relevance & density (scenarios A/B/C, fictional profile)', () =>
 });
 
 describe('v1.10 AI path fixes (mocked DeepSeek)', () => {
+  const planned = (job: 'A' | 'C') => ({
+    requirements: [{ text: '结构设计或仿真经历', tier: 'must', assessment: 'direct', evidenceIds: [job === 'A' ? 'work-1-b1' : 'proj-3-b1'] }],
+    entries: job === 'A' ? [
+      { entryId: 'work-1', bulletIds: ['work-1-b1', 'work-1-b2'], reason: '实习结构设计和 BOM' },
+      { entryId: 'proj-1', bulletIds: ['proj-1-b1'], reason: '设计及原型验证' },
+    ] : [
+      { entryId: 'proj-3', bulletIds: ['proj-3-b1'], reason: '机器人仿真' },
+      { entryId: 'work-1', bulletIds: ['work-1-b1'], reason: '工程相关经验' },
+    ],
+    education: [{ entryId: 'edu-1', bulletIds: [] }], skills: ['sk-1'], certificates: [], awards: [], summaryFocus: '真实工程实践', tradeoffs: '优先保留工程工作',
+  });
   it('bug A: selected entry with no AI items gets ≤2 concise bullets, not all raw bullets', async () => {
-    mock.mockResolvedValueOnce({ selection: { work: ['work-1'], projects: ['proj-1'], education: ['edu-1'] }, items: [], matchScore: 70, gaps: [] });
+    mock.mockResolvedValueOnce(planned('A'));
+    mock.mockResolvedValueOnce({ items: [] });
     mock.mockRejectedValueOnce(new Error('offline'));
     const r = await generateResume(S, P, J.A, 'zh', 1);
     const w = r.items.filter((i) => i.sourceId.startsWith('work-1-'));
@@ -115,10 +127,11 @@ describe('v1.10 AI path fixes (mocked DeepSeek)', () => {
     expect(w.some((i) => i.sourceId === 'work-1-b3')).toBe(false);
   });
   it('bug B: rewrite failing the guard falls back to the concise original, not an invented text', async () => {
-    mock.mockResolvedValueOnce({ selection: { work: ['work-1'], projects: ['proj-3'], education: ['edu-1'] }, items: [
+    mock.mockResolvedValueOnce(planned('C'));
+    mock.mockResolvedValueOnce({ items: [
       { sourceId: 'proj-3-b1', text: '主导六轴机械臂抓取路径规划并在工厂完成部署' },
       { sourceId: 'work-1-b1', text: '协助完成发电机支架的 SolidWorks 结构设计，参与 2 轮原型验证' },
-    ], matchScore: 72, gaps: [] });
+    ] });
     mock.mockRejectedValueOnce(new Error('offline'));
     const r = await generateResume(S, P, J.C, 'zh', 1);
     const b = r.items.find((i) => i.sourceId === 'proj-3-b1')!;
@@ -232,12 +245,17 @@ describe('v1.10 cover letter & self-intro quality', () => {
   });
 });
 
-describe('v1.10 AI path keeps language tests', () => {
-  it('language-test certificate is kept even if AI did not select it', async () => {
-    mock.mockResolvedValueOnce({ selection: { work: ['work-1'], projects: ['proj-1'], education: ['edu-1'], certificates: [] }, items: [], matchScore: 70, gaps: [] });
+describe('v1.12 AI path: model controls secondary material selection', () => {
+  it('does not silently add an unselected language test or an unrelated qualification', async () => {
+    mock.mockResolvedValueOnce({
+      requirements: [{ text: '结构设计', tier: 'must', assessment: 'direct', evidenceIds: ['work-1-b1'] }],
+      entries: [{ entryId: 'work-1', bulletIds: ['work-1-b1'] }], education: [{ entryId: 'edu-1', bulletIds: [] }],
+      skills: ['sk-1'], certificates: [], awards: [], summaryFocus: '结构设计', tradeoffs: '聚焦结构设计',
+    });
+    mock.mockResolvedValueOnce({ items: [] });
     mock.mockRejectedValueOnce(new Error('offline'));
     const r = await generateResume(S, P, J.A, 'zh', 1);
-    expect(r.selection.certificates).toContain('cert-1');
+    expect(r.selection.certificates).not.toContain('cert-1');
     expect(r.selection.certificates).not.toContain('cert-3');
   });
 });

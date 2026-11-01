@@ -104,7 +104,7 @@ export function lossReport(local: string, ai: string, lang: Lang): string[] {
 type Pair = [name: string, zh: RegExp, en: RegExp];
 export const XPAIRS: Pair[] = [
   ['否定 / 未完成', /尚未|未完成|未能|没有|未经|无法|不能|未|不代表|并非|不是|非官方/, /\bnot\b|\bno\b|n't|\byet\b|\bpending\b|\bincomplete\b|\bunfinished\b|\bwithout\b|\bunable\b|\bnever\b/i],
-  ['进行中', /正在|进行中|在研|持续/, /\bongoing\b|\bin progress\b|\bcurrently\b|\bongoing\b|\bcontinu\w*/i],
+  ['进行中', /正在|进行中|在研|持续|目前/, /\bongoing\b|\bin progress\b|\bcurrently\b|\bongoing\b|\bcontinu\w*/i],
   ['仅 / 限定', /仅|只在|只对|只有|仅限/, /\bonly\b|\bsolely\b|\bmerely\b|\blimited to\b|\bexclusively\b/i],
   ['室温条件', /室温|常温/, /room[- ]temperature|ambient/i],
   ['仿真 / 模拟', /仿真|模拟/, /simulat\w*|\bemulat\w*/i],
@@ -127,7 +127,7 @@ export const XPAIRS: Pair[] = [
   ['医院', /医院|临床/, /\bhospital\b|\bclinic\w*/i],
   ['实验室', /实验室/, /\blab\b|\blaboratory\b/i],
   ['工厂 / 车间 / 现场', /工厂|车间|产线|现场/, /\bfactory\b|\bplant\b|\bworkshop\b|\bproduction line\b|\bon[- ]site\b|\bfield\b(?![- ]of[- ]view)|\bshop floor\b/i],
-  ['学校 / 校内', /学校|校内|校园/, /\bschool\b|\bcampus\b|\buniversity\b/i],
+  ['学校 / 校内', /学校|校内|校园|大学|学院/, /\bschool\b|\bcampus\b|\buniversity\b|\bcollege\b/i],
   ['导师', /导师/, /\badvisor\b|\badviser\b|\bsupervisor\b|\bmentor\b/i],
   ['医生', /医生|医师/, /\bdoctor\w*|\bphysician\w*|\bclinician\w*/i],
 ];

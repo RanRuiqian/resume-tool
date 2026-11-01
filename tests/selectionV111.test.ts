@@ -11,12 +11,12 @@ const ids = (k: 'A' | 'B' | 'C', l: 'zh' | 'en' = 'zh') => planResume(P, J[k], l
 const text = (k: 'A' | 'B' | 'C', l: 'zh' | 'en') => { const r = generateRules(P, J[k], l, 1); return { r, all: r.items.map((i) => i[l]).join('\n'), summary: r.items.find((i) => i.sourceId === 'summary')?.[l] ?? '' }; };
 
 describe('v1.11 staged selection (fictional fixture)', () => {
-  it('ABB mechanical: design/prototype first, no imaging params, no author list, no 英文技术文档 in summary', () => {
+  it('ABB mechanical: design/prototype first, no imaging params, no author list, fixed full personal summary', () => {
     const b = ids('A');
     expect(b.slice(0, 2)).toEqual(['proj-oto-b1', 'proj-oto-b2']);
     expect(b).not.toContain('proj-oto-b4');
     expect(b).not.toContain('proj-oto-b3');
-    for (const l of ['zh', 'en'] as const) { const t = text('A', l); expect(t.summary).not.toMatch(/英文技术文档|technical documentation/i); expect(t.all).not.toMatch(/MTF50 0\.32/); }
+    for (const l of ['zh', 'en'] as const) { const t = text('A', l); expect(t.summary).toBe(P.profile.summary[l]); expect(t.all).not.toMatch(/MTF50 0\.32/); }
     const pl = planResume(P, J.A, 'en', 1);
     expect(pl.skills).toContain('sk-sw');
     expect(pl.skills).not.toContain('sk-doc');

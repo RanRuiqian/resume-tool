@@ -128,7 +128,7 @@ function Step1({ next, go, hasProfile }: { next: () => void; go: (p: string) => 
     finally { setBusy(''); }
   };
   let missing = 0, machine = 0;
-  forEachText(profile, (t) => { if (needsTranslation(t, 'en') || needsTranslation(t, 'zh')) missing++; if (t.status?.en === 'machine' || t.status?.zh === 'machine') machine++; });
+  forEachText(profile, (t, path) => { if (path === 'profile.summary') return; if (needsTranslation(t, 'en') || needsTranslation(t, 'zh')) missing++; if (t.status?.en === 'machine' || t.status?.zh === 'machine') machine++; });
   const fixTranslate = async () => {
     setBusy('翻译中…');
     try { let p = (await translateProfile(settings, profile, 'en')).profile; p = (await translateProfile(settings, p, 'zh')).profile; setProfile(p); }
@@ -139,7 +139,7 @@ function Step1({ next, go, hasProfile }: { next: () => void; go: (p: string) => 
   return (
     <div className="step">
       <h2>① 你的个人资料</h2>
-      <p className="muted">资料只需填一次，以后每次投递都会自动从里面挑选最相关的经历。写得越详细（做了什么、用了什么、取得了什么数字成果），生成的简历越好。</p>
+      <p className="muted">资料只需填一次，以后结合岗位挑选有价值的经历，并兼顾职业与组织背景。请写清实际做过什么、用了什么方法；有真实成果再填写数字。</p>
       {hasProfile && (
         <div className="card profile-summary">
           <div className="row">
@@ -347,7 +347,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
   const run = async () => {
     if (!job) return;
     setErr('');
-    try { const r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy); setResume({ ...r, templateId }); }
+    try { const r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy, { template, measure: (r) => measurePages(profile, { ...template, page: { ...template.page, autoFit: false } }, r) }); setResume({ ...r, templateId }); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
   useEffect(() => { if (!started.current && job && (!resume || resume.jobId !== job.id)) { started.current = true; run(); } });
@@ -386,7 +386,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
               {resume.consistency.issues.length ? `⚠ 中英文有 ${resume.consistency.issues.length} 处数字/内容对不上，请在「逐条修改」里检查（标红行）` : '✓ 中英文两版条目和数字完全一致'}
             </div>
             <div className="muted small" data-testid="score-note">「匹配度」是本工具按你的资料覆盖岗位要求估算的参考分，和下方「关键词覆盖率（ATS）」算法不同，也都不是招聘方的官方评分。</div>
-            <div className="muted small">AI 只应调整措辞和顺序；请用「事实审查」逐条确认改写都能追溯到你的资料。</div>
+            <div className="muted small">固定简介直接复用；AI 综合岗位与完整背景选材和表达。请用「事实审查」核对每条内容的真实来源。</div>
             <AuditBadge onOpen={() => setShowAudit(true)} />
           </div>
           <button disabled={!!busy} onClick={run}>🔄 重新生成</button>

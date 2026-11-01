@@ -32,7 +32,7 @@ export async function translateProfile(s: Settings, p: ProfileDoc, to: Lang): Pr
   const next: ProfileDoc = structuredClone(p);
   const refs: { key: string; text: string; t: import('../types').LocalizedText }[] = [];
   let n = 0;
-  forEachText(next, (t) => { if (needsTranslation(t, to)) refs.push({ key: `k${n++}`, text: t[other(to)]!, t }); });
+  forEachText(next, (t, path) => { if (path !== 'profile.summary' && needsTranslation(t, to)) refs.push({ key: `k${n++}`, text: t[other(to)]!, t }); });
   const out = await translateTexts(s, refs.map(({ key, text }) => ({ key, text })), to, p.glossary);
   let count = 0;
   for (const r of refs) { const v = out.get(r.key); if (v) { Object.assign(r.t, applyTranslation(r.t, to, v)); count++; } }

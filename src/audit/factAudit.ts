@@ -137,6 +137,7 @@ const worst = (...l: RiskLevel[]) => l.reduce((m, x) => (LEVEL_ORDER[x] < LEVEL_
 
 /** 审查整份简历的中英文两个版本；两种语言共用同一组 sourceId（B6） */
 export function auditResume(p: ProfileDoc, r: ResumeDoc, ctx = makeContext(p)): ResumeAudit {
+  ctx = { ...ctx, idx: buildSourceIndex(p, r.items) };
   const items = r.items.map((it): ItemAudit => {
     const zh = auditText(ctx, it.sourceId, 'zh', it.zh), en = auditText(ctx, it.sourceId, 'en', it.en);
     const crossIssues: string[] = [];
@@ -179,7 +180,7 @@ export function summarize(items: ItemAudit[], r: ResumeDoc, langs: Lang[] = ['zh
 /** 审查操作（B3）：只改 ResumeDoc 的条目文本与审查记录，绝不修改资料库 */
 export function applyDecision(p: ProfileDoc, r: ResumeDoc, sourceId: string, lang: Lang, decision: Exclude<Decision, 'pending'>, editedText?: string, opts?: { riskAck?: Omit<RiskAck, 'at'> }): ResumeDoc {
   const it = r.items.find((x) => x.sourceId === sourceId); if (!it) return r;
-  const src = buildSourceIndex(p).get(sourceId);
+  const src = buildSourceIndex(p, r.items).get(sourceId);
   const aiText = r.audit?.decisions[sourceId]?.[lang]?.aiText ?? it[lang];
   let text = it[lang];
   if (decision === 'restored') { const o = src ? lt({ zh: src.originalText.zh, en: src.originalText.en }, lang, false) : ''; text = o || text; }

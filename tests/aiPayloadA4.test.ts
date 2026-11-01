@@ -18,7 +18,8 @@ describe('A4 AI 发送内容边界', () => {
     p.projects[0].dossier = { background: '档案里的机密背景XYZ', tools: ['SecretTool'] };
     const job = { id: 'j', title: { zh: '算法', en: 'Algo' }, company: { short: 'M' }, mustHave: [], niceToHave: [], keywords: [], yearsRequired: 0, summary: '' } as unknown as JobParse;
     const s: Settings = { ...DEFAULT_SETTINGS, apiKey: 'test-not-a-real-key', setupDone: true };
-    await generateResume(s, p, job, 'zh', 1);
+    // 仅验证隐私边界；Mock 返回无效方案时真实模式现在明确报错，不再静默生成规则简历。
+    await generateResume(s, p, job, 'zh', 1).catch(() => {});
     const all = sent.join('\n');
     expect(all.length).toBeGreaterThan(0);
     for (const bad of ['E:/私密', '答辩.mp4', '13800000000', 'mock@example.com', '测试用户己', '档案里的机密背景XYZ', 'SecretTool', 'test-not-a-real-key']) expect(all).not.toContain(bad);

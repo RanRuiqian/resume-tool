@@ -150,3 +150,35 @@ describe('generation still traceable with v1.3 profile', () => {
     }
   });
 });
+
+it('v1.12 optional provenance and readable-layout fields round-trip without rewriting existing resumes or profiles', async () => {
+  const { exportLightJson, readArchive, restoreArchive } = await import('../src/tracker/backup');
+  const { generateRules } = await import('../src/ai/generate');
+  const { parseJdRules } = await import('../src/ai/jd');
+  const d = new ResumeDB('v112-fictional-roundtrip-only');
+  const me = mockUser();
+  me.profile.summary = { zh: '测试用户甲的固定工程背景。', en: 'Fixed engineering background for Test User A.', status: { zh: 'confirmed', en: 'confirmed' } };
+  me.work[0].bullets.push({ id: 'w1-b2', zh: '参与模拟项目测试。', en: 'Participated in fictional project testing.' });
+  const job = parseJdRules('模拟科技招聘工程测试岗位');
+  const r = generateRules(me, job, 'zh');
+  r.layoutPolicy = 'readable';
+  r.items = [{ sourceId: 'summary', zh: me.profile.summary.zh!, en: me.profile.summary.en!, syncStatus: 'in-sync' },
+    { sourceId: 'w1-b1', sourceIds: ['w1-b1', 'w1-b2'], zh: '参与模拟项目测试。', en: 'Participated in fictional project testing.', syncStatus: 'in-sync' }];
+  const saved = structuredClone(r);
+  await d.profile.put({ id: 'me', doc: me }); await d.jobs.put(job); await d.resumes.put(r);
+  const changed = structuredClone(me); changed.profile.summary.zh = '后续用户手动修改的简介。';
+  await d.profile.put({ id: 'me', doc: changed });
+  expect(await d.resumes.get(r.id)).toEqual(saved);
+  const exported = JSON.parse(await exportLightJson(d));
+  expect(exported.resumes[0]).toEqual(saved);
+  expect(exported.profile).toEqual(changed);
+  expect(exported.resumes[0].items[1].sourceIds).toEqual(['w1-b1', 'w1-b2']);
+  const restored = new ResumeDB('v112-fictional-restored-only');
+  const check = await readArchive(restored, JSON.stringify(exported));
+  expect(check.errors).toEqual([]);
+  await restoreArchive(restored, check, { sections: ['profile', 'jobs', 'resumes'], overwrite: false, replaceProfile: true });
+  expect(await restored.resumes.get(r.id)).toEqual(saved);
+  expect((await restored.profile.get('me'))!.doc.profile.summary).toEqual(changed.profile.summary);
+  await restored.delete();
+  await d.delete();
+});

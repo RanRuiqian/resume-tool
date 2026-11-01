@@ -16,7 +16,7 @@ const usageListeners = new Set<(u: AiUsage) => void>();
 export function onAiUsage(fn: (u: AiUsage) => void): () => void { usageListeners.add(fn); return () => { usageListeners.delete(fn); }; }
 
 /** OpenAI 兼容 Chat Completions；请求直连用户配置的服务商（PRD 8） */
-export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: string; json?: boolean; timeoutMs?: number; maxTokens?: number } = {}): Promise<string> {
+export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: string; json?: boolean; timeoutMs?: number; maxTokens?: number; thinking?: 'enabled' | 'disabled' } = {}): Promise<string> {
   if (!s.apiKey) throw new AiError('尚未启用 API：请到「设置 → AI API 管理」添加或启用一套 API，或开启演示模式', 'nokey');
   const bad = baseUrlProblem(s.baseUrl);
   if (bad) throw new AiError(`已阻止发送请求：${bad}。请到「设置 → AI API 管理」编辑这套配置的 Base URL`, 'other');
@@ -28,9 +28,9 @@ export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: str
     const body: Record<string, unknown> = { model: opts.model || s.model, messages, temperature: 0.2 };
     if (opts.maxTokens) body.max_tokens = opts.maxTokens;
     if (opts.json) body.response_format = { type: 'json_object' };
-    // DeepSeek 官方接口默认开启思考模式；简历整理 / 生成 / JSON 等普通任务显式关闭，减少延迟与费用（https://api-docs.deepseek.com/guides/thinking_mode ）。
-    // 只对 DeepSeek 官方地址发送该参数，其他服务商不受影响。
-    if (isOfficialDeepSeek(s)) body.thinking = { type: 'disabled' };
+    // DeepSeek 官方地址可按任务开关思考模式：简历选材等需要深度判断的任务显式开启。
+    // 其它服务商保持 OpenAI 兼容请求格式；未指定的普通任务沿用关闭思考模式。
+    if (isOfficialDeepSeek(s)) body.thinking = { type: opts.thinking ?? 'disabled' };
     let res: Response;
     try {
       res = await fetch(url, { method: 'POST', signal: ctrl.signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.apiKey}` }, body: JSON.stringify(body) });
@@ -96,7 +96,7 @@ export function parseJson<T>(s: string): T {
   }
 }
 
-export async function chatJson<T>(s: Settings, messages: ChatMsg[], opts: { model?: string; maxTokens?: number; timeoutMs?: number } = {}): Promise<T> {
+export async function chatJson<T>(s: Settings, messages: ChatMsg[], opts: { model?: string; maxTokens?: number; timeoutMs?: number; thinking?: 'enabled' | 'disabled' } = {}): Promise<T> {
   try { return parseJson<T>(await chat(s, messages, { ...opts, json: true })); }
   catch (e) {
     // 部分服务不支持 response_format，降级重试一次
