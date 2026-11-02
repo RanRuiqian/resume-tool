@@ -1,3 +1,4 @@
+import { assertProfileEpoch, profileEpoch } from '../storage/clearProfile';
 import type { JointGroup, SharedResumeVersion } from '../types/joint';
 import { canonicalJson, verifySharedVersion } from '../joint/versions';
 import JSZip from 'jszip';
@@ -132,6 +133,7 @@ export interface RestoreOptions { sections: Section[]; overwrite: boolean; repla
 export interface RestoreResult { written: Record<Section, number>; skipped: Record<Section, number>; profileSnapshotId: string | null }
 /** 恢复：单个事务写入，任一步失败整体回滚；覆盖资料前先存快照 */
 export async function restoreArchive(d: ResumeDB, chk: ArchiveCheck, opt: RestoreOptions): Promise<RestoreResult> {
+  const expectedEpoch = await profileEpoch(d);
   if (chk.errors.length) throw new Error(`备份验证未通过，未写入任何数据：${chk.errors.join('；')}`);
   const available = new Set((await d.resumeVersions.toArray()).map((v) => v.id));
   if (opt.sections.includes('resumeVersions')) chk.data.resumeVersions.forEach((v) => available.add(v.id));
@@ -140,7 +142,8 @@ export async function restoreArchive(d: ResumeDB, chk: ArchiveCheck, opt: Restor
   const written = Object.fromEntries(SECTIONS.map((s) => [s, 0])) as Record<Section, number>, skipped = { ...written };
   let profileSnapshotId: string | null = null;
   const tbl = tables(d);
-  await d.transaction('rw', [d.profile, d.backups, d.postings, d.applications, d.appEvents, d.artifacts, d.attachments, d.attachmentBlobs, d.jobs, d.resumes, d.jdGroups, d.resumeVersions], async () => {
+  await d.transaction('rw', [d.profile, d.backups, d.postings, d.applications, d.appEvents, d.artifacts, d.attachments, d.attachmentBlobs, d.jobs, d.resumes, d.jdGroups, d.resumeVersions, d.state], async () => {
+    if (opt.sections.includes('profile') || opt.sections.includes('resumes')) await assertProfileEpoch(d, expectedEpoch);
     for (const s of opt.sections) {
       if (s === 'profile') {
         if (!chk.data.profile) continue;

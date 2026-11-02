@@ -1,3 +1,4 @@
+import { ClearPersonalDataButton } from '../components/ClearPersonalDataButton';
 import { OrganizePanel, ReviewSummary } from '../components/OrganizePanel';
 import { isUnconfirmedImport } from '../audit/techTerms';
 import { useRef, useState } from 'react';
@@ -129,6 +130,7 @@ export function ProfilePage() {
         <button onClick={() => fileRef.current?.click()}>{t('importJson')}</button>
         <input ref={fileRef} type="file" accept="application/json" hidden onChange={(e) => e.target.files?.[0] && doImport(e.target.files[0])} />
         <button onClick={() => downloadBytes(new TextEncoder().encode(exportProfileJson(profile)), 'resume-profile-backup.json', 'application/json')}>{t('exportJson')}</button>
+        <ClearPersonalDataButton />
         <button disabled={!!busy} onClick={() => doTranslate('en')}>{t('translateToEn')}（{pending.en}）</button>
         <button disabled={!!busy} onClick={() => doTranslate('zh')}>{t('translateToZh')}（{pending.zh}）</button>
       </div>

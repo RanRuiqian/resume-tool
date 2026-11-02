@@ -15,7 +15,7 @@ const txt = (v: Proposal['before']) => (typeof v === 'string' ? v || '（空）'
 
 /** 「我的资料」：AI 整理现有资料（v1.9）——快照 → 本地规则 → 明确提示后才调用 AI（分批）→ 报告 + 前后对比 → 安全修正可批量接受，高风险事实逐条确认 → 写入 → 可恢复 */
 export function OrganizePanel() {
-  const { profile, settings, replaceProfile, restoreBackup } = useApp();
+  const { profile, profileEpoch, settings, replaceProfile, restoreBackup } = useApp();
   const [stage, setStage] = useState<'idle' | 'ask' | 'running' | 'review' | 'done'>('idle');
   const [snap, setSnap] = useState<string | null>(null);
   const [prog, setProg] = useState('');
@@ -31,8 +31,9 @@ export function OrganizePanel() {
   const start = async () => {
     setErr(''); setPlan(null);
     const cur = structuredClone(profile); setBase(cur); setBefore(rep(cur));
-    const id = await snapshotProfile(db, cur, 'AI 整理现有资料前（自动快照）'); setSnap(id);
-    setStage('ask');
+    try {
+      const id = await snapshotProfile(db, cur, 'AI 整理现有资料前（自动快照）', profileEpoch); setSnap(id); setStage('ask');
+    } catch (e) { setErr((e as Error).message); }
   };
   const run = async (useAi: boolean, force = false) => {
     if (!base) return;
