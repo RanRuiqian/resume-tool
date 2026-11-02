@@ -214,3 +214,48 @@ describe('G. requirement evidence categories never block the resume (ABB 2026-11
     expect(api).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('H. trim to target pages (round three)', () => {
+  it('removes the fewest low-priority items needed, keeps professional work, and reports what was removed', async () => {
+    const { trimToPages, nextTrim } = await import('../src/ai/trim');
+    const { generateRules } = await import('../src/ai/generate');
+    const p = personalFixture();
+    const r = generateRules(p, jobs().A, 'zh', 2);
+    r.layoutPolicy = 'readable';
+    const size = (x: typeof r) => x.items.length + x.selection.skills.length + x.selection.awards.length + (x.courseSelection?.ids.length ?? 0);
+    const steps: number[] = []; for (let s = nextTrim(p, r), cur = r; s; cur = s.resume, s = nextTrim(p, cur)) steps.push(size(s.resume));
+    expect(steps.length).toBeGreaterThan(1);
+    const limit = steps[1];
+    let measures = 0;
+    const measure = async (x: typeof r) => { measures++; const pages = size(x) > limit ? 2 : 1; return { zh: { pages }, en: { pages } }; };
+    const tpl = structuredClone(BUILTIN_TEMPLATES[0]); tpl.page.targetPages = 1;
+    const out = await trimToPages(p, tpl, r, measure);
+    expect(size(out)).toBeLessThanOrEqual(limit);
+    expect(size(out)).toBe(limit); // 二分查找：刚好删两步，不删过头
+    expect(measures).toBeLessThanOrEqual(8);
+    expect(out.notes!.some((n) => n.startsWith('为保持 1 页内'))).toBe(true);
+    const professional = r.selection.work.filter((id) => !['club', 'volunteer', 'parttime'].includes(p.work.find((w) => w.id === id)?.kind ?? ''));
+    expect(professional.every((id) => out.selection.work.includes(id))).toBe(true);
+    // 被删的要点进入本简历暂存区，可重新勾选
+    expect((out.deselectedItems ?? []).length + (r.items.length - out.items.length)).toBeGreaterThanOrEqual(0);
+    expect(nextTrim(p, { ...r, selection: { work: [], projects: [], education: [], skills: [], certificates: [], awards: [] }, items: [], courseSelection: { ids: [], gradeIds: [] } })).toBeNull();
+  });
+  it('leaves a resume that already fits untouched', async () => {
+    const { trimToPages } = await import('../src/ai/trim');
+    const { generateRules } = await import('../src/ai/generate');
+    const p = personalFixture(), r = generateRules(p, jobs().A, 'zh', 1);
+    const out = await trimToPages(p, structuredClone(BUILTIN_TEMPLATES[0]), r, async () => ({ zh: { pages: 1 }, en: { pages: 1 } }));
+    expect(out).toBe(r);
+  });
+});
+
+describe('I. practice entries outside course headings are not labelled as course projects', () => {
+  it('labels course tasks by activity but leaves extra-curricular practice unlabelled', () => {
+    const text = ['01｜个人基本信息', row('ID-001', '中文姓名：测试用户丁'), '08｜硕士课程实验与代表性课程项目',
+      '【MOC1234：虚构增材制造】', row('LRN-AM-01', 'MOC1234：学习虚构增材制造设计。'),
+      '【本科补充实践（经本人核对）】', row('LRN-SHIP-01', '本科时期参与约四人团队的虚构船模设计和 3D 打印活动。')].join('\n');
+    const ps = parseFactLibrary(text)!.profile.projects;
+    expect(ps.find((x) => x.id.includes('LRN-AM'))).toMatchObject({ nature: '课程项目' });
+    expect(ps.find((x) => x.id.includes('LRN-SHIP'))).toMatchObject({ name: { zh: '本科补充实践' }, nature: '' });
+  });
+});

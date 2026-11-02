@@ -50,5 +50,15 @@ export async function exportZip(profile: ProfileDoc, tpl: TemplateConfig, resume
 export type PageInfo = Record<Lang, { pages: number; level: number; overflow: boolean }>;
 export async function measurePages(profile: ProfileDoc, tpl: TemplateConfig, resume: ResumeDoc | null): Promise<PageInfo | null> {
   try { return await call<PageInfo>('pages', { profile, tpl, resume, langs: ['zh', 'en'], fontBase: fontBase() }); }
-  catch { return null; }
+  catch {
+    // 2026-11：开发模式（npm run dev，负责人在 Codespaces 里用的就是它）下 Worker 会因 React 热更新注入的 window 引用而崩溃，
+    // 页数一直显示「—」，按页数删减也无法工作。与 exportZip 一样回退主线程计算。
+    try {
+      const [{ renderPdfFit }, { registerPdfFonts }] = await Promise.all([import('./zip'), import('./pdf/fonts')]);
+      registerPdfFonts(fontBase());
+      const out = {} as PageInfo;
+      for (const lang of ['zh', 'en'] as const) { const f = await renderPdfFit(profile, tpl, lang, resume); out[lang] = { pages: f.pages, level: f.level, overflow: f.overflow }; }
+      return out;
+    } catch { return null; }
+  }
 }

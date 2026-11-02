@@ -92,7 +92,8 @@ export function MaterialPool() {
           <div className="pool-sec-title">个人简介</div>
           <label className={`pool-entry pool-head ${itemIds.has('summary') ? 'on' : 'off'}`}>
             <input type="checkbox" checked={itemIds.has('summary')} onChange={(ev) => apply(toggleSummary(profile, resume, ev.target.checked))} />
-            <span className="grow small">{lt(profile.profile.summary, 'zh').slice(0, 60)}…</span>
+            {/* 2026-11：显示本简历实际使用的（按岗位定制的）简介，而不是资料库固定简介 */}
+            <span className="grow small" data-testid="pool-summary">{((resume.items.find((i) => i.sourceId === 'summary') ?? resume.deselectedItems?.find((i) => i.sourceId === 'summary') ?? resume.summaryBaseline)?.zh || lt(profile.profile.summary, 'zh')).slice(0, 60)}…</span>
           </label>
           {resume.items.find((i) => i.sourceId === 'summary') && edit(resume.items.find((i) => i.sourceId === 'summary')!)}
         </div>

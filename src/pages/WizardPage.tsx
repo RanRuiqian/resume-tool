@@ -2,7 +2,7 @@ import { JointJobsInput } from '../components/JointJobsInput';
 import { EvidenceReport } from '../components/EvidenceReport';
 import { AiDisclosure } from '../components/AiDisclosure';
 import { uiStorage } from '../storage/mode';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp } from '../store';
 import type { Lang, PhotoPosition } from '../types';
 import { SetupCard } from '../components/SetupCard';
@@ -20,6 +20,7 @@ import { linkResumeSnapshot } from '../tracker/repo';
 import { db } from '../storage/db';
 import { generateResume, localizeAi, runConsistency } from '../ai/generate';
 import { fillResumeLabels, resumeLabelTargets } from '../ai/labels';
+import { trimToPages } from '../ai/trim';
 import { forEachText, needsTranslation, lt } from '../locale/text';
 import { normalizeProfile } from '../storage/profileIO';
 import { buildLayout } from '../render/layout';
@@ -208,16 +209,47 @@ function Step2({ next, back }: { next: () => void; back: () => void }) {
   return <><div className="row card"><button disabled={!joint} onClick={() => mode(false)}>单岗位模式</button><button data-testid="joint-mode" disabled={joint} onClick={() => mode(true)}>同一企业多岗位联合匹配（1–3 个）</button></div>{joint ? <JointJobsInput next={next} back={back} /> : <SingleStep2 next={next} back={back} />}</>;
 }
 
+/**
+ * 2026-11（第三轮）：岗位页与生成过程的状态放在组件外。
+ * 负责人反馈：上传截图 / AI 正在识别时切到「设置」或「版式设置」，回来后截图、文字、进度全没了。
+ * 原因是这些都存在组件本地 state，切页面组件被卸载。现在放到模块级存储（应用内切换页面不丢），
+ * 岗位文字另存 uiStorage（刷新也不丢）；识别 / 分析 / 生成任务在后台继续，回来时显示进度与结果。
+ */
+type JdDraft = { init: boolean; jobId?: string; shots: { url: string; raw: string }[]; text: string; edited: boolean; busy: string; pct?: number; err: string; info: string };
+const JD_DRAFT_TEXT = 'jdDraftText';
+let jdDraft: JdDraft = { init: false, shots: [], text: '', edited: false, busy: '', err: '', info: '' };
+const jdSubs = new Set<() => void>();
+function setJdDraft(patch: Partial<JdDraft> | ((d: JdDraft) => Partial<JdDraft>)) {
+  jdDraft = { ...jdDraft, ...(typeof patch === 'function' ? patch(jdDraft) : patch) };
+  try { uiStorage.setItem(JD_DRAFT_TEXT, jdDraft.text); } catch { /* 存储不可用时只保留内存 */ }
+  jdSubs.forEach((f) => f());
+}
+const useJdDraft = () => useSyncExternalStore((cb) => { jdSubs.add(cb); return () => { jdSubs.delete(cb); }; }, () => jdDraft);
+type GenState = { busy: string; err: string; running: boolean; errJob?: string };
+let genState: GenState = { busy: '', err: '', running: false };
+const genSubs = new Set<() => void>();
+const setGen = (patch: Partial<GenState>) => { genState = { ...genState, ...patch }; genSubs.forEach((f) => f()); };
+const useGen = () => useSyncExternalStore((cb) => { genSubs.add(cb); return () => { genSubs.delete(cb); }; }, () => genState);
+
 function SingleStep2({ next, back }: { next: () => void; back: () => void }) {
   const { settings, job, setJob, resume, setResume } = useApp();
   // v1.10：每张截图单独保存识别原文，删除某张时可以重建文字；岗位正文 = 去掉网页噪声后的识别文字（可修改）
-  const [shots, setShots] = useState<{ url: string; raw: string }[]>(() => (job?.screenshots ?? []).map((url) => ({ url, raw: '' })));
-  const [text, setText] = useState(() => { const pre = uiStorage.getItem(JD_PREFILL_KEY); if (pre) { uiStorage.setItem(JD_PREFILL_KEY, ''); return pre; } return job?.rawText ?? ''; });
-  const [edited, setEdited] = useState(false);
-  const [busy, setBusy] = useState('');
-  const [pct, setPct] = useState<number | undefined>();
-  const [err, setErr] = useState('');
-  const [info, setInfo] = useState('');
+  const pre = uiStorage.getItem(JD_PREFILL_KEY);
+  // 从投递记录带入的岗位文字优先；记下当前 job，避免随后被「切换岗位」同步覆盖。
+  if (pre) { uiStorage.setItem(JD_PREFILL_KEY, ''); setJdDraft({ init: true, jobId: job?.id, shots: [], text: pre, edited: true }); }
+  else if (!jdDraft.init) setJdDraft({ init: true, jobId: job?.id, shots: (job?.screenshots ?? []).map((url) => ({ url, raw: '' })), text: uiStorage.getItem(JD_DRAFT_TEXT) || job?.rawText || '' });
+  // 从历史 / 投递记录打开了另一个岗位：草稿换成那个岗位的内容（正在识别 / 分析时不打断）。放在 effect 里，避免渲染中通知订阅者。
+  useEffect(() => {
+    if (job && jdDraft.jobId !== job.id && !jdDraft.busy) setJdDraft({ jobId: job.id, shots: (job.screenshots ?? []).map((url) => ({ url, raw: '' })), text: job.rawText ?? '', edited: false, err: '', info: '' });
+  }, [job]);
+  const { shots, text, edited, busy, pct, err, info } = useJdDraft();
+  const setShots = (v: JdDraft['shots']) => setJdDraft({ shots: v });
+  const setText = (v: string | ((t: string) => string)) => setJdDraft((d) => ({ text: typeof v === 'function' ? v(d.text) : v }));
+  const setEdited = (v: boolean) => setJdDraft({ edited: v });
+  const setBusy = (v: string) => setJdDraft({ busy: v });
+  const setPct = (v: number | undefined) => setJdDraft({ pct: v });
+  const setErr = (v: string) => setJdDraft({ err: v });
+  const setInfo = (v: string) => setJdDraft({ info: v });
   const fileRef = useRef<HTMLInputElement>(null);
   const imgs = shots.map((x) => x.url);
   const rawAll = shots.map((x) => x.raw).filter(Boolean).join('\n');
@@ -252,7 +284,7 @@ function SingleStep2({ next, back }: { next: () => void; back: () => void }) {
   /** 清空本次岗位：只清当前文字 / 分析 / 生成结果；资料母库与历史投递记录不动 */
   const clearJob = (askFirst = true) => {
     if (askFirst && hasResult && !confirm('清空本次岗位会同时清除当前生成的简历（历史投递记录和个人资料不受影响）。继续吗？')) return false;
-    setShots([]); setText(''); setEdited(false); setInfo(''); setErr('');
+    setJdDraft({ shots: [], text: '', edited: false, info: '', err: '', jobId: undefined });
     if (job) setJob(null);
     if (resume) setResume(null);
     return true;
@@ -276,6 +308,7 @@ function SingleStep2({ next, back }: { next: () => void; back: () => void }) {
       const r = await analyzeJob(settings, text, { current: job, history, force });
       if (r.reused === 'current') { setInfo('岗位文字没有变化，沿用已有分析结果（没有重新调用 AI）。需要时可点「重新分析」。'); return; }
       const j = { ...r.job, screenshots: imgs, ocrRawText: rawAll || undefined };
+      setJdDraft({ jobId: j.id });
       setJob(j);
       // 重新解析只新增岗位版本；保留已编辑简历，直到用户明确重新生成。
       if (r.reused === 'history') setInfo('这份岗位文字之前分析过，已复用当时的分析结果（没有重新调用 AI）。');
@@ -344,8 +377,10 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
   });
   const moved = (['zh', 'en'] as Lang[]).flatMap((l) => buildLayout(profile, template, l, resume).movedFromSide.map((m) => ({ l, m })));
   const editTpl = useEditTemplate();
-  const [busy, setBusy] = useState('');
-  const [err, setErr] = useState('');
+  // 生成进度放在组件外：生成中切到设置 / 版式设置再回来，进度仍在，也不会重复发起生成。
+  const { busy, err, running } = useGen();
+  const setBusy = (v: string) => setGen({ busy: v });
+  const setErr = (v: string) => setGen({ err: v });
   const [view, setView] = useState<'zh' | 'en' | 'both'>('zh');
   const [showItems, setShowItems] = useState(false);
   const [showExport, setShowExport] = useState(false);
@@ -354,25 +389,30 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
   const primary: Lang = job?.jdLanguage ?? 'zh';
 
   /** 补齐选中条目的单位 / 职位 / 学位 / 技能 / 课程名等短字段的另一语言（写回母库，以后复用）。失败不影响简历。 */
-  const withLabels = async (r: NonNullable<typeof resume>, base = profile) => {
+  const withLabels = async (r: NonNullable<typeof resume>, base = profile) => (await withLabelsAndProfile(r, base)).resume;
+  const withLabelsAndProfile = async (r: NonNullable<typeof resume>, base = profile) => {
     try {
       setBusy('正在补齐单位、职位、学位、技能等名称的中英文…');
       const filled = await fillResumeLabels(settings, base, r);
       if (filled.count) setProfile(filled.profile);
-      return filled.resume;
-    } catch (e) { return { ...r, notes: [...(r.notes ?? []), `名称补译未完成：${(e as Error).message}`] }; }
+      return { resume: filled.resume, profile: filled.profile };
+    } catch (e) { return { resume: { ...r, notes: [...(r.notes ?? []), `名称补译未完成：${(e as Error).message}`] }, profile: base }; }
   };
   const run = async () => {
-    if (!job) return;
-    setErr('');
+    if (!job || genState.running) return;
+    setGen({ running: true, err: '' });
     try {
       let r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy, { template, measure: (r) => measurePages(profile, { ...template, page: { ...template.page, autoFit: false } }, r) });
-      r = await withLabels(r);
+      const labelled = await withLabelsAndProfile(r);
+      setBusy(`正在核对页数，保持 ${template.page.targetPages || 1} 页内…`);
+      const fixedTpl = { ...template, page: { ...template.page, autoFit: false } };
+      r = await trimToPages(labelled.profile, fixedTpl, labelled.resume, (x) => measurePages(labelled.profile, fixedTpl, x));
       setResume({ ...r, templateId });
     }
-    catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
+    catch (e) { setGen({ err: (e as Error).message, errJob: job.id }); } finally { setGen({ busy: '', running: false }); }
   };
-  useEffect(() => { if (!started.current && job && !resume) { started.current = true; run(); } });
+  // 同一岗位刚生成失败时，切页面回来不自动重跑（避免重复调用 AI）；用户可点「重新生成」。
+  useEffect(() => { if (!started.current && job && !resume && !running && genState.errJob !== job.id) { started.current = true; run(); } });
   // 实时统计 PDF 页数（Worker 中渲染，防抖）
   useEffect(() => {
     if (!resume) return;

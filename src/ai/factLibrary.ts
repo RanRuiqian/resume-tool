@@ -191,7 +191,9 @@ export function parseFactLibrary(input: string): { profile: ProfileDoc; integrit
       const title = task === 'course' && (label.length > 20 || ctx.includes(label) || tasks.size === 1) ? ctx : `${ctx} · ${label}`;
       const e = addProject(`${scope}-${task}`, rs, 'auxiliary', head, title);
       // 标题已含课程名；性质只写活动类型，避免副标题重复课程名。
-      e.nature = /^LAB/i.test(task) || /实验/.test(ctx) ? '课程实验' : /^(?:ASSIGNMENT|Q\d)/i.test(task) || /作业/.test(ctx) ? '课程作业' : /^WORKSHOP/i.test(task) ? '课程练习' : '课程项目';
+      // 只有课程小标题（含课程代码或「课程」）下的事实才标课程性质；「本科补充实践」这类课外实践不能写成课程项目。
+      const isCourse = /[A-Z]{3}\d{4}|课程/.test(ctx);
+      e.nature = !isCourse ? '' : /^LAB/i.test(task) || /实验/.test(ctx) ? '课程实验' : /^(?:ASSIGNMENT|Q\d)/i.test(task) || /作业/.test(ctx) ? '课程作业' : /^WORKSHOP/i.test(task) ? '课程练习' : '课程项目';
       const hints = (rs[0].context.replace(/^课程[：:]\s*/, '').split(/[、，,/｜]/).map((x) => x.trim())).filter((x) => x.length >= 2);
       const candidates = p.courses.filter((c) => c.level === 'master' && hints.some((h) => [c.name.zh, c.name.en, c.code].some((n) => n && (n.includes(h) || h.includes(n)))));
       if (candidates.length === 1) { e.courseIds = [candidates[0].id]; candidates[0].projectIds.push(e.id); }
