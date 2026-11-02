@@ -3,7 +3,7 @@ import { useApp } from '../store';
 import { sourceIdsOf } from '../ai/provenance';
 import type { LocalizedText, ResumeDoc } from '../types';
 import { lt, formatRange } from '../locale/text';
-import { entryBullets, fillWithOriginal, matchHints, missingLang, SEL_KEYS, toggleBullet, toggleEntry, toggleSummary, type SelKey } from '../ai/selection';
+import { reorderEntry, entryBullets, fillWithOriginal, matchHints, missingLang, SEL_KEYS, toggleBullet, toggleEntry, toggleSummary, type SelKey } from '../ai/selection';
 import { translateTexts } from '../ai/translate';
 import { runConsistency } from '../ai/generate';
 
@@ -63,6 +63,7 @@ export function MaterialPool() {
             {hints.length > 0 && <span className="pool-hints">{hints.map((h) => <span key={h} className="hint">✓ {h}</span>)}</span>}
           </span>
         </label>
+        {on && <div className="row small"><button aria-label={`上移 ${t1}`} disabled={resume.selection[k].indexOf(e.id) === 0} onClick={() => setResume(reorderEntry(resume, k, e.id, -1))}>↑</button><button aria-label={`下移 ${t1}`} disabled={resume.selection[k].indexOf(e.id) === resume.selection[k].length - 1} onClick={() => setResume(reorderEntry(resume, k, e.id, 1))}>↓</button></div>}
         {bullets.length > 0 && <button className="link pool-toggle" onClick={() => setOpen({ ...open, [e.id]: !expanded })}>{expanded ? '收起要点' : '展开要点'}</button>}
         {expanded && bullets.length > 0 && (
           <div className="pool-bullets">

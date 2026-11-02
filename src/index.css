@@ -353,3 +353,6 @@ select.imp-action { width: auto; min-width: 9.5em; max-width: 100%; white-space:
 .thumb { position: relative; display: inline-block; max-width: 45%; }
 .thumb img { max-height: 140px; max-width: 100%; border: 1px solid var(--line); display: block; }
 .thumb-del { position: absolute; top: -8px; right: -8px; width: 24px; height: 24px; padding: 0; border-radius: 50%; background: #c53030; color: #fff; border: 2px solid #fff; font-size: 15px; line-height: 18px; cursor: pointer; }
+
+/* 联合来源 ID 与内容哈希在窄屏完整换行，不截断可追溯信息。 */
+.evidence-report, [data-testid=joint-jobs-input], [data-testid=shared-version-id] { overflow-wrap: anywhere; min-width: 0; }

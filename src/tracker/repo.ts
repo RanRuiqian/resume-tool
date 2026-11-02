@@ -1,6 +1,7 @@
 import type { ResumeDB } from '../storage/db';
 import type { JobParse, Lang, ProfileDoc, ResumeDoc } from '../types';
 import { auditResume } from '../audit/factAudit';
+import { profileForGeneration } from '../privacy/resume';
 import type { Application, AppStatus, ApplicationEvent, Attachment, AttachmentKind, JobPosting, Priority, ResumeArtifact, SourceInfo } from './types';
 
 export const nowIso = () => new Date().toISOString();
@@ -113,7 +114,7 @@ export async function linkResumeSnapshot(d: ResumeDB, appId: string, args: { res
     label: args.label ?? `${args.job?.company.short || args.job?.company.full || '简历'} · ${args.resume.createdAt.slice(0, 16).replace('T', ' ')}`,
     languages: args.languages ?? ['zh', 'en'], createdAt: nowIso(),
     resumeId: args.resume.id, resumeCreatedAt: args.resume.createdAt, templateId: args.resume.templateId,
-    resume: structuredClone(args.resume), profile: structuredClone(args.profile), job: args.job ? structuredClone(args.job) : null,
+    resume: structuredClone(args.resume), profile: profileForGeneration(args.profile), job: args.job ? structuredClone(args.job) : null,
     audit: { checkedAt: nowIso(), total: au.total, unconfirmed: au.unconfirmed, unconfirmedRed: au.unconfirmedRed },
     submitted: args.submitted ?? false,
   };

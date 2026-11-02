@@ -20,6 +20,7 @@ const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 
 - 去重（非常重要）：同一段真实经历只输出一条。同一学校 / 学位 / 专业的中文与英文写法属于同一条 education，主语言写在 school/degree/major，另一语言写法填在 schoolOther/degreeOther/majorOther；同一单位同一时间段的同一职位只输出一条 work，原文写了「实习」就是实习（kind 填 internship），严禁据此推断另有一份正式工作；同一项目的中文名、英文名、论文题目、课程说明与成果归并到同一个 project，另一语言名称填 nameOther，论文题目 / 其它称呼放 aliases，成果写进 bullets。只有原文明确是不同的经历（单位、时间或内容不同）才分开，不要因为出现相同关键词就合并不同经历。
 - work.kind：fulltime 正式工作 / internship 实习 / parttime 兼职 / club 社团或学生工作任职 / volunteer 志愿服务 / other；看不出就留空，不要猜。社团、志愿、兼职也放在 work 里并标注 kind。
 - projects.kind：core（毕业设计、学位论文、核心研究或主要项目）/ auxiliary（课程实验、教学实训、个人小工具等辅助项目）；nature 写原文给出的性质（如「本科毕业设计」「课程实验」），没写就留空。
+- 独立课程及成绩单不是项目或任职：只有原文明示了具体实践任务/作业/成果才建立 projects。Industry-based project A/B 等项目学分单元不新建、拆分或复制项目；有关课程仍完整保存在 education.courses，待用户通过独立「课程」模块审核导入，不能推断软件实操或职业经验。
 - 课程：courses 必须完整列出原文中的全部课程（成绩单可能有几十门，一门都不能省略），每门一项，原文有学分 / 成绩就原样附在课程名后，如「高等数学 A（5 学分，88）」；coursesInText 填原文这一段里出现的课程总数。
 - 日期：四种日期严格区分——courseCompletionDate 课程结束、expectedConferralDate 预计毕业 / 预计授予、actualConferralDate 已实际授予、availableFullTimeDate 可全职入职。原文写「预计 / 在读 / expected」的日期只能填 expectedConferralDate，绝不能填 actualConferralDate，也不要填进 end；只有原文明确写「已授予 / 已获得学位」才填 actualConferralDate；未知的日期、分数、单位名称、证书编号一律留空，严禁补全或推测。
 - 第一人称（「我负责…」）、第三人称档案（「该生 / 他负责…」）、旧简历要点都整理成以本人为主体的客观要点，不保留「我 / 本人 / 该生」主语。

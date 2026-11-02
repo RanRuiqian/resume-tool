@@ -3,6 +3,7 @@ import { chatJson } from './provider';
 import { COVER_KIT_PROMPT, SYS_FACTS } from './prompts';
 import { numberTokens } from './consistency';
 import { buildKitContext, verifiedOnly, verifyKit, type SentenceTrace } from '../quality/kitVerify';
+import { profileForGeneration } from '../privacy/resume';
 import { hasTerm, overlap } from './relevance';
 import { decisionModel } from './aiPlanner';
 import { buildLayout } from '../render/layout';
@@ -86,6 +87,7 @@ export interface KitQuality {
 const STYLE_ONLY = /过长|过短|重复句|套话|为空/;
 
 export async function generateCoverKit(s: Settings, p: ProfileDoc, job: JobParse, r: ResumeDoc, opts: { maxAttempts?: number } = {}): Promise<{ coverLetter: Bi; selfIntro: Bi; quality: KitQuality }> {
+  p = profileForGeneration(p);
   // 重点由已经完成深度语义选材的简历决定；核实证据仍可引用整个启用母库。
   const ctx = buildKitContext(p, job);
   const chosen = new Set([...r.selection.work, ...r.selection.projects]);

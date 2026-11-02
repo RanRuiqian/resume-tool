@@ -8,7 +8,7 @@
 ## 绝对规则
 1. **不得提交、打印或导出 API Key。** Key 只存在浏览器 IndexedDB `settings` 表（多套配置在同一条 `settings` 记录的 `apiProfiles` 里，见 `docs/AI_HANDOFF.md`「多 API 配置」）。界面只显示脱敏 Key（`maskKey`）。备份 ZIP / JSON、日志、fixture、截图都不能出现它（`src/tracker/backup.ts` 的 `scrubSecrets` 与测试会检查）。
 2. **只用虚构数据**：公司名带「模拟 / 虚构 / 示例」，网址用 `example.com`，人名用「测试用户X」。不得提交真实简历、联系方式、附件。
-3. **数据库只做增量迁移**：在 `src/storage/db.ts` 追加 `this.version(N+1)`；不删表、不清库、不修改已有版本。当前版本 **4**。
+3. **数据库只做增量迁移**：在 `src/storage/db.ts` 追加 `this.version(N+1)`；不删表、不清库、不修改已有版本。当前版本 **6**。
 4. **不得伪造事实**：不自动投递、不自动发邮件、不把未知状态猜成「已投递」、不编造投递时间或个人经历。
 5. 申请里的简历快照（`artifacts`）创建后内容不可修改。
 6. 正常模式（库 `resume-tool`）与 `?demo` 演示模式（库 `resume-tool-demo`）严格隔离。

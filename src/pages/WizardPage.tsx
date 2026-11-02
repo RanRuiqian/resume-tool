@@ -1,3 +1,5 @@
+import { JointJobsInput } from '../components/JointJobsInput';
+import { EvidenceReport } from '../components/EvidenceReport';
 import { AiDisclosure } from '../components/AiDisclosure';
 import { uiStorage } from '../storage/mode';
 import { useEffect, useRef, useState } from 'react';
@@ -32,6 +34,7 @@ import { ProgressNote } from '../components/ProgressNote';
 import { PhotoCropper } from '../components/PhotoCropper';
 import { JobHistory } from '../components/JobHistory';
 import { MatchInsights } from '../components/MatchInsights';
+import { ResumeFactsOptions } from '../components/ResumeFactsOptions';
 import { CareerKit } from '../components/CareerKit';
 import { FEATURES } from '../features';
 import { useL } from '../i18n';
@@ -200,6 +203,13 @@ function PhotoPicker() {
 }
 
 function Step2({ next, back }: { next: () => void; back: () => void }) {
+  const { job, setJob } = useApp();
+  const [joint, setJoint] = useState(() => uiStorage.getItem('jdMode') === 'joint' || !!job?.joint);
+  const mode = (value: boolean) => { setJoint(value); uiStorage.setItem('jdMode', value ? 'joint' : 'single'); if (!value && job?.joint) setJob(null); };
+  return <><div className="row card"><button disabled={!joint} onClick={() => mode(false)}>单岗位模式</button><button data-testid="joint-mode" disabled={joint} onClick={() => mode(true)}>同一企业多岗位联合匹配（1–3 个）</button></div>{joint ? <JointJobsInput next={next} back={back} /> : <SingleStep2 next={next} back={back} />}</>;
+}
+
+function SingleStep2({ next, back }: { next: () => void; back: () => void }) {
   const { settings, job, setJob, resume, setResume } = useApp();
   // v1.10：每张截图单独保存识别原文，删除某张时可以重建文字；岗位正文 = 去掉网页噪声后的识别文字（可修改）
   const [shots, setShots] = useState<{ url: string; raw: string }[]>(() => (job?.screenshots ?? []).map((url) => ({ url, raw: '' })));
@@ -268,7 +278,7 @@ function Step2({ next, back }: { next: () => void; back: () => void }) {
       if (r.reused === 'current') { setInfo('岗位文字没有变化，沿用已有分析结果（没有重新调用 AI）。需要时可点「重新分析」。'); return; }
       const j = { ...r.job, screenshots: imgs, ocrRawText: rawAll || undefined };
       setJob(j);
-      if (resume && resume.jobId !== j.id) setResume(null);
+      // 重新解析只新增岗位版本；保留已编辑简历，直到用户明确重新生成。
       if (r.reused === 'history') setInfo('这份岗位文字之前分析过，已复用当时的分析结果（没有重新调用 AI）。');
       if (r.aiError) setErr(`AI 解析失败（${r.aiError}），已用简单规则解析，请核对。`);
     } finally { setBusy(''); }
@@ -301,7 +311,7 @@ function Step2({ next, back }: { next: () => void; back: () => void }) {
           {busy && <ProgressNote msg={busy} pct={pct} />}
           {err && <div className="notice error">{err}</div>}
         </div>
-        <div className="card">
+        <div className="card" data-testid="single-jd-analysis">
           {!job ? <div className="empty">分析结果会显示在这里：公司、岗位、关键要求。</div> : (
             <>
               <h3>{job.title.zh || job.title.en || '岗位'} <span className="muted small">{job.title.en}</span>{stale && <span className="badge st-stale">可能过期</span>}</h3>
@@ -350,7 +360,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
     try { const r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy, { template, measure: (r) => measurePages(profile, { ...template, page: { ...template.page, autoFit: false } }, r) }); setResume({ ...r, templateId }); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
-  useEffect(() => { if (!started.current && job && (!resume || resume.jobId !== job.id)) { started.current = true; run(); } });
+  useEffect(() => { if (!started.current && job && !resume) { started.current = true; run(); } });
   // 实时统计 PDF 页数（Worker 中渲染，防抖）
   useEffect(() => {
     if (!resume) return;
@@ -374,18 +384,19 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
   return (
     <div className="step">
       <h2>③ 生成并预览</h2>
+      {resume && job && resume.jobId !== job.id && <div className="notice warn" data-testid="previous-resume-retained">岗位已重新解析；下方保留的是上一岗位版本的简历及手动选择。点击「重新生成」才会为当前岗位创建新简历，旧版继续保留在本机历史记录中。</div>}
       <AiDisclosure />
       {busy && <div className="notice"><span className="spinner" /> {busy}</div>}
       {err && <div className="notice error">{err}</div>}
       {resume && (
         <div className="card result-bar">
-          <div className="score" style={{ ['--p' as string]: resume.matchScore }}>{resume.matchScore}<small>匹配度</small></div>
+          {!job?.joint ? <div className="score" style={{ ['--p' as string]: resume.matchScore }}>{resume.matchScore}<small>匹配度</small></div> : <b>一份共同简历<br />逐岗查看证据</b>}
           <div className="grow">
             <div>{resume.gaps.length ? <>岗位要求里这些你的资料没体现：{resume.gaps.map((g) => <span key={g} className="chip gap">{g}</span>)}</> : '岗位要求都能在你的资料中找到对应经历 👍'}</div>
             <div className={`small ${resume.consistency.issues.length ? 'err-text' : 'ok-text'}`}>
               {resume.consistency.issues.length ? `⚠ 中英文有 ${resume.consistency.issues.length} 处数字/内容对不上，请在「逐条修改」里检查（标红行）` : '✓ 中英文两版条目和数字完全一致'}
             </div>
-            <div className="muted small" data-testid="score-note">「匹配度」是本工具按你的资料覆盖岗位要求估算的参考分，和下方「关键词覆盖率（ATS）」算法不同，也都不是招聘方的官方评分。</div>
+            <div className="muted small" data-testid="score-note">内部匹配参考不等于官方 ATS 或录用概率；联合模式按每个岗位分别查看证据、课程支持和实际缺口，不把平均分当成保证。</div>
             <div className="muted small">固定简介直接复用；AI 综合岗位与完整背景选材和表达。请用「事实审查」核对每条内容的真实来源。</div>
             <AuditBadge onOpen={() => setShowAudit(true)} />
           </div>
@@ -425,14 +436,16 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
           </div>
         </div>
       </div>
-      <MatchInsights go={go} />
+      <ResumeFactsOptions />
+      {!job?.joint && <MatchInsights go={go} />}
+      <EvidenceReport go={go} />
       {resume && (
         <div className="card">
           <button className="link big-link" onClick={() => setShowItems(!showItems)}>{showItems ? '▾' : '▸'} 想改某句话？逐条修改内容（{resume.items.length} 条）</button>
           {showItems && <ItemsEditor />}
         </div>
       )}
-      <div className="row nav-row"><button onClick={back}>← 换个岗位</button><span className="spacer" /><button className="primary big" disabled={!resume || !!busy} onClick={next}>满意了，去下载 →</button></div>
+      <div className="row nav-row"><button onClick={back}>← 换个岗位</button><span className="spacer" /><button className="primary big" disabled={!resume || !!busy || resume.jobId !== job?.id} onClick={next}>满意了，去下载 →</button></div>
     </div>
   );
 }

@@ -16,12 +16,12 @@ export function MatchInsights({ go }: { go: (p: string) => void }) {
     <div className="ats">
       <div className="row"><b>{label}</b><span className="spacer" /><span className={c.pct >= 70 ? 'ok-text' : c.pct >= 40 ? '' : 'err-text'}>{c.pct}%</span></div>
       <div className="bar"><div style={{ width: `${c.pct}%`, background: c.pct >= 70 ? '#38a169' : c.pct >= 40 ? '#d69e2e' : '#e53e3e' }} /></div>
-      {c.missing.length > 0 && <div className="small muted">{L('未出现：', 'Missing: ')}{c.missing.map((k, i) => <span key={i} className="chip gap">{k[l] || k.zh || k.en}</span>)}</div>}
+      {c.missing.length > 0 && <div className="small muted">{L('JD 要求但本简历尚未证实：', 'JD terms not evidenced in this resume: ')}{c.missing.map((k, i) => <span key={i} className="chip gap">{k[l] || k.zh || k.en}</span>)}</div>}
     </div>
   );
   return (
     <div className="card insights">
-      <h3>{L('📊 关键词匹配（ATS）', '📊 Keyword match (ATS)')}</h3>
+      <h3>{L('📊 内部辅助分析：关键词覆盖', '📊 Internal aid: keyword coverage')}</h3>
       <p className="muted small">{L('只统计岗位关键词在简历中出现的比例，用来提醒可补充的真实经历；不是招聘方或 ATS 系统的官方评分。', 'Share of job keywords found in the resume — a reminder, not an official employer or ATS score.')}</p>
       <div className="grid2">{meter(L('中文版', 'Chinese'), zh, 'zh')}{meter('English', en, 'en')}</div>
       {(resume.gaps.length > 0 || zh.missing.length > 0) && (

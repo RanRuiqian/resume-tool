@@ -1,3 +1,4 @@
+import type { JointGroup, SharedResumeVersion } from '../types/joint';
 import Dexie, { type Table } from 'dexie';
 import type { ExportRecord, JobParse, ProfileDoc, ResumeDoc, Settings, TemplateConfig } from '../types';
 import { normalizeProfile } from './profileIO';
@@ -10,6 +11,8 @@ export interface StateRow { id: string; value: unknown }
 export interface BackupRow { id: string; createdAt: string; reason: string; doc: ProfileDoc }
 
 export class ResumeDB extends Dexie {
+  jdGroups!: Table<JointGroup, string>;
+  resumeVersions!: Table<SharedResumeVersion, string>;
   profile!: Table<ProfileRow, string>;
   templates!: Table<TemplateConfig, string>;
   jobs!: Table<JobParse, string>;
@@ -55,6 +58,18 @@ export class ResumeDB extends Dexie {
       attachments: 'id, postingId, applicationId, sha256, uploadedAt',
       attachmentBlobs: 'id',
     });
+    // 同一升级事务先备份再追加课程字段；任意写入失败会由 IndexedDB 整体回滚至 v4。
+    // 不重写旧经历、简历、密钥、设置、投递记录或附件，也不碰 localStorage。
+    this.version(5).stores({}).upgrade(async (tx) => {
+      for (const row of await tx.table<ProfileRow>('profile').toArray()) {
+        if (!row?.doc) continue;
+        await tx.table('backups').add({ id: `bk-premigrate-v4-${row.id}`, createdAt: new Date().toISOString(), reason: '升级前自动快照（旧版原始资料，v4 → v5 课程模块）', doc: structuredClone(row.doc) });
+        if (row.doc.courses === undefined) row.doc.courses = [];
+        await tx.table('profile').put(row);
+      }
+    });
+    // v6 仅新增联合 JD 草稿与不可变共用版本；所有旧表原样保留。
+    this.version(6).stores({ jdGroups: 'id, updatedAt', resumeVersions: 'id, digest, createdAt' });
   }
 }
 
@@ -70,11 +85,11 @@ export async function countExports(company: string, roleAbbr: string, date: stri
 const MAX_BACKUPS = 20;
 /** 覆盖前保存快照；空资料不保存 */
 export async function snapshotProfile(d: ResumeDB, doc: ProfileDoc, reason: string): Promise<string | null> {
-  const empty = !doc.profile.name.zh && !doc.profile.name.en && !doc.work.length && !doc.education.length && !doc.projects.length && !doc.skills.length;
+  const empty = !doc.profile.name.zh && !doc.profile.name.en && !doc.work.length && !doc.education.length && !doc.projects.length && !doc.skills.length && !doc.courses?.length;
   if (empty) return null;
   const id = `bk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
   await d.backups.put({ id, createdAt: new Date().toISOString(), reason, doc: structuredClone(doc) });
-  const all = await d.backups.orderBy('createdAt').toArray();
+  const all = (await d.backups.orderBy('createdAt').toArray()).filter((x) => !x.id.startsWith('bk-premigrate-'));
   if (all.length > MAX_BACKUPS) await d.backups.bulkDelete(all.slice(0, all.length - MAX_BACKUPS).map((x) => x.id));
   return id;
 }

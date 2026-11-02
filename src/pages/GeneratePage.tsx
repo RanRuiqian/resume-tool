@@ -1,4 +1,6 @@
+import { EvidenceReport } from '../components/EvidenceReport';
 import { measurePages } from '../export/client';
+import { ResumeFactsOptions } from '../components/ResumeFactsOptions';
 import { AiDisclosure } from '../components/AiDisclosure';
 import { AuditBadge, FactAudit } from '../components/FactAudit';
 import { useState } from 'react';
@@ -61,7 +63,7 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
         <>
           <div className="card">
             <div className="row">
-              <div className="score" style={{ ['--p' as string]: resume.matchScore }}>{resume.matchScore}<small>匹配度</small></div>
+              {!job?.joint ? <div className="score" style={{ ['--p' as string]: resume.matchScore }}>{resume.matchScore}<small>匹配度</small></div> : <b>一份共同简历 · 逐岗查看证据</b>}
               <div className="grow">
                 <div><b>缺口：</b>{resume.gaps.length ? resume.gaps.map((g) => <span key={g} className="badge st-stale">{g}</span>) : '无'}</div>
                 <div className="muted small">生成方式：{resume.generatedBy === 'ai' ? 'AI 深度选材与写作' : '规则匹配'} · 主版本 {resume.primaryLanguage === 'zh' ? '中文' : 'English'} · 共 {resume.items.length} 条，均可追溯到资料库 sourceId</div>
@@ -76,6 +78,8 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
             {pending > 0 && <div className="notice warn">{pending} 条主版本已修改，副版本待同步。<button onClick={resync}>重新本地化</button></div>}
           </div>
           {showAudit && <FactAudit onClose={() => setShowAudit(false)} />}
+          <ResumeFactsOptions />
+          <EvidenceReport go={go} />
           <div className="card"><h4>逐条微调（左：中文，右：English）</h4><ItemsEditor /></div>
         </>
       )}

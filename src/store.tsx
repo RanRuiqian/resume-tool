@@ -11,6 +11,7 @@ import { IS_DEMO, uiStorage } from './storage/mode';
 
 interface AppState {
   ready: boolean;
+  loadError: boolean;
   profile: ProfileDoc; setProfile: (p: ProfileDoc) => void;
   settings: Settings; setSettings: (s: Settings) => void;
   /** 多 API 配置：新增/编辑（activate=true 同时启用）、一键切换、删除；均立即生效并保存，无需刷新 */
@@ -35,6 +36,7 @@ export const useApp = () => { const c = useContext(Ctx); if (!c) throw new Error
 
 export function AppProvider({ children }: { children: ReactNode }) {
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [profile, setProfileS] = useState<ProfileDoc>(emptyProfile());
   const [settings, setSettingsS] = useState<Settings>(DEFAULT_SETTINGS);
   const settingsRef = useRef<Settings>(DEFAULT_SETTINGS);
@@ -69,7 +71,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
         uiStorage.setItem('wizardStep', '3');
       }
       setReady(true);
-    })();
+    })().catch(() => { setLoadError(true); });
   }, []);
 
   const setProfile = useCallback((p: ProfileDoc) => {
@@ -87,12 +89,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
   const replaceProfile = useCallback(async (p: ProfileDoc, reason: string) => {
     const cur = latest.current ?? (await db.profile.get('me'))?.doc;
-    const id = cur ? await snapshotProfile(db, cur, reason) : null;
     window.clearTimeout(timer.current); timer.current = undefined;
-    latest.current = p; setProfileS(p);
-    await db.profile.put({ id: 'me', doc: p });
-    return id;
-  }, []);
+    try {
+      const id = await db.transaction('rw', db.profile, db.backups, async () => {
+        const backup = cur ? await snapshotProfile(db, cur, reason) : null;
+        if (latest.current && latest.current !== cur) throw new Error('资料已有新修改，请重新预览后再合并');
+        await db.profile.put({ id: 'me', doc: p }); return backup;
+      });
+      latest.current = p; setProfileS(p); return id;
+    } catch (error) {
+      if (latest.current) setProfile(latest.current);
+      throw error;
+    }
+  }, [setProfile]);
   const listBackups = useCallback(() => db.backups.orderBy('createdAt').reverse().toArray(), []);
   const restoreBackup = useCallback(async (id: string) => {
     const b = await db.backups.get(id); if (!b) return false;
@@ -116,5 +125,5 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const templates = [...ALL_TEMPLATES, ...custom];
   const template = templates.find((t) => t.id === templateId) ?? BUILTIN_TEMPLATES[0];
 
-  return <Ctx.Provider value={{ ready, profile, setProfile, settings, setSettings, saveApiProfile, switchApiProfile, removeApiProfile, templates, saveTemplate, deleteTemplate, templateId, setTemplateId, job, setJob, resume, setResume, template, canUndo: history.length > 0, undo, replaceProfile, listBackups, restoreBackup, isDemo: IS_DEMO }}>{children}</Ctx.Provider>;
+  return <Ctx.Provider value={{ ready, loadError, profile, setProfile, settings, setSettings, saveApiProfile, switchApiProfile, removeApiProfile, templates, saveTemplate, deleteTemplate, templateId, setTemplateId, job, setJob, resume, setResume, template, canUndo: history.length > 0, undo, replaceProfile, listBackups, restoreBackup, isDemo: IS_DEMO }}>{children}</Ctx.Provider>;
 }

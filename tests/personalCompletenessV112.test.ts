@@ -70,16 +70,17 @@ describe('A: fixed bilingual personal introduction', () => {
     expect(fixedSummaryItem(p)!.zh).toBe(p.profile.summary.zh);
   });
 
-  it('does not silently fill an absent, stale or unconfirmed summary language from the other language', async () => {
+  it('preserves saved unconfirmed summary text with review status and never silently retranslates it', async () => {
     const p = personalFixture(); p.profile.summary.status!.en = 'machine';
     const r = generateRules(p, jobs().A, 'zh');
-    expect(summaryOf(r.items)!.en).toBe('');
-    expect(buildLayout(p, template(), 'en', r).main.some((x) => x.key === 'summary')).toBe(false);
+    expect(summaryOf(r.items)!.en).toBe(p.profile.summary.en);
+    expect(summaryOf(r.items)!.syncStatus).toBe('needs-review');
+    expect(buildLayout(p, template(), 'en', r).main.some((x) => x.key === 'summary')).toBe(true);
     api.mockResolvedValue({ items: [] });
     const localized = await localizeAi(settings, p, jobs().A, r);
-    expect(summaryOf(localized.items)!.en).toBe('');
+    expect(summaryOf(localized.items)!.en).toBe(p.profile.summary.en);
     expect(JSON.stringify(api.mock.calls)).not.toContain('"sourceId":"summary"');
-    expect(r.notes!.join()).toContain('固定简介缺少已确认英文');
+    expect(r.notes!.join()).toContain('固定简介英文待确认');
   });
 
   it('bulk profile translation excludes the fixed summary; only explicit review can save a suggestion', async () => {

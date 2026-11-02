@@ -67,11 +67,13 @@ export const AI_PLAN_PROMPT = `你是理解候选人职业发展背景的工程�
 篇幅：constraints.layout 给出目标页数、字体、行距、页边距、模块间隔及软参考。不要使用“一页最多 8 条”的硬限制。结合固定简介、教育、工作、项目、组织、技能和证书等模块及句长整体分配空间；宁可提示两页，也不删除重要职业身份或缩成难读的小字。
 entries 按优先级返回主选经历，每段可指定不同要点数；reserveEntries 可给出少量有价值的候补（优先其它专业实践/主要组织经历），会一起撰写，程序仅按版面决定是否补入，不另做关键词取舍。主选和候补不得重复条目或事实。若有有效正式工作或组织经历却两者均不收录，必须在 omissions.professionalWork / omissions.campus 说明结合个人画像和空间仍省略的具体原因，不能仅写“不相关”。其它缺失类别也请说明原因。
 个人简介是用户在资料库保存的固定双语内容，不参与选材或岗位改写，不生成 summaryFocus 或简介正文。
+联合岗位（存在 targets 时）：逐个阅读独立 JD，不把多个 JD 当作一个岗位。requirementRefs 提供每岗每条真实要求的 requirementId、jobId、双语 text、tier；requirements 必须逐条完整对应，text 逐字复制任一语言原文，tier 与 requirementId 不变，并填写 reason 解释事实与岗位能力的关联。不能省略弱项或挪用另一岗位要求。jointSummary 返回 common / complementary / conflicts 三个数组，每项 {"requirementIds":["真实岗位要求 ID"],"reason":"具体依据"}；common 跨至少两个岗位，complementary 记录各岗特有或可兼顾要求，二者合计恰好覆盖全部要求一次；conflicts 可额外标注跨岗无法同时满足的方向。无共性时明确写入 conflicts 并提醒单份简历难以同时强匹配，但仍给出一份诚实的共同方案，不生成三份不同正文。
+课程语义：candidate.courses 提供正式名称、别名、内容概述、知识域、证据等级及关联项目 ID。按“JD 能力→课程内容/验证项目/实际经历”的关系推理，不要求标题逐字命中。Supply Chain 可支持供应链优化知识，不证明供应商开发/合同谈判；热力学可支持热过程理论；辅机中推断的 PLC 注释不证明 PLC 编程。课程确认与概述证据等级不同：inferred/recalled/unverified 必须说明不确定性。course ID 只能用于 assessment=learning 的知识支持，不能用于 direct/transferable 实操判断；learning 的实践缺口仍应提示，不能伪装直接匹配。真实实践必须另引项目/工作事实 sourceId。courses 数组只从 allowedIds.courses 选择适合打印名称的授课课程，不输出概述或成绩；不因课程推断新增 skills。reason 给出语义关联与不能证明的边界，不写成候选人已掌握的软件或已负责的任务。
 所有 ID 只能逐字复制 allowedIds：entries / reserveEntries 使用 allowedIds.entries，bulletIds 必须属于该 entryId；education 使用 allowedIds.education，教育主体默认保留，非官方/估算 GPA 不选。skills / certificates / awards 使用各自列表。
 requirements[].evidenceIds 只用 allowedIds.evidenceIds，包括真实 sourceId、技能/证书/奖项 ID 和 educationEvidenceIds 中的教育主体 ID（只证明已提供的学校、专业、学位与授予状态，不能代替被排除的 GPA 或课程事实）。工作/项目 entryId 仅作分组，不是证据；名称、别名、usedIn 引用或编造的 ID 不可用。
-岗位要求分 must / responsibility / preferred；direct / transferable 必须引用确实支持结论的证据，gap 必须为空 evidenceIds。保留课程、仿真、参与/协助、讨论/未完成、预计授予等边界；不能把 JD 中的技能写成个人经历。
+岗位要求分 must / responsibility / preferred；direct / transferable / learning 必须引用确实支持结论的证据，gap 必须为空 evidenceIds。保留课程、仿真、参与/协助、讨论/未完成、预计授予等边界；不能把 JD 中的技能写成个人经历。
 输出 JSON：
-{"requirements":[{"text":"岗位要求","tier":"must|responsibility|preferred","assessment":"direct|transferable|gap","evidenceIds":["真实证据 ID"]}],"entries":[{"entryId":"真实经历 ID","bulletIds":["所属事实 ID"],"reason":"体现直接相关、可迁移工程或职业/组织背景的理由"}],"reserveEntries":[],"education":[{"entryId":"教育 ID","bulletIds":[]}],"skills":[],"certificates":[],"awards":[],"omissions":{"professionalWork":"未选时说明","campus":"未选时说明"},"tradeoffs":"概述完整画像与版面之间的取舍"}。`;
+{"requirements":[{"text":"岗位要求","tier":"must|responsibility|preferred","assessment":"direct|transferable|learning|gap","requirementId":"联合模式必须复制 requirementRefs.id","reason":"关联依据与边界","evidenceIds":["真实证据 ID"]}],"entries":[{"entryId":"真实经历 ID","bulletIds":["所属事实 ID"],"reason":"体现直接相关、可迁移工程或职业/组织背景的理由"}],"reserveEntries":[],"courses":[],"jointSummary":{"common":[],"complementary":[],"conflicts":[]},"education":[{"entryId":"教育 ID","bulletIds":[]}],"skills":[],"certificates":[],"awards":[],"omissions":{"professionalWork":"未选时说明","campus":"未选时说明"},"tradeoffs":"概述完整画像与版面之间的取舍"}。`;
 
 export const AI_PLAN_REPAIR_PROMPT = `上一条 assistant 消息是你首次返回的选材方案。请结合原始岗位、素材、具体 issues 和 allowedIds，仅修复 allowedPaths 列出的错误位置，不要重新生成整份方案。
 你仍负责语义判断：检查无效证据实际应引用哪个合法 ID，不要只按相似拼写替换，也不要删除安全检查。工作/项目分组 entryId 不是事实 sourceId；只有明确列在 educationEvidenceIds 的教育主体 ID 可以证明该主体的学校/专业/学位及授予状态。若没有证据，只有确实存在能力缺口时才可改为 gap 并清空 evidenceIds，不得为了过校验把有证据的要求一律改成 gap。
@@ -82,6 +84,7 @@ export const AI_PLAN_REPAIR_PROMPT = `上一条 assistant 消息是你首次返�
 export const AI_WRITE_PROMPT = (lang: string) => `理解 JD 和已选真实素材，为${lang}简历写自然、专业、客观的工程表达；只输出 JSON。
 可以重新组织句法、用专业术语概括已有的技术对象/方法/结果、突出同一项目对本岗位有价值的不同侧面，减少实验报告细节。不要仅删字或逐句拼接，也不要过度营销。
 工作/实习体现真实职业与生产背景；组织经历简洁写真实协调、沟通和执行，不编人数、规模、经费或职责。
+gaps 是未证实的能力要求（包括仅有课程知识却缺实操的方向），绝不能补写进职业事实或技能。仅从 facts 推导正文；即使 JD 要求某任务，也不能把参与装配写成参与供应商开发或 PLC 编程。
 每个要点必须指定 sourceId。允许把同一经历内已选的多个事实归纳成一个要点，此时提供 sourceIds，逐个列出真实支持该句的来源并包含主 sourceId；不得跨公司、跨项目归并。一个来源只使用一次，不能挪用未选事实。正文必须能被这些来源共同支持，不能因概括而新增事实。
 必须保留参与/协助、课程/仿真、预计/未授予、计划/讨论/未完成、估算等原有边界。不得添加未用软件、日期、量化成果、部署、独立主导或商业经历；语义专业化不等于事实升级。原文不能证明已完成的动作，不要写成完成。
 个人简介已固定，禁止返回 summary 或重新措辞简介。也不改写公司、职位、时间、项目名称、证书名称。英文避免相邻重复词、重复课程性质和直译式名词堆叠，保持语法与工程术语自然。

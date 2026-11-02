@@ -40,7 +40,7 @@ with sync_playwright() as p:
     chk('截图识别原文可查看（含被去掉的行）', pg.locator('[data-testid=ocr-raw]').count()==1 and '共有47个' in pg.locator('[data-testid=ocr-raw]').text_content())
     pg.click('[data-testid=analyze]'); pg.wait_for_selector('.chip.must')
     chk('首次分析调用 1 次 AI', calls['parse']==1)
-    chk('分析面板显示岗位职责', '岗位职责' in pg.locator('.card').nth(1).inner_text())
+    chk('分析面板显示岗位职责', '岗位职责' in pg.locator('[data-testid=single-jd-analysis]').inner_text())
     pg.click('[data-testid=analyze]'); pg.wait_for_selector('[data-testid=analyze-info]')
     chk('同一文字再次分析：复用结果，不再调用 AI', calls['parse']==1 and '沿用' in pg.locator('[data-testid=analyze-info]').inner_text())
     for w,h in [(390,844),(768,1000),(1280,900),(1440,900)]:

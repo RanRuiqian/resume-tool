@@ -12,6 +12,8 @@ import { fixedSummaryItem, fixedSummaryNotes } from './fixedSummary';
 import { fitContent, pageBudget, type ContentOptions } from './contentStrategy';
 import { sourceText } from './provenance';
 import { decisionModel, planWithAi, type AiSelectionResult } from './aiPlanner';
+import { createEvidenceReport, refreshReportSelection } from '../joint/report';
+import { academicHighlight, courseSelectionSnapshot, profileForGeneration } from '../privacy/resume';
 
 type Sel = ResumeDoc['selection'];
 const NAME: Record<Lang, string> = { zh: '中文', en: '英文' };
@@ -50,6 +52,7 @@ function conflictNotes(p: ProfileDoc, job: JobParse): string[] {
  * 每段经历按价值和篇幅预算挑选要点，并按句精简（中英同步取舍）；不改写措辞，母库不变。
  */
 export function generateRules(p: ProfileDoc, job: JobParse, primary: Lang, targetPages = 1): ResumeDoc {
+  p = profileForGeneration(p);
   const plan = planResume(p, job, primary, targetPages);
   const terms = jobTerms(job);
   const idx = textIndex(p);
@@ -114,7 +117,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   // 不发送照片、出生年月、性别、籍贯等敏感信息（PRD 8）；只发送本简历选中的事实
   let aiPriority = 0;
   const facts = plan.entries.filter((e) => e.kind !== 'education').flatMap((e) => e.bulletIds.map((id) => ({ sourceId: id, entryId: e.id, ...entryName(e.id), text: T(idx.get(id)!.t), priority: ++aiPriority, budget: plan.budgets?.[id], qualifiers: rankOf.get(id)?.r.qualifiers ?? [] }))).filter((f) => f.text);
-  const brief = { title: job.title, requirements: decision.requirements, layout: pageBudget(targetPages, primary, options.template, p), facts };
+  const brief = { title: job.title, requirements: decision.requirements.filter((r) => r.assessment === 'direct' || r.assessment === 'transferable').map(({ text, tier, assessment, evidenceIds }) => ({ text, tier, assessment, evidenceIds })), gaps: decision.requirements.filter((r) => r.assessment === 'gap' || r.assessment === 'learning').map((r) => r.text), targets: job.joint?.targets.map((t) => ({ name: t.name, title: t.job.title })), layout: pageBudget(targetPages, primary, options.template, p), facts };
   type Out = { items?: { sourceId: string; sourceIds?: string[]; text: string }[]; reasons?: string };
   onStep?.('2/3 正在撰写：AI 按已验证的选材方案编写岗位定制简历…');
   const out = await chatJson<Out>(s, [{ role: 'system', content: SYS_FACTS },
@@ -192,6 +195,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   return { resume: {
     id: uid('resume'), jobId: job.id, templateId: '', primaryLanguage: primary, createdAt: new Date().toISOString(),
     matchScore: decision.matchScore, gaps: decision.gaps, selection, items,
+    courseSelection: courseSelectionSnapshot(p, decision.courses, []), evidenceReport: createEvidenceReport(p, job, decision.requirements, decision.chosenReasons, decision.jointSummary),
     consistency: { checkedAt: '', issues: [] }, generatedBy: 'ai', layoutPolicy: 'readable',
     notes: [...fixedSummaryNotes(p), `AI 选材：${decision.tradeoffs || '已比对完整岗位与候选经历'}`,
       ...decision.chosenReasons.slice(0, 8), ...(out.reasons ? [String(out.reasons)] : []), ...notes,
@@ -218,6 +222,9 @@ export function decideTranslation(pri: string, aiText: string | undefined, confi
 
 /** 基于主版本本地化副版本（F5.6 第二步）；校验失败重试 1 次，仍失败按 decideTranslation 回退 */
 export async function localizeAi(s: Settings, p: ProfileDoc, job: JobParse | null, r: ResumeDoc, onlyIds?: string[]): Promise<ResumeDoc> {
+  const hiddenAcademicIds = new Set(p.education.flatMap((e) => e.highlights.filter(academicHighlight).map((b) => b.id)));
+  p = profileForGeneration(p);
+  r = { ...r, items: r.items.filter((i) => !hiddenAcademicIds.has(i.sourceId)) };
   const pri = r.primaryLanguage, sec = other(pri);
   // 用户人工确认过的副版本优先保留，不再重译（B6）
   const target = r.items.filter((i) => i.sourceId !== 'summary' && (!onlyIds || onlyIds.includes(i.sourceId)) && !i.confirmedLangs?.includes(sec));
@@ -266,14 +273,16 @@ export function flagStale(p: ProfileDoc, r: ResumeDoc): ResumeDoc {
 }
 
 export async function generateResume(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void, options: ContentOptions = {}): Promise<ResumeDoc> {
+  p = profileForGeneration(p);
   const r = await generateResumeInner(s, p, job, primary, targetPages, onStep, options);
   let cut = 0;
   r.items = r.items.map((i) => { if (i.sourceId === 'summary') return i; const zh = stripAuthorList(i.zh), en = stripAuthorList(i.en); if (zh !== i.zh || en !== i.en) cut++; return zh !== i.zh || en !== i.en ? { ...i, zh, en } : i; });
   if (cut) r.notes = [...(r.notes ?? []), `已在简历中省略论文作者名单（${cut} 条；资料库原文未改）`];
-  return runConsistency(flagStale(p, r));
+  return runConsistency(flagStale(p, { ...r, courseSelection: r.courseSelection ?? { ids: [], gradeIds: [], snapshots: [] }, evidenceReport: refreshReportSelection(r), contactVisibility: { ...p.profile.contacts.visibility }, ...(r.items.find((i) => i.sourceId === 'summary') ? { summaryBaseline: structuredClone(r.items.find((i) => i.sourceId === 'summary')!) } : {}) }));
 }
 async function generateResumeInner(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void, options: ContentOptions = {}): Promise<ResumeDoc> {
   if (s.demoMode) {
+    if (job.joint) throw new Error('联合岗位需要 AI 语义选材；演示模式不会以关键词规则假装联合分析成功');
     onStep?.('演示模式：规则匹配中…');
     const r = generateRules(p, job, primary, targetPages);
     fillSecondaryFromProfile(p, r, true);

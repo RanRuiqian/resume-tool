@@ -1,3 +1,4 @@
+import { resolveArtifact } from '../../joint/versions';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useApp } from '../../store';
 import { db } from '../../storage/db';
@@ -97,12 +98,13 @@ export function PostingDetail({ posting, go, onEdit, onDelete, onChanged }: { po
     const url = URL.createObjectURL(new Blob([b.data as BlobPart], { type: a.mime })); window.open(url, '_blank', 'noopener'); setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
   const exportSnapshot = async (art: ResumeArtifact) => {
-    if (!art.resume || !art.profile) return;
-    const tpl = templates.find((t) => t.id === art.templateId) ?? template;
+    const snapshot = await resolveArtifact(db, art).catch((e) => { setMsg({ t: 'error', m: (e as Error).message }); return null; });
+    if (!snapshot?.resume || !snapshot.profile) return;
+    const tpl = snapshot.template ?? templates.find((t) => t.id === art.templateId) ?? template;
     setMsg({ t: 'ok', m: '正在按快照重新生成文件…' });
     try {
-      const names = buildExportNames(posting.company, guessRoleAbbr(posting.title), new Date(art.createdAt), 0);
-      const r = await exportZip(art.profile, tpl, art.resume, names);
+      const names = buildExportNames(snapshot.job?.company.short || posting.company, art.versionId ? 'JOINT' : guessRoleAbbr(posting.title), new Date(art.createdAt), 0);
+      const r = await exportZip(snapshot.profile, tpl, snapshot.resume, names);
       downloadBytes(r.zip, names.zipName.replace(/\.zip$/, '_快照.zip'), 'application/zip'); setMsg({ t: 'ok', m: '已按快照内容导出（与当时投递的内容一致）' });
     } catch (e) { setMsg({ t: 'error', m: `导出失败：${(e as Error).message}` }); }
   };
@@ -142,7 +144,7 @@ export function PostingDetail({ posting, go, onEdit, onDelete, onChanged }: { po
         </div>
 
         <div className="card" data-testid="resume-card">
-          <h4>关联的简历版本</h4>
+          <h4>关联的简历版本</h4>{app?.resumeVersionId && <p className="small" data-testid="shared-version-id">共同版本 ID：{app.resumeVersionId}</p>}
           <p className="muted small">关联时会保存当时简历和资料的完整快照；之后修改资料或重新生成，已投递的版本都不会改变。</p>
           <div className="row">
             <button data-testid="link-current" disabled={!resume} onClick={linkCurrent}>🔗 关联当前生成的简历{resume ? `（${fmt(resume.createdAt)}）` : ''}</button>
