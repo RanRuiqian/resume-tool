@@ -35,7 +35,9 @@ export function nextTrim(p: ProfileDoc, r: ResumeDoc): TrimStep | null {
     for (const id of [...ids].reverse()) {
       const items = texts(p, r, key, id);
       if (items.length <= keep) continue;
-      const last = items[items.length - 1];
+      // 论文 / 发表 / 专利 / 获奖这类成果不先删：从末尾找第一条不是成果的要点。
+      const protectedText = (i: (typeof items)[number]) => /论文|发表|录用|专利|获奖|一等奖|二等奖|三等奖|paper|publication|published|accepted|patent|award|IEEE|IECBES/i.test(`${i.zh} ${i.en}`);
+      const last = [...items].reverse().find((i) => !protectedText(i)) ?? items[items.length - 1];
       const entry = (p[key] as { id: string; bullets: { id?: string }[] }[]).find((x) => x.id === id)!;
       const b = entry.bullets.find((x) => x.id && sourceIdsOf(last).includes(x.id));
       if (!b) continue;
@@ -88,7 +90,7 @@ export interface PageMeasure { zh: { pages: number }; en: { pages: number } }
  * 按目标页数删减：先把逐步删减的各个状态都算出来（纯本地、很快），再用实际 PDF 页数二分查找
  * 「刚好放得下」所需的最少步数，避免删过头。measure 不可用时退回本地排版估算。
  */
-export async function trimToPages(p: ProfileDoc, template: TemplateConfig, r: ResumeDoc, measure?: (r: ResumeDoc) => Promise<PageMeasure | null>, refillMeasures = 5): Promise<ResumeDoc> {
+export async function trimToPages(p: ProfileDoc, template: TemplateConfig, r: ResumeDoc, measure?: (r: ResumeDoc) => Promise<PageMeasure | null>, refillMeasures = 10): Promise<ResumeDoc> {
   const target = template.page.targetPages || 1;
   const states: TrimStep[] = [{ resume: r, label: '' }];
   for (let i = 0; i < 80; i++) { const s = nextTrim(p, states[states.length - 1].resume); if (!s) break; states.push(s); }

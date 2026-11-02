@@ -259,3 +259,19 @@ describe('I. practice entries outside course headings are not labelled as course
     expect(ps.find((x) => x.id.includes('LRN-SHIP'))).toMatchObject({ name: { zh: '本科补充实践' }, nature: '' });
   });
 });
+
+describe('J. trimming keeps publications', () => {
+  it('drops a non-publication bullet before the paper bullet even when the paper is last', async () => {
+    const { nextTrim } = await import('../src/ai/trim');
+    const p = personalFixture();
+    const proj = { ...structuredClone(p.projects[0]), id: 'trim-proj', kind: 'auxiliary' as const, bullets: [0, 1, 2].map((i) => ({ id: `trim-b${i}`, zh: `原文 ${i}` })) };
+    p.projects.push(proj);
+    const ids = proj.bullets.map((b) => b.id);
+    const r = { selection: { work: [], projects: [proj.id], education: [], skills: [], certificates: [], awards: [] },
+      items: ids.map((id, i) => ({ sourceId: id, zh: i === 2 ? '第一作者论文被虚构会议录用' : `虚构要点 ${i}`, en: '', syncStatus: 'in-sync' as const })), courseSelection: { ids: [], gradeIds: [] } } as never;
+    const step = nextTrim(p, r)!;
+    const left = (step.resume as { items: { zh: string }[] }).items.map((i) => i.zh);
+    expect(left).toContain('第一作者论文被虚构会议录用');
+    expect(left).not.toContain('虚构要点 1');
+  });
+});
