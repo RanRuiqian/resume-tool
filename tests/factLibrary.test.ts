@@ -62,12 +62,12 @@ it('does not treat an abbreviated qualified Python Commands name as standalone P
   expect(py.usedIn).not.toContain(p.projects.find((p) => p.id.includes('LAB2B'))!.id);
 });
 
-it('keeps confirmed facts on a conflict and records an explicitly approved corrected fact without weakening override checks', () => {
+it('keeps facts by default and records a correction only after the user explicitly chooses replacement', () => {
   const base = apply(), input = mockFactLibrary().replace('Mock Course 1｜2.5 学分｜75 分', 'Mock Course 1｜2.5 学分｜85 分'), r = parse(input);
   const plan = buildImportPlan(base, r.profile), item = plan.items.find((i) => i.incomingId === 'library-BSC-001')!;
   expect(item.status).toBe('conflict'); item.action = 'merge';
   const kept = applyImportPlan(base, r.profile, plan); expect(kept.sourceFacts!.find((f) => f.id === 'BSC-001')!.raw).toContain('75 分');
-  item.action = 'replace'; expect(() => applyImportPlan(base, r.profile, plan)).toThrow(/确认/); item.overrideConfirmed = true;
+  item.action = 'replace'; // 已明确选择替换，不再要求第二个风险确认。
   const fixed = applyImportPlan(base, r.profile, plan); expect(fixed.courses!.find((c) => c.sourceRecord?.id === 'BSC-001')!.grade.raw).toBe('85 分');
   expect(fixed.sourceFacts!.find((f) => f.id === 'BSC-001')!.raw).toContain('85 分'); expect(base.sourceFacts!.find((f) => f.id === 'BSC-001')!.raw).toContain('75 分');
 });

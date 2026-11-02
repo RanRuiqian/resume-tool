@@ -68,8 +68,8 @@ export function PostingDetail({ posting, go, onEdit, onDelete, onChanged }: { po
   const linkCurrent = async () => {
     if (!resume) return setMsg({ t: 'error', m: '当前没有生成好的简历。可以点「用这个 JD 生成简历」先生成。' });
     const a = await ensureApp('preparing'); setAppId(a.id);
-    const art = await linkResumeSnapshot(db, a.id, { resume, profile, job, label: `${posting.company} · ${posting.title} · 生成于 ${fmt(resume.createdAt)}` });
-    await done(`已关联简历快照（${art.audit?.unconfirmedRed ? `⚠ 事实审查还有 ${art.audit.unconfirmedRed} 处高风险未确认` : '事实审查无高风险未确认'}）。之后修改资料或重新生成都不会改变这个快照。`, art.audit?.unconfirmedRed ? 'warn' : 'ok');
+    await linkResumeSnapshot(db, a.id, { resume, profile, job, label: `${posting.company} · ${posting.title} · 生成于 ${fmt(resume.createdAt)}` });
+    await done('已关联简历快照。之后修改资料或重新生成都不会改变这个快照。', 'ok');
   };
   const toGenerate = async () => {
     const a = await ensureApp('preparing');
@@ -156,7 +156,6 @@ export function PostingDetail({ posting, go, onEdit, onDelete, onChanged }: { po
           <ul className="artifacts" data-testid="artifacts">{arts.map((a) => (
             <li key={a.id} data-testid="artifact">
               {a.submitted && <span className="chip st-ok">实际提交版本</span>} <b>{a.label}</b> <span className="muted small">{a.languages.map((l) => (l === 'zh' ? '中' : '英')).join('/')} · {a.kind === 'snapshot' ? `快照 · 简历生成于 ${fmt(a.resumeCreatedAt)}` : '上传文件'} · 关联于 {fmt(a.createdAt)}</span>
-              {a.audit && <div className="small">{a.audit.unconfirmedRed ? <span className="bad">⚠ 事实审查：{a.audit.unconfirmedRed} 处高风险未确认</span> : a.audit.unconfirmed ? `事实审查：${a.audit.unconfirmed} 处待确认` : '✓ 事实审查已处理'}{a.job && <span className="muted">　对应 JD：{a.job.company.short || a.job.company.full} {a.job.title.zh || a.job.title.en}</span>}</div>}
               <div className="row">{a.kind === 'snapshot' && <button className="link" onClick={() => exportSnapshot(a)}>按快照导出 PDF/Word</button>}
                 {a.kind === 'snapshot' && <button className="link" onClick={() => db.artifacts.update(a.id, { submitted: !a.submitted }).then(load)}>{a.submitted ? '取消「实际提交」标记' : '标记为实际提交版本'}</button>}
                 {a.attachmentId && <button className="link" onClick={() => { const x = atts.find((t) => t.id === a.attachmentId); if (x) openAtt(x, true); }}>下载文件</button>}</div>

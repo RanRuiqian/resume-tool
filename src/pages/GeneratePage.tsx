@@ -2,8 +2,9 @@ import { EvidenceReport } from '../components/EvidenceReport';
 import { measurePages } from '../export/client';
 import { ResumeFactsOptions } from '../components/ResumeFactsOptions';
 import { AiDisclosure } from '../components/AiDisclosure';
-import { AuditBadge, FactAudit } from '../components/FactAudit';
-import { useState } from 'react';
+import { ResumeNotice } from '../components/ResumeNotice';
+import { MaterialPool } from '../components/MaterialPool';
+import { useEffect, useRef, useState } from 'react';
 import { useApp } from '../store';
 import { useT } from '../i18n';
 import type { Lang } from '../types';
@@ -18,7 +19,6 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
   const t = useT();
   const [primary, setPrimary] = useState<Lang>(job?.jdLanguage ?? 'zh');
   const [busy, setBusy] = useState('');
-  const [showAudit, setShowAudit] = useState(false);
   const [err, setErr] = useState('');
   const [view, setView] = useState<'zh' | 'en' | 'both'>('both');
   const [showExport, setShowExport] = useState(false);
@@ -29,12 +29,14 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
     try { const r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy, { template, measure: (r) => measurePages(profile, { ...template, page: { ...template.page, autoFit: false } }, r) }); setResume({ ...r, templateId }); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
+  const latestResume = useRef(resume);
+  useEffect(() => { latestResume.current = resume; }, [resume]);
   const resync = async () => {
     if (!resume) return;
     const ids = resume.items.filter((i) => i.syncStatus !== 'in-sync').map((i) => i.sourceId);
     if (settings.demoMode) { setResume(runConsistency({ ...resume, items: resume.items.map((i) => ({ ...i, syncStatus: 'in-sync' })) })); return; }
     setBusy('重新本地化待同步条目…');
-    try { setResume(await localizeAi(settings, profile, job, resume, ids)); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
+    try { const translated = await localizeAi(settings, profile, job, resume, ids); if (latestResume.current === resume) setResume(translated); else setErr('同步期间简历已修改，保留当前编辑；可按需再次同步。'); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
   const pending = resume?.items.filter((i) => i.syncStatus !== 'in-sync').length ?? 0;
 
@@ -62,35 +64,27 @@ export function GeneratePage({ go }: { go: (p: string) => void }) {
       {resume && (
         <>
           <div className="card">
-            <div className="row">
-              {!job?.joint ? <div className="score" style={{ ['--p' as string]: resume.matchScore }}>{resume.matchScore}<small>匹配度</small></div> : <b>一份共同简历 · 逐岗查看证据</b>}
-              <div className="grow">
-                <div><b>缺口：</b>{resume.gaps.length ? resume.gaps.map((g) => <span key={g} className="badge st-stale">{g}</span>) : '无'}</div>
-                <div className="muted small">生成方式：{resume.generatedBy === 'ai' ? 'AI 深度选材与写作' : '规则匹配'} · 主版本 {resume.primaryLanguage === 'zh' ? '中文' : 'English'} · 共 {resume.items.length} 条，均可追溯到资料库 sourceId</div>
-                {resume.notes?.map((n, i) => <div key={i} className="muted small">· {n}</div>)}
-                <AuditBadge onOpen={() => setShowAudit(true)} />
-              </div>
-            </div>
-            <div className={`notice ${resume.consistency.issues.length ? 'error' : 'ok'}`}>
-              一致性校验：{resume.consistency.issues.length ? `${resume.consistency.issues.length} 个问题` : '两版条目、数字、日期一致 ✓'}
-              {resume.consistency.issues.map((i, k) => <div key={k} className="small">· {i.message}</div>)}
-            </div>
-            {pending > 0 && <div className="notice warn">{pending} 条主版本已修改，副版本待同步。<button onClick={resync}>重新本地化</button></div>}
+            <b>{resume.generatedBy === 'ai' ? 'AI 已完成岗位选材与撰写' : '演示简历（未调用 AI）'}</b>
+            <p className="muted small">左侧勾选、编辑、排序，右侧实时更新。调整素材不调用 AI，也不修改个人资料库。</p>
+            <ResumeNotice />
+            {pending > 0 && <div className="notice warn">{pending} 条文字的另一语言可按需同步，不影响下载。<button onClick={resync}>重新本地化</button></div>}
           </div>
-          {showAudit && <FactAudit onClose={() => setShowAudit(false)} />}
-          <ResumeFactsOptions />
-          <EvidenceReport go={go} />
-          <div className="card"><h4>逐条微调（左：中文，右：English）</h4><ItemsEditor /></div>
+          <details className="card"><summary>中英文逐条编辑</summary><ItemsEditor /></details>
         </>
       )}
       <div className="card">
         <div className="row"><h4>{t('preview')}</h4>
           {(['zh', 'en', 'both'] as const).map((v) => <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>{v === 'zh' ? 'CN' : v === 'en' ? 'EN' : 'CN | EN 并排'}</button>)}
         </div>
-        <div className="previews">
+        <div className="pool-layout">
+          {resume && <MaterialPool />}
+          <div className="previews">
           {(view === 'both' ? (['zh', 'en'] as Lang[]) : [view]).map((l) => <Preview key={l} m={buildLayout(profile, template, l, resume)} scale={view === 'both' ? 0.55 : 0.8} />)}
+          </div>
         </div>
       </div>
+      <ResumeFactsOptions />
+      <EvidenceReport go={go} />
       {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
     </div>
   );

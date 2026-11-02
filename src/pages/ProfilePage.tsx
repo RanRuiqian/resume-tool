@@ -1,6 +1,5 @@
 import { ClearPersonalDataButton } from '../components/ClearPersonalDataButton';
-import { OrganizePanel, ReviewSummary } from '../components/OrganizePanel';
-import { isUnconfirmedImport } from '../audit/techTerms';
+import { OrganizePanel } from '../components/OrganizePanel';
 import { useRef, useState } from 'react';
 import { SmartImport } from '../components/SmartImport';
 import { useApp } from '../store';
@@ -8,7 +7,7 @@ import { useT } from '../i18n';
 import { LTField } from '../components/LTField';
 import { FixedSummaryEditor } from '../components/FixedSummaryEditor';
 import { CoursesPanel } from '../components/CoursesPanel';
-import { EducationExtra, EvidenceList, ProjectDossierEditor, SkillExtra } from '../components/DossierFields';
+import { EducationExtra, ProjectDossierEditor, SkillExtra } from '../components/DossierFields';
 import type { LocalizedText, ProfileDoc, Lang } from '../types';
 import { uid, needsTranslation, forEachText } from '../locale/text';
 import { normalizeProfile, exportProfileJson } from '../storage/profileIO';
@@ -18,10 +17,10 @@ import { downloadBytes, fileToDataUrl } from '../utils/download';
 import type { BackupRow } from '../storage/db';
 
 type ListKey = 'education' | 'work' | 'projects' | 'skills' | 'certificates' | 'awards';
-const TABS: { key: 'basic' | ListKey | 'evidence' | 'glossary' | 'courses'; label: string }[] = [
+const TABS: { key: 'basic' | ListKey | 'glossary' | 'courses'; label: string }[] = [
   { key: 'basic', label: '基本信息' }, { key: 'education', label: '教育' }, { key: 'work', label: '工作' }, { key: 'projects', label: '项目' },
   { key: 'courses', label: '课程' },
-  { key: 'skills', label: '技能' }, { key: 'certificates', label: '证书' }, { key: 'awards', label: '获奖' }, { key: 'evidence', label: '证据' }, { key: 'glossary', label: '专有名词表' },
+  { key: 'skills', label: '技能' }, { key: 'certificates', label: '证书' }, { key: 'awards', label: '获奖' }, { key: 'glossary', label: '专有名词表' },
 ];
 const LT_FIELDS: Record<ListKey, [string, string, boolean?][]> = {
   education: [['school', '学校'], ['degree', '学位'], ['major', '专业']],
@@ -79,7 +78,6 @@ export function ProfilePage() {
             <div className="entry-head">
               <label className="check"><input type="checkbox" checked={!!e.enabled} onChange={(ev) => upd((p) => { (p[k][i] as { enabled: boolean }).enabled = ev.target.checked; })} /> 启用（生成时入池）</label>
               <span className="muted small">{e.id as string}</span>
-              {isUnconfirmedImport(e as Parameters<typeof isUnconfirmedImport>[0]) && <span className="badge st-stale" data-testid="import-unconfirmed">AI 导入 · 未确认（不作为可靠证据）<button className="link" onClick={() => upd((p) => { (p[k][i] as { userConfirmedAt?: string }).userConfirmedAt = new Date().toISOString(); })}>确认属实</button></span>}
               <span className="spacer" />
               <button disabled={i === 0} onClick={() => upd((p) => { const a = p[k] as unknown[]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; })}>↑</button>
               <button disabled={i === arr.length - 1} onClick={() => upd((p) => { const a = p[k] as unknown[]; [a[i + 1], a[i]] = [a[i], a[i + 1]]; })}>↓</button>
@@ -112,7 +110,7 @@ export function ProfilePage() {
                 <button onClick={() => upd((p) => { ((p[k][i] as unknown as Record<string, LocalizedText[]>)[BULLETS[k]!]).push({ id: uid(`${e.id}-b`) }); })}>+ 添加要点</button>
               </div>
             )}
-            {k === 'projects' && <ProjectDossierEditor e={profile.projects[i]} profile={profile} set={(fn) => upd((p) => fn(p.projects[i]))} />}
+            {k === 'projects' && <ProjectDossierEditor e={profile.projects[i]} set={(fn) => upd((p) => fn(p.projects[i]))} />}
           </div>
         ))}
         <button className="primary" onClick={() => upd((p) => { (p[k] as unknown[]).push(newEntry(k)); })}>+ {t('add')}</button>
@@ -138,8 +136,7 @@ export function ProfilePage() {
       <BackupPanel list={listBackups} restore={async (id) => { if (!confirm('恢复这份快照会替换当前资料（当前资料也会先存一份快照）。确定吗？')) return; if (await restoreBackup(id)) setMsg('已恢复快照。'); }} />
       {(busy || msg) && <div className="notice">{busy || msg}</div>}
       <OrganizePanel />
-      <ReviewSummary />
-      <div className="tabs">{TABS.map((x) => <button key={x.key} className={tab === x.key ? 'active' : ''} onClick={() => setTab(x.key)}>{x.label}{x.key !== 'basic' && x.key !== 'glossary' ? `（${(profile[x.key] ?? []).length}）` : ''}{x.key !== 'basic' && x.key !== 'glossary' && x.key !== 'evidence' && (profile[x.key] ?? []).some((e) => e.uncertain?.length) ? ' ⚠' : ''}</button>)}</div>
+      <div className="tabs">{TABS.map((x) => <button key={x.key} className={tab === x.key ? 'active' : ''} onClick={() => setTab(x.key)}>{x.label}{x.key !== 'basic' && x.key !== 'glossary' ? `（${(profile[x.key] ?? []).length}）` : ''}{x.key !== 'basic' && x.key !== 'glossary' && (profile[x.key] ?? []).some((e) => e.uncertain?.length) ? ' ⚠' : ''}</button>)}</div>
       {tab === 'basic' && (
         <div className="card">
           <div className="photo-row">
@@ -168,9 +165,8 @@ export function ProfilePage() {
           </div>
         </div>
       )}
-      {tab !== 'basic' && tab !== 'glossary' && tab !== 'evidence' && tab !== 'courses' && list(tab)}
+      {tab !== 'basic' && tab !== 'glossary' && tab !== 'courses' && list(tab)}
       {tab === 'courses' && <CoursesPanel />}
-      {tab === 'evidence' && <EvidenceList profile={profile} upd={upd} />}
       {tab === 'glossary' && (
         <div className="card">
           <p className="muted">公司名、产品名、学校官方英文名等固定译法。翻译与生成时强制遵循。</p>

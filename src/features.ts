@@ -5,8 +5,6 @@
 export const FEATURES = {
   /** 岗位历史：每个岗位的定制简历自动保存，可重新打开/再次导出 */
   jobHistory: true,
-  /** 匹配分析：ATS 关键词覆盖率 + 缺口建议（只建议补充真实经历，不代写） */
-  matchInsights: true,
   /** 求职信 / 自我介绍（中英），可选加入 zip */
   coverLetter: true,
   /** 面试准备：根据岗位与简历生成可能被问到的问题与回答要点 */

@@ -82,7 +82,7 @@ function fillSecondaryFromProfile(p: ProfileDoc, r: ResumeDoc, demo: boolean) {
   const sec = other(r.primaryLanguage);
   for (const it of r.items) {
     if (it.sourceId === 'summary') continue;
-    if (it[sec].trim()) continue;
+    if (it[sec].trim() || it.confirmedLangs?.includes(sec)) continue;
     const src = sourceText(p, it);
     const v = src ? lt(src, sec, false) : '';
     it[sec] = v || (demo ? mockTranslate(it[r.primaryLanguage], sec, p.glossary) : '');
@@ -222,28 +222,35 @@ export function decideTranslation(pri: string, aiText: string | undefined, confi
 
 /** 基于主版本本地化副版本（F5.6 第二步）；校验失败重试 1 次，仍失败按 decideTranslation 回退 */
 export async function localizeAi(s: Settings, p: ProfileDoc, job: JobParse | null, r: ResumeDoc, onlyIds?: string[]): Promise<ResumeDoc> {
+  const pri = r.primaryLanguage, sec = other(pri);
+  // 新勾选素材可能仅有另一语言：按实际已有文字补齐主版本，不翻译空白、不重复处理。
+  const missingPrimary = r.items.filter((i) => i.sourceId !== 'summary' && (!onlyIds || onlyIds.includes(i.sourceId)) && !i[pri].trim() && i[sec].trim() && !i.confirmedLangs?.includes(pri)).map((i) => i.sourceId);
+  if (missingPrimary.length) {
+    const completed = await localizeAi(s, p, job, { ...r, primaryLanguage: sec }, missingPrimary);
+    r = { ...completed, primaryLanguage: pri };
+  }
   const hiddenAcademicIds = new Set(p.education.flatMap((e) => e.highlights.filter(academicHighlight).map((b) => b.id)));
   p = profileForGeneration(p);
-  r = { ...r, items: r.items.filter((i) => !hiddenAcademicIds.has(i.sourceId)) };
-  const pri = r.primaryLanguage, sec = other(pri);
+  r = { ...r, items: r.items.filter((i) => i.manual || !hiddenAcademicIds.has(i.sourceId)) };
   // 用户人工确认过的副版本优先保留，不再重译（B6）
-  const target = r.items.filter((i) => i.sourceId !== 'summary' && (!onlyIds || onlyIds.includes(i.sourceId)) && !i.confirmedLangs?.includes(sec));
+  const target = r.items.filter((i) => i.sourceId !== 'summary' && !missingPrimary.includes(i.sourceId) && (!onlyIds || onlyIds.includes(i.sourceId)) && !i.confirmedLangs?.includes(sec) && !!i[pri].trim());
   const payload = {
     glossary: p.glossary, keywords: (job?.keywords ?? []).map((k) => ({ [pri]: k[pri], [sec]: k[sec] })),
     reference: target.map((i) => { const t = sourceText(p, i); return t && t.status?.[sec] === 'confirmed' ? { sourceId: i.sourceId, [pri]: lt(t, pri, false), [sec]: lt(t, sec, false) } : null; }).filter(Boolean),
     items: target.map((i) => ({ sourceId: i.sourceId, ...(i.sourceIds ? { sourceIds: i.sourceIds } : {}), text: i[pri] })),
   };
-  // 两次尝试中，每条保留第一份通过事实校验的译文；都没通过时保留最后一份 AI 译文供核对
-  const best = new Map<string, string>(); const passed = new Set<string>(); const kctxL = buildKitContext(p, null);
+  // 两次尝试中，每条保留第一份通过事实校验的译文；都没通过时保留现有文字。
+  const best = new Map<string, string>(); const passed = new Set<string>(); const rejected = new Map<string, string[]>(); const kctxL = buildKitContext(p, null);
   for (let attempt = 0; attempt < 2 && target.length; attempt++) {
     const out = await chatJson<{ items?: { sourceId: string; text: string }[] }>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content: `${LOCALIZE_PROMPT(NAME[pri], NAME[sec])}\n\n${JSON.stringify(payload)}` }], { model: s.translateModel || s.model });
     for (const x of out.items ?? []) {
       if (!x?.sourceId || !x.text?.trim() || passed.has(x.sourceId)) continue;
       const it = target.find((i) => i.sourceId === x.sourceId); if (!it) continue;
       // v1.10.1：译文里出现资料中没有的工具 / 专业名（如把「轮机工程」译成别的专业）直接不采用
-      if (unsupportedEntities(x.text, sec, kctxL.corpus, [], kctxL.majors).length || entityTokens(x.text, sec).some((t) => !hasTerm(kctxL.corpus, t))) continue;
+      if (unsupportedEntities(x.text, sec, kctxL.corpus, [], kctxL.majors).length || entityTokens(x.text, sec).some((t) => !hasTerm(kctxL.corpus, t))) { rejected.set(x.sourceId, ['AI 译文引入资料外的名称或技能，已保留已有文字']); continue; }
       best.set(x.sourceId, x.text.trim());
-      if (!compareFacts(it[pri], x.text).length) passed.add(x.sourceId);
+      const issues = compareFacts(it[pri], x.text);
+      if (!issues.length) passed.add(x.sourceId); else rejected.set(x.sourceId, issues);
     }
     if (target.every((i) => passed.has(i.sourceId))) break;
   }
@@ -252,7 +259,9 @@ export async function localizeAi(s: Settings, p: ProfileDoc, job: JobParse | nul
     if (!targetIds.has(i.sourceId)) return i;
     const t = sourceText(p, i);
     const confirmedPrior = t && t.status?.[sec] === 'confirmed' && lt(t, pri, false) === i[pri] ? lt(t, sec, false) : undefined;
-    const d = decideTranslation(i[pri], best.get(i.sourceId), confirmedPrior, t ? lt(t, sec, false) || undefined : undefined);
+    // AI 没有通过事实检查时保留当前文字；不能把错误译文写入可直接导出的正文。
+    const d = decideTranslation(i[pri], passed.has(i.sourceId) ? best.get(i.sourceId) : undefined, confirmedPrior, i[sec] || (t ? lt(t, sec, false) || undefined : undefined));
+    if (!passed.has(i.sourceId) && rejected.has(i.sourceId)) { d.syncStatus = 'needs-review'; d.translation.factIssues = rejected.get(i.sourceId)!; }
     return { ...i, [sec]: d.text, syncStatus: d.syncStatus, translation: d.translation };
   });
   const next = { ...r, items };

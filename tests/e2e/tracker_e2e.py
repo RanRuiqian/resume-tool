@@ -55,7 +55,8 @@ with sync_playwright() as p:
     chk('点击投递链接在新标签页打开招聘页', np.value.url.startswith('https://example.com/jobs/101')); np.value.close()
     # 关联当前简历
     pg.click('[data-testid=link-current]'); pg.wait_for_timeout(500)
-    chk('关联当前生成的简历（快照，带事实审查摘要）', pg.locator('[data-testid=artifact]').count()==1 and '事实审查' in pg.locator('[data-testid=artifact]').first.inner_text())
+    linked=pg.evaluate(DUMP,'resume-tool')['artifacts']
+    chk('直接关联当前简历，快照内容保存且无事实审查门槛', pg.locator('[data-testid=artifact]').count()==1 and '事实审查' not in pg.locator('[data-testid=artifact]').first.inner_text() and linked[0]['kind']=='snapshot' and linked[0]['resume']['id']==d['resume']['id'] and linked[0]['resume']['items']==d['resume']['items'])
     pg.set_input_files('[data-testid=submitted-input]',os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','fixtures','files','Mock_Vision_Engineer_CN.pdf')); pg.wait_for_timeout(500)
     chk('上传实际提交的 PDF，标记为实际提交版本', '实际提交版本' in pg.locator('[data-testid=artifacts]').inner_text() and 'Mock_Vision_Engineer_CN.pdf' in pg.locator('[data-testid=artifacts]').inner_text())
     pg.set_input_files('[data-testid=att-input]',os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','fixtures','files','jd_screenshot_mock.png')); pg.wait_for_timeout(500)
@@ -147,3 +148,5 @@ with sync_playwright() as p:
     ctx2.close()
 shutil.rmtree(prof); shutil.rmtree(prof2)
 print('RESULT', sum(ok), '/', len(ok))
+
+raise SystemExit(0 if all(ok) else 1)

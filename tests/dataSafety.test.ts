@@ -1,5 +1,6 @@
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
+import { jobs } from './helpers/v110Fixture';
 import { describe, expect, it } from 'vitest';
 import { ResumeDB, snapshotProfile } from '../src/storage/db';
 import { seedDemo } from '../src/storage/demo';
@@ -247,7 +248,7 @@ it('v5 → v6 only adds empty joint tables; existing profile, credentials, histo
   expect(await current.jdGroups.count()).toBe(0); expect(await current.resumeVersions.count()).toBe(0); await current.delete();
 });
 
-it('numbered library survives isolated DB reopen and private backup with provenance, without touching settings or applications', async () => {
+it('numbered library survives isolated DB reopen and private backup with provenance, without touching unrelated state', async () => {
   const name = 'mock-numbered-library-persistence', d = new ResumeDB(name), raw = mockNumberedLibrary(), r = parseStructuredLibrary(raw)!;
   const settings = { id: 'settings', apiKey: 'FAKE-ISOLATED-ONLY', model: 'mock-model', uiLang: 'en', untouched: true };
   const application = { id: 'mock-application', company: '模拟企业', payload: ['immutable', 1] };
@@ -284,4 +285,25 @@ it('fact ledger and grouped mappings survive private backup/reopen, remain priva
   expect(JSON.stringify(profileForGeneration(profile))).not.toContain('sourceFacts');
   await clearPersonalData(reload); expect((await reload.profile.get('me'))!.doc.sourceFacts).toBeUndefined();
   expect((await reload.table('settings').get('settings')).apiKey).toBe('FAKE-LEDGER-ONLY'); expect(await reload.table('applications').count()).toBe(1); await reload.delete();
+});
+
+// 简历局部缓存随简历保存；兼容旧库，不迁移或改写个人母库。
+it('persists deselected resume edits and ordering across reload without changing unrelated state', async () => {
+  const a = new ResumeDB('resume-workspace-reload');
+  const original = mockUser();
+  await a.profile.put({ id: 'me', doc: original });
+  const job = jobs().A; await a.jobs.put(job);
+  const resume = { ...generateRules(original, job, 'zh'), id: 'local-draft', items: [], deselectedItems: [{ sourceId: 'b1', zh: '测试用户X人工编辑', en: 'Fictional edited text', syncStatus: 'pending' as const }], itemOrder: ['b1'], entrySelectionMemory: { 'projects:p1': { sourceIds: ['b1'], index: 0 } }, entryEdits: { w1: { texts: { title: { zh: '模拟人工职位', en: 'Fictional edited title' } } } } };
+  await a.resumes.put(resume);
+  await a.state.put({ id: 'unrelated-test-setting', value: 'keep' });
+  a.close();
+  const b = new ResumeDB('resume-workspace-reload');
+  try {
+    expect(await b.resumes.get('local-draft')).toEqual(resume);
+    expect((await b.profile.get('me'))?.doc).toEqual(original);
+    expect((await b.state.get('unrelated-test-setting'))?.value).toBe('keep');
+    expect(b.verno).toBe(6);
+    const archive = await readArchive(b, await exportLightJson(b));
+    expect(archive.errors).toEqual([]); expect(archive.data?.resumes).toEqual([resume]);
+  } finally { await b.delete(); }
 });

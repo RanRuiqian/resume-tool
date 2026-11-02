@@ -7,9 +7,9 @@ import { useApp } from '../store';
 import type { Lang, PhotoPosition } from '../types';
 import { SetupCard } from '../components/SetupCard';
 import { ItemsEditor } from '../components/ItemsEditor';
-import { AuditBadge, FactAudit } from '../components/FactAudit';
+import { ResumeNotice } from '../components/ResumeNotice';
 import { MaterialPool } from '../components/MaterialPool';
-import { ExportPanel } from '../components/ExportDialog';
+import { ExportDialog } from '../components/ExportDialog';
 import { importProfileFromText, mergeProfiles } from '../ai/importProfile';
 import { translateProfile } from '../ai/translate';
 import { recognizeScreenshot } from '../ai/ocr';
@@ -33,13 +33,12 @@ import { fileToText } from '../ai/fileText';
 import { ProgressNote } from '../components/ProgressNote';
 import { PhotoCropper } from '../components/PhotoCropper';
 import { JobHistory } from '../components/JobHistory';
-import { MatchInsights } from '../components/MatchInsights';
 import { ResumeFactsOptions } from '../components/ResumeFactsOptions';
 import { CareerKit } from '../components/CareerKit';
 import { FEATURES } from '../features';
 import { useL } from '../i18n';
 
-const STEPS: [string, string][] = [['填写我的资料', 'My profile'], ['上传岗位要求', 'Target job'], ['生成并预览', 'Generate & preview'], ['下载简历', 'Download']];
+const STEPS: [string, string][] = [['填写我的资料', 'My profile'], ['上传岗位要求', 'Target job'], ['编辑与下载', 'Edit & download']];
 const COLORS = [['#1a365d', '#2b6cb0'], ['#0f4c5c', '#e36414'], ['#3c096c', '#7b2cbf'], ['#22543d', '#38a169'], ['#1a1a1a', '#555555']];
 
 export function WizardPage({ go }: { go: (p: string) => void }) {
@@ -47,9 +46,9 @@ export function WizardPage({ go }: { go: (p: string) => void }) {
   const L = useL();
   const { settings, profile, job, resume } = app;
   const hasProfile = !!(profile.profile.name.zh || profile.profile.name.en || profile.work.length || profile.education.length);
-  const [step, setStepS] = useState(() => Number(uiStorage.getItem('wizardStep')) || (resume ? 3 : job ? 2 : hasProfile ? 2 : 1));
+  const [step, setStepS] = useState(() => Math.min(3, Number(uiStorage.getItem('wizardStep')) || (resume ? 3 : job ? 2 : hasProfile ? 2 : 1)));
   const setStep = (n: number) => { setStepS(n); uiStorage.setItem('wizardStep', String(n)); window.scrollTo(0, 0); };
-  const can = [true, hasProfile, hasProfile && !!job, !!resume];
+  const can = [true, hasProfile, hasProfile && !!job];
   const cur = can[step - 1] ? step : Math.max(1, can.lastIndexOf(true) + 1 > 3 ? 3 : can.lastIndexOf(true) + 1);
 
   if (!settings.setupDone) return <div className="page wizard"><Hero /><SetupCard /></div>;
@@ -67,8 +66,7 @@ export function WizardPage({ go }: { go: (p: string) => void }) {
       {cur === 1 && <Step1 next={() => setStep(2)} go={go} hasProfile={hasProfile} />}
       {cur === 2 && <Step2 next={() => setStep(3)} back={() => setStep(1)} />}
       {cur === 2 && <JobHistory onOpen={() => setStep(3)} go={go} />}
-      {cur === 3 && <Step3 next={() => setStep(4)} back={() => setStep(2)} go={go} />}
-      {cur === 4 && <Step4 back={() => setStep(3)} restart={() => setStep(2)} />}
+      {cur === 3 && <Step3 back={() => setStep(2)} go={go} />}
     </div>
   );
 }
@@ -336,7 +334,7 @@ function SingleStep2({ next, back }: { next: () => void; back: () => void }) {
   );
 }
 
-function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p: string) => void }) {
+function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
   const { settings, profile, job, resume, setResume, template, templateId, setTemplateId, templates, canUndo, undo } = useApp();
   useEffect(() => {
     if (!FEATURES.undo) return;
@@ -349,7 +347,7 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
   const [err, setErr] = useState('');
   const [view, setView] = useState<'zh' | 'en' | 'both'>('zh');
   const [showItems, setShowItems] = useState(false);
-  const [showAudit, setShowAudit] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [pages, setPages] = useState<PageInfo | null | 'error'>(null);
   const started = useRef(false);
   const primary: Lang = job?.jdLanguage ?? 'zh';
@@ -369,12 +367,14 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
     return () => { alive = false; clearTimeout(t); };
   }, [profile, template, resume]);
 
+  const latestResume = useRef(resume);
+  useEffect(() => { latestResume.current = resume; }, [resume]);
   const resync = async () => {
     if (!resume) return;
     const ids = resume.items.filter((i) => i.syncStatus !== 'in-sync').map((i) => i.sourceId);
     if (settings.demoMode) { setResume(runConsistency({ ...resume, items: resume.items.map((i) => ({ ...i, syncStatus: 'in-sync' })) })); return; }
     setBusy('重新翻译修改过的条目…');
-    try { setResume(await localizeAi(settings, profile, job, resume, ids)); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
+    try { const translated = await localizeAi(settings, profile, job, resume, ids); if (latestResume.current === resume) setResume(translated); else setErr('同步期间简历已修改，保留当前编辑；可按需再次同步。'); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
   const pending = resume?.items.filter((i) => i.syncStatus !== 'in-sync').length ?? 0;
   const photoPos = template.locales.zh.photo.enabled ? template.locales.zh.photo.position : 'none';
@@ -383,29 +383,23 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
 
   return (
     <div className="step">
-      <h2>③ 生成并预览</h2>
+      <h2>③ 编辑与下载</h2>
       {resume && job && resume.jobId !== job.id && <div className="notice warn" data-testid="previous-resume-retained">岗位已重新解析；下方保留的是上一岗位版本的简历及手动选择。点击「重新生成」才会为当前岗位创建新简历，旧版继续保留在本机历史记录中。</div>}
       <AiDisclosure />
       {busy && <div className="notice"><span className="spinner" /> {busy}</div>}
       {err && <div className="notice error">{err}</div>}
       {resume && (
         <div className="card result-bar">
-          {!job?.joint ? <div className="score" style={{ ['--p' as string]: resume.matchScore }}>{resume.matchScore}<small>匹配度</small></div> : <b>一份共同简历<br />逐岗查看证据</b>}
           <div className="grow">
-            <div>{resume.gaps.length ? <>岗位要求里这些你的资料没体现：{resume.gaps.map((g) => <span key={g} className="chip gap">{g}</span>)}</> : '岗位要求都能在你的资料中找到对应经历 👍'}</div>
-            <div className={`small ${resume.consistency.issues.length ? 'err-text' : 'ok-text'}`}>
-              {resume.consistency.issues.length ? `⚠ 中英文有 ${resume.consistency.issues.length} 处数字/内容对不上，请在「逐条修改」里检查（标红行）` : '✓ 中英文两版条目和数字完全一致'}
-            </div>
-            <div className="muted small" data-testid="score-note">内部匹配参考不等于官方 ATS 或录用概率；联合模式按每个岗位分别查看证据、课程支持和实际缺口，不把平均分当成保证。</div>
-            <div className="muted small">固定简介直接复用；AI 综合岗位与完整背景选材和表达。请用「事实审查」核对每条内容的真实来源。</div>
-            <AuditBadge onOpen={() => setShowAudit(true)} />
+            <b>{resume.generatedBy === 'ai' ? 'AI 已完成岗位选材与撰写' : '演示简历（未调用 AI）'}</b>
+            <p className="muted small">左侧勾选、编辑、排序，右侧实时更新。调整素材不调用 AI，也不修改个人资料库。</p>
+            <ResumeNotice />
           </div>
           <button disabled={!!busy} onClick={run}>🔄 重新生成</button>
         </div>
       )}
       {moved.length > 0 && <div className="notice warn" data-testid="side-warn">⚠ 侧栏放不下，已把「{[...new Set(moved.map((x) => template.locales.zh.sectionTitles?.[x.m] ?? x.m))].join('、')}」移到主栏末尾显示（{[...new Set(moved.map((x) => x.l === 'zh' ? '中文版' : '英文版'))].join('、')}），内容没有被截断。想放回侧栏可以在左侧清单减少条目，或换单栏样式。</div>}
-      {resume && showAudit && <FactAudit onClose={() => setShowAudit(false)} />}
-      {pending > 0 && <div className="notice warn">你改了 {pending} 条，另一种语言还没同步。<button onClick={resync}>同步翻译</button></div>}
+      {pending > 0 && <div className="notice warn">{pending} 条文字的另一语言可按需同步，也可直接编辑和下载。<button onClick={resync}>同步翻译</button></div>}
 
       <div className="card quick-layout">
         <div className="row">
@@ -437,7 +431,6 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
         </div>
       </div>
       <ResumeFactsOptions />
-      {!job?.joint && <MatchInsights go={go} />}
       <EvidenceReport go={go} />
       {resume && (
         <div className="card">
@@ -445,19 +438,9 @@ function Step3({ next, back, go }: { next: () => void; back: () => void; go: (p:
           {showItems && <ItemsEditor />}
         </div>
       )}
-      <div className="row nav-row"><button onClick={back}>← 换个岗位</button><span className="spacer" /><button className="primary big" disabled={!resume || !!busy || resume.jobId !== job?.id} onClick={next}>满意了，去下载 →</button></div>
-    </div>
-  );
-}
-
-function Step4({ back, restart }: { back: () => void; restart: () => void }) {
-  return (
-    <div className="step">
-      <h2>④ 下载你的简历</h2>
-      <p className="muted">会下载一个压缩包，里面有：中文 PDF、中文 Word、英文 PDF、英文 Word。</p>
-      <div className="card narrow-card"><ExportPanel inline /></div>
-      <CareerKit />
-      <div className="row nav-row"><button onClick={back}>← 返回预览</button><span className="spacer" /><button onClick={restart}>投递下一个岗位 →</button></div>
+      <details><summary>可选：求职信、自我介绍与备考方向</summary><CareerKit /></details>
+      {showExport && <ExportDialog onClose={() => setShowExport(false)} />}
+      <div className="row nav-row"><button onClick={back}>← 换个岗位</button><span className="spacer" /><button className="primary big" disabled={!resume} onClick={() => setShowExport(true)}>⬇ 下载 PDF / Word</button></div>
     </div>
   );
 }

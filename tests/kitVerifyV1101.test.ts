@@ -150,16 +150,17 @@ describe('v1.10.1 generateCoverKit — retry with feedback, block, never claim 1
   });
 });
 
-describe('v1.10.1 export gating and old data', () => {
+describe('manual exports remain free; legacy review metadata stays readable', () => {
   const R = { id: 'resume-1', createdAt: '2026-11-01T00:00:00Z', generatedBy: 'ai' as const };
   const ex = (k: typeof goodKit) => ({ coverLetter: { ...k.coverLetter }, selfIntro: { ...k.selfIntro } });
   it('verified text is exportable; old extras without kitReview are re-checked locally', () => {
     expect(kitExportState(P, J.A, ex(goodKit)).exportable).toBe(true);
     expect(kitExportState(P, J.A, undefined).hasText).toBe(false);
   });
-  it('unverified text is blocked until a manual override for that exact text', () => {
+  it('unverified text remains exportable and still reports factual differences', () => {
     const e = ex(badKit) as NonNullable<ResumeDoc['extras']>;
-    expect(kitExportState(P, J.A, e).exportable).toBe(false);
+    expect(kitExportState(P, J.A, e).exportable).toBe(true);
+    expect(kitExportState(P, J.A, e).verdict.passed).toBe(false);
     e.kitReview = makeKitReview(P, J.A, R, e, 2);
     expect(kitExportState(P, J.A, e, R).exportable).toBe(true);
   });
@@ -171,7 +172,7 @@ describe('v1.10.1 export gating and old data', () => {
     });
     it('(a) a relevant profile fact edited → invalid', () => {
       const e = setup(); const p2 = structuredClone(P); p2.projects[0].bullets[0].zh += '（改）';
-      expect(kitExportState(p2, J.A, e, R).exportable).toBe(false);
+      expect(kitExportState(p2, J.A, e, R).exportable).toBe(true);
       const p3 = structuredClone(P); p3.education[0].expectedConferralDate = '2027-06';
       expect(kitExportState(p3, J.A, e, R).overridden).toBe(false);
     });
@@ -183,7 +184,7 @@ describe('v1.10.1 export gating and old data', () => {
     });
     it('(c) cover letter or intro edited → invalid', () => {
       const e = setup(); e.coverLetter!.zh += '我还精通 CATIA。';
-      expect(kitExportState(P, J.A, e, R).exportable).toBe(false);
+      expect(kitExportState(P, J.A, e, R).exportable).toBe(true);
       const e2 = setup(); e2.selfIntro!.en += ' Extra.';
       expect(kitExportState(P, J.A, e2, R).overridden).toBe(false);
     });

@@ -1,6 +1,5 @@
 import type { CourseEntry, Lang, ProfileDoc, ResumeDoc } from '../types';
 import { LANG_TEST } from '../ai/relevance';
-import { isUnconfirmedImport } from '../audit/techTerms';
 
 /** 旧资料中的学术分数也默认隐藏；语言考试成绩保留原始证据，不换算。 */
 export const academicGradeText = (text: string) => /\bGPA\b|绩点|均分|平均分|课程成绩|grade point average|course (?:grade|score)/i.test(text)
@@ -13,8 +12,6 @@ export function profileForGeneration(profile: ProfileDoc): ProfileDoc {
   delete p.sourceTexts;
   if (p.sourceFacts) delete p.profile.notes;
   delete p.sourceFacts;
-  // 未审核的导入继续保存在母库，不能自动升级为正式履历或可靠技能。
-  for (const list of [p.work, p.projects, p.skills, p.certificates, p.awards]) for (const e of list) if (isUnconfirmedImport(e)) e.enabled = false;
   // 编号原文仅在私有母库追溯；可能含遮挡成绩、联系方式，不能随生成副本或投递快照外传。
   for (const e of [...p.education, ...p.work, ...p.projects, ...p.skills, ...p.certificates, ...p.awards, ...(p.courses ?? [])]) {
     if (e.sourceRecord) delete e.notes; // 编号原件的教育/成绩页摘要也是私有追溯，不能绕过 grade 字段进入快照。
@@ -24,7 +21,7 @@ export function profileForGeneration(profile: ProfileDoc): ProfileDoc {
   p.education = p.education.map((e) => ({ ...e, highlights: e.highlights.filter((b) => !academicHighlight(b)) }));
   return p;
 }
-export const printableCourse = (p: ProfileDoc, c: CourseEntry) => c.enabled && c.confirmation === 'confirmed' && c.kind === 'taught' && !!(c.name.zh?.trim() || c.name.en?.trim())
+export const printableCourse = (p: ProfileDoc, c: CourseEntry) => c.enabled && c.kind === 'taught' && !!(c.name.zh?.trim() || c.name.en?.trim())
   && !!p.education.find((e) => e.id === c.educationId && e.enabled);
 export function courseSelectionSnapshot(p: ProfileDoc, ids: string[], gradeIds: string[]): NonNullable<ResumeDoc['courseSelection']> {
   const unique = [...new Set(ids)], eligible = unique.map((id) => p.courses?.find((c) => c.id === id)).filter((c): c is CourseEntry => !!c && printableCourse(p, c));

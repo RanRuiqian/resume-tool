@@ -69,7 +69,7 @@ describe('A1 相似经历不自动合并', () => {
     expect(out.projects[0].mergeHistory?.[0].incomingId).toBe(i.projects[0].id);
     expect(JSON.parse(out.projects[0].mergeHistory![0].incomingSnapshot).role.zh).toBe('负责人');
   });
-  it('已确认的旧值不能被无提示覆盖', () => {
+  it('已确认的旧值默认保留，用户明确选择新值后直接应用，无需二次确认', () => {
     const b = rawToProfile({ work: [W('模拟科技', '测试工程师', '2021-01', '2021-12')] });
     b.work[0].title.status = { zh: 'confirmed' };
     const i = rawToProfile({ work: [W('模拟科技', '高级测试工程师', '2021-01', '2021-12')] });
@@ -77,7 +77,10 @@ describe('A1 相似经历不自动合并', () => {
     const [it] = item(plan, 'work');
     it.action = 'merge';
     const c = it.conflicts.find((x) => x.field === 'title');
-    if (c) { expect(c.oldConfirmed).toBe(true); c.useNew = true; expect(() => applyImportPlan(b, i, plan)).toThrow(/已确认/); }
+    expect(c).toBeDefined(); expect(c!.oldConfirmed).toBe(true);
+    expect(applyImportPlan(b, i, plan).work[0].title.zh).toBe('测试工程师');
+    c!.useNew = true;
+    expect(applyImportPlan(b, i, plan).work[0].title.zh).toBe('高级测试工程师');
     expect(undecidedCount(plan)).toBe(0);
   });
 });

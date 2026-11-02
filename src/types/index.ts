@@ -286,8 +286,14 @@ export interface GenItem {
   translation?: TranslationCheck;
   /** 用户人工确认过的语言版本：重新本地化时优先保留（B6） */
   confirmedLangs?: Lang[];
+  /** 用户在本简历中明确编辑或单独选用；不由 AI 输出设置。 */
+  manual?: true;
 }
 export interface ConsistencyIssue { sourceId?: string; type: 'missing' | 'extra' | 'number' | 'empty' | 'count'; message: string }
+export interface ResumeEntryEdit {
+  texts?: Partial<Record<'school' | 'degree' | 'major' | 'company' | 'title' | 'name' | 'role' | 'category' | 'issuer', Bi>>;
+  start?: string; end?: string; date?: string;
+}
 export interface ResumeDoc {
   evidenceReport?: EvidenceReport;
   id: string;
@@ -301,6 +307,14 @@ export interface ResumeDoc {
   selection: Record<Exclude<ModuleKey, 'summary' | 'campus'>, string[]>;
   /** 改写后的条目：summary / bullet / highlight，按 sourceId 对应资料库 */
   items: GenItem[];
+  /** 本份简历暂未选用的文字，保留 AI 文案、翻译及人工编辑；不写回母库。旧简历缺省为空。 */
+  deselectedItems?: GenItem[];
+  /** 取消整项前的要点选择与位置，重新勾选时恢复。 */
+  entrySelectionMemory?: Record<string, { sourceIds: string[]; index: number }>;
+  /** 要点顺序包含暂未选用项，保证取消、恢复不会重排 AI 或人工文案。 */
+  itemOrder?: string[];
+  /** 仅用于本份简历的标题、名称和日期编辑，取消素材后仍保留。 */
+  entryEdits?: Record<string, ResumeEntryEdit>;
   consistency: { checkedAt: string; issues: ConsistencyIssue[] };
   generatedBy: 'ai' | 'rules';
   /** v1.12：新生成简历保持用户设置的正文字号，超页用提示或两页，不靠继续缩字容纳。旧记录缺省沿用原逻辑。 */

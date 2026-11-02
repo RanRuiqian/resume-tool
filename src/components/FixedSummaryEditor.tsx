@@ -24,8 +24,7 @@ export function FixedSummaryEditor({ value, settings, onChange }: { value: Local
   const changed = suggestion && (fixedSummaryText(value, suggestion.to === 'zh' ? 'en' : 'zh') !== suggestion.source || (value[suggestion.to] ?? '') !== suggestion.previous);
   return <div data-testid="fixed-summary-editor">
     <LTField label="固定个人简介" multiline value={value} onChange={(v) => { setSuggestion(null); onChange(v); }} />
-    <p className="muted small">介绍教育身份、专业背景与真实工作实践。所有岗位复用已保存原文；机翻、过期或尚未逐字确认的旧文字会保留并提示待确认。修改只影响以后生成的简历。缺少的语言不会自动补写。</p>
-    {(['zh', 'en'] as const).filter((l) => fixedSummaryText(value, l) && value.status?.[l] !== 'confirmed').map((l) => <button key={`confirm-${l}`} onClick={() => onChange({ ...value, status: { ...value.status, [l]: 'confirmed' } })}>我已逐字核对{l === 'zh' ? '中文' : '英文'}固定简介</button>)}
+    <p className="muted small">介绍教育身份、专业背景与真实工作实践。所有岗位复用已保存原文，可在每份简历中单独编辑。修改只影响以后生成的简历。缺少的语言不会自动补写。</p>
     {(['zh', 'en'] as const).filter((l) => (!fixedSummaryText(value, l) || value.status?.[l] === 'machine' || value.status?.[l] === 'stale') && fixedSummaryText(value, l === 'zh' ? 'en' : 'zh')).map((l) =>
       <button key={l} disabled={busy} onClick={() => suggest(l)}>获取{l === 'zh' ? '中文' : '英文'}简介翻译建议（确认后保存）</button>)}
     {busy && <div role="status">正在翻译固定简介；尚未写入资料…</div>}

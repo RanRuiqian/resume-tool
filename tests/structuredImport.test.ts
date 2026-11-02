@@ -146,7 +146,7 @@ it('does not invent a school from an education status fact, or silently accept u
   expect(r.integrity.issues.map((i) => i.id)).toEqual(expect.arrayContaining(['EDU-01', 'BSC-001']));
 });
 
-it('remaps an explicitly approved education reassignment to a real persisted ID, with confirmed fields still protected', () => {
+it('remaps an explicitly approved education reassignment to a real persisted ID, without a redundant risk confirmation', () => {
   const base = apply(), r = parse(), edu = structuredClone(r.profile.education[0]);
   edu.id = 'library-EDU-03'; edu.school = { zh: '模拟新学校' }; edu.sourceRecord = { ...edu.sourceRecord!, id: 'EDU-03', raw: '虚构新教育记录' }; r.profile.education.push(edu);
   const c = r.profile.courses!.find((c) => c.sourceRecord?.id === 'BSC-001')!;
@@ -154,8 +154,6 @@ it('remaps an explicitly approved education reassignment to a real persisted ID,
   const plan = buildImportPlan(base, r.profile), item = plan.items.find((i) => i.incomingId === c.id)!;
   expect(item.status).toBe('conflict'); item.action = 'merge';
   for (const field of item.conflicts) if (['educationId', 'school'].includes(field.field)) field.useNew = true;
-  expect(() => applyImportPlan(base, r.profile, plan)).toThrow(/已确认/);
-  for (const field of item.conflicts) (field as typeof field & { overrideConfirmed: boolean }).overrideConfirmed = true;
   const out = applyImportPlan(base, r.profile, plan), moved = out.courses!.find((c) => c.sourceRecord?.id === 'BSC-001')!;
   expect(moved.educationId).toBe(out.education.find((e) => e.sourceRecord?.id === 'EDU-03')!.id); expect(moved.school).toBe('模拟新学校');
 });

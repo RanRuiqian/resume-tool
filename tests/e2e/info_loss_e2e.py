@@ -32,7 +32,7 @@ with sync_playwright() as p:
     c=p.chromium.launch_persistent_context(tempfile.mkdtemp(prefix='chrome-p15-'), executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], viewport={'width':1366,'height':900})
     pg=c.pages[0]; errs=[]; pg.on('pageerror', lambda e: errs.append(str(e))); c.route('https://api.deepseek.com/**', ai_route)
     pg.goto(B); pg.wait_for_timeout(1000); pg.evaluate(SEED,[KEY,DOC]); pg.goto(B+'#profile'); pg.reload(); pg.wait_for_selector('[data-testid=organize-start]')
-    chk('三类状态分开显示', all(pg.locator(f'[data-testid={t}]').count()==1 for t in ['st-clean','st-fact','st-trans']))
+    chk('移除认证状态中心，原有文字仍可直接编辑', all(pg.locator(f'[data-testid={t}]').count()==0 for t in ['st-clean','st-fact','st-trans']) and pg.get_by_placeholder('中文',exact=True).count()>0)
     pg.screenshot(path=S+'p15_status_before.png')
     pg.click('[data-testid=organize-start]'); pg.wait_for_selector('[data-testid=organize-ask]'); pg.click('[data-testid=organize-ai]'); pg.wait_for_selector('[data-testid=organize-review]', timeout=30000)
     hi=pg.locator('[data-testid=org-high]'); rj=pg.locator('[data-testid=organize-rejected]'); rj.locator('summary').click(); ht=rj.inner_text()
@@ -90,3 +90,5 @@ with sync_playwright() as p:
     chk('API Key 不出现在页面', KEY not in pg.content()); chk(f'无页面错误 {errs[:2]}', not errs)
     c.close()
 print(f'{sum(ok)}/{len(ok)} passed')
+
+raise SystemExit(0 if all(ok) else 1)

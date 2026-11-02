@@ -29,6 +29,7 @@ export interface ArchiveData {
 // v1.13：独立课程位于 profile.courses；课程/成绩选择快照位于 resumes / artifacts，
 // 现有 section 已逐字段保留它们。母库备份保留私人成绩；新生成快照不携带隐藏成绩。
 // 编号母库 sourceRecord / sourceFacts / sourceTexts.integrity 同属 profile，随本节完整备份，不新建 section。
+/** resumes 等 section 完整保存 ResumeDoc（包括取消项缓存与本简历编辑），无需新增 section。 */
 export const SECTIONS = ['profile', 'postings', 'applications', 'events', 'artifacts', 'attachments', 'jobs', 'resumes', 'jdGroups', 'resumeVersions'] as const;
 export type Section = (typeof SECTIONS)[number];
 export const SECTION_LABEL: Record<Section, string> = { profile: '个人事实档案', postings: '岗位库', applications: '申请记录', events: '状态历史', artifacts: '简历版本', attachments: '附件', jobs: '已解析 JD', resumes: '生成的简历', jdGroups: '联合 JD 组', resumeVersions: '不可变共同简历版本' };

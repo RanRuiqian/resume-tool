@@ -335,9 +335,10 @@ export function overrideValid(p: ProfileDoc, job: JobParse | null, resume: { id?
   return r.textHash === kitHash(ex ?? {}) && r.profileHash === f.profileHash && r.jobHash === f.jobHash && r.resumeHash === f.resumeHash;
 }
 
+/** 人工文字始终可导出；verdict 仅作提示。AI 生成仍直接使用 verifyKit 校验，不能用 exportable 判断事实通过。 */
 export function kitExportState(p: ProfileDoc, job: JobParse | null, ex?: { coverLetter?: Bi; selfIntro?: Bi; kitReview?: KitReview }, resume?: { id?: string; createdAt?: string; generatedBy?: string } | null): { hasText: boolean; verdict: KitVerdict; overridden: boolean; exportable: boolean } {
   const hasText = !!(ex?.coverLetter?.zh || ex?.coverLetter?.en || ex?.selfIntro?.zh || ex?.selfIntro?.en);
   const verdict = hasText ? verifyKit(ex ?? {}, buildKitContext(p, job)) : { passed: true, trace: [], issues: [] };
   const overridden = overrideValid(p, job, resume, ex);
-  return { hasText, verdict, overridden, exportable: verdict.passed || overridden };
+  return { hasText, verdict, overridden, exportable: true };
 }

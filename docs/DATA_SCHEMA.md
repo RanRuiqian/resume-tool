@@ -1,5 +1,19 @@
 # 数据结构（DATA_SCHEMA）
 
+## PR #16：自由编辑简历（当前规则）
+数据库仍为版本 6，个人资料与来源账本不迁移、不覆盖。仅给 ResumeDoc 增加可选字段，旧简历缺省为空：
+- `deselectedItems?: GenItem[]`：本简历取消项的最新 AI/人工文字、译文与来源 ID。
+- `entrySelectionMemory?: Record<string,{sourceIds:string[],index:number}>`：整项取消前选择与位置（key 为 section:id）。
+- `itemOrder?: string[]`：包括取消项的要点顺序，恢复不重排 AI 选择。
+- `entryEdits?: Record<string,ResumeEntryEdit>`：本简历的名称/标题/学位等双语文字及 start/end/date 编辑；渲染临时副本，母库 ID 和数据不变。
+
+`GenItem.manual?: true` 仅在用户编辑/明确单独选用时设置，用于尊重人工显示决定，AI 输出映射不设置此字段；自动生成的成绩仍默认隐藏。
+
+所有可选字段已包含在现有备份 `resumes` / `resumeVersions` / `artifacts` section 的完整序列化范围，不新增归档 section。自动保存、重载、撤销与投递快照均保留；清空个人资料时同简历一起定向清除，epoch 防旧请求恢复。
+
+旧 `audit` / `riskAck` / `evidence` / `kitReview` 数据保留兼容，不作为编辑、导出或共同版本关联的资格门槛。人工选择替换/覆盖即生效，无第二个风险确认。课程不需要认证标记才能选用；未给出/遮挡成绩仍不猜测，成绩默认隐藏。AI 生成端来源及事实校验继续保留。后文历史描述与此不一致时以本节为准。
+
+
 数据库：真实数据 `resume-tool`，演示数据 `resume-tool-demo`。Dexie 版本 **6**（浏览器里 `indexedDB` 版本显示为 60）。
 
 ## 版本历史
@@ -61,7 +75,7 @@
 - 旧记录没有这些字段时按旧行为处理（哈希按 `rawText` 现算）。
 
 ## 求职信人工核对（v1.10.1，可选，不升级 Dexie，仍为 version 4）
-- `ResumeDoc.extras.kitReview?: { overrideAt; textHash; issues; profileHash?; jobHash?; resumeHash? }`：用户对逐句核对未通过的求职信 / 自我介绍人工核对并允许导出。只有四项指纹全部一致才有效：文本（`textHash`）、资料事实集合（`profileHash`）、当前岗位（`jobHash`：id + JD 文字 + 分析结果）、当前简历（`resumeHash`：id + 生成时间）。任一变化即失效、重新拦截；缺少指纹的旧记录视为无效。逐句核对明细不持久化，打开时按当前资料现算（旧数据兼容）。
+- `ResumeDoc.extras.kitReview?: { overrideAt; textHash; issues; profileHash?; jobHash?; resumeHash? }`：用户对逐句核对未通过的求职信 / 自我介绍人工核对并允许导出。只有四项指纹全部一致才有效：文本（`textHash`）、资料事实集合（`profileHash`）、当前岗位（`jobHash`：id + JD 文字 + 分析结果）、当前简历（`resumeHash`：id + 生成时间）。任一变化即失效（历史元数据，不再拦截导出）；缺少指纹的旧记录视为无效。逐句核对明细不持久化，打开时按当前资料现算（旧数据兼容）。
 
 ## 状态（10 种）
 `screening` 待筛选 · `saved` 已收藏 · `preparing` 准备材料 · `applied` 已投递 · `assessment` 在线测评/笔试 · `interviewing` 面试中 · `offer` Offer · `rejected` 已拒绝/未通过 · `withdrawn` 已撤回 · `closed` 已结束
@@ -143,7 +157,7 @@
 - `JobParse.joint?: {groupId,company,targets:[{roleId,revision,name,url,job}]}` 是公司级协调快照。每个 target.job 是独立 JD 的完整快照，不嵌套其他 joint。不把多段 JD 拼成一个 rawText。文本不变复用独立解析，协调内容相同复用协调 ID；内容改变生成新的协调版本，旧简历不自动覆盖。
 - 联合岗位每条要求使用 `<job.id>:<must|responsibility|preferred>:<index>`。AI 必须逐条完整引用 requirementId、原 text/tier、evidenceIds 和 reason；本地校验 ID、岗位归属、重复、遗漏、共同/互补覆盖及跨岗冲突引用。原有效要求 ID/层级/文本在局部修复中不得挪用或降低。
 - 已确认授课课程进入同一精确证据白名单（不含成绩/来源位置）；候选包含名称、内容概述、知识域、概述证据等级和关联真实项目。仅允许 `learning` 引用课程，不能用课程作为 `direct/transferable` 实操证明；学习判断仍保留实践缺口。`courses[]` 由 AI 决定打印哪些课程名，正文写作 facts 仍仅实际工作/项目事实，不复制课程概述。母库与成绩开关继续沿用 P0/P1。
-- `ResumeDoc.evidenceReport?` 保存逐岗判断、程序派生的来源类别/原文/证据等级/风险、AI 选材原因及共同/互补/冲突归纳。当前采用状态随手动勾选/排序现算，来源在母库但未选入正文时明确标注；不伪称为当前正文亮点。报告附于 ZIP 的 evidence-and-gaps.json，UI/独立下载均可查阅；不是官方 ATS 或录用保证。
+- `ResumeDoc.evidenceReport?` 保存逐岗判断、程序派生的来源类别/原文/证据等级/风险、AI 选材原因及共同/互补/冲突归纳。当前采用状态随手动勾选/排序现算，来源在母库但未选入正文时明确标注；不伪称为当前正文亮点。报告不再自动附于简历 ZIP；UI 折叠展示，可单独下载；不是官方 ATS 或录用保证。
 - `SharedResumeVersion` 内容寻址 ID=`version-<SHA256>`，digest 覆盖规范化 profile/template/resume/job（排序使用固定字符串顺序，不依赖地区）。profile 使用隐私副本，隐藏课程分数不复制；明确开启的原始成绩只在 resume.courseSelection 保存。冻结完整模板，旧导出不受后来模板修改影响。哈希只验证内容完整性，不证明用户事实本身真实。
 - `Application.resumeVersionId?` 指向同一共同版本；`ResumeArtifact.versionId?` 是只读引用，不各复制一份正文。批量关联事务创建/复用该组角色的岗位/申请、共同版本与引用，默认新状态 pending、没有 appliedAt；已有状态/手工岗位不覆盖，已有 artifacts 不修改。重复关联同内容幂等；编辑后显式关联产生新版本，旧内容和实际提交标记仍保留。删除一条申请不删除其他申请共用的版本。
 - 归档新增 jdGroups/resumeVersions sections，archiveVersion=2（旧 v1 可读，旧客户端应拒绝新版以免漏掉关联）。恢复前检查版本哈希；不可变版本同 ID 冲突拒绝，artifacts/版本已有记录不覆盖。选中有关联指针的记录时，必须一并恢复共用版本或确保本机已有该版本，防止静默悬空。
@@ -166,7 +180,7 @@
 
 课程直接进入 `profile.courses`，不再要求通过第二个课程导入流程搬移教育文本。来源 BSC/MSC 编号保存在 sourceRecord/sources；原文课程代码单独存入 code，学分为字符串，成绩 grade.raw 原样保留；遮挡/未知为 unverified，未公布为 not-released，绝不补数。`[x]` 只确认原文记录，不能把课程概述升级为官方大纲或实操（evidenceLevel 仍为 unverified），成绩仍默认隐藏。原文完整保存在 sourceRecord.raw 与 sourceTexts。
 
-EDU 只建立能确认学校名称的教育记录；项目学分单元不创建教育/工作/核心项目。课程↔项目、技能→经历按原文明示编号或明确工具字段精确名称关联；内部实体 ID 在应用计划后统一映射。相同来源编号再次导入不会新增条目，不同编号不按子串/相似度自动合并；同校、同学位专业、同开始日期且结束不矛盾的教育补充片段可以合并。真正的字段/原文矛盾仍要求决定，已确认字段的覆盖仍需二次确认。
+EDU 只建立能确认学校名称的教育记录；项目学分单元不创建教育/工作/核心项目。课程↔项目、技能→经历按原文明示编号或明确工具字段精确名称关联；内部实体 ID 在应用计划后统一映射。相同来源编号再次导入不会新增条目，不同编号不按子串/相似度自动合并；同校、同学位专业、同开始日期且结束不矛盾的教育补充片段可以合并。真正的字段/原文矛盾仍要求决定，已确认字段覆盖由用户明确选择，不再二次确认。
 
 新增字段随私有 JSON / ZIP 的 profile section 完整备份（无须新 section）。生成副本和投递快照移除 sourceTexts、sourceRecord 与包含原文快照的 mergeHistory，避免旁路带出隐藏成绩；私有母库仍完整保留它们。PR #15 精准清空整份 profile/原文/快照的行为覆盖上述字段，API 设置与投递记录不受导入影响。
 

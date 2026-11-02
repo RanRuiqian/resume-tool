@@ -129,7 +129,7 @@ describe('母库完整性', () => {
 
 describe('导入安全', () => {
   const SAMPLE = normalizeProfile(structuredClone(sample));
-  it('已确认的现有数据不会被默认覆盖；替换已确认条目需要再次确认', () => {
+  it('默认保留旧字段；用户明确选择替换即应用并保存修改历史', () => {
     const base = rawToProfile({ work: [{ company: '模拟公司丁', title: '实习生', start: '2023-10', end: '2024-06' }] });
     base.work[0].userConfirmedAt = '2026-01-01T00:00:00Z';
     const inc = rawToProfile({ work: [{ company: '模拟公司丁', title: '实习生', start: '2023-10', end: '2024-07' }] });
@@ -138,8 +138,7 @@ describe('导入安全', () => {
     expect(w.conflicts[0].useNew).toBe(false);
     expect(w.matchConfirmed).toBe(true);
     const p2: ImportPlan = { ...plan, items: [{ ...w, action: 'replace' }] };
-    expect(() => applyImportPlan(base, inc, p2)).toThrow(/确认过/);
-    const out = applyImportPlan(base, inc, { ...p2, items: [{ ...w, action: 'replace', overrideConfirmed: true }] });
+    const out = applyImportPlan(base, inc, p2);
     expect(out.work).toHaveLength(1); expect(out.work[0].end).toBe('2024-07'); expect(out.work[0].id).toBe(base.work[0].id);
     expect(out.work[0].mergeHistory![0].fieldsOverwritten[0].old).toContain('2024-06');
   });

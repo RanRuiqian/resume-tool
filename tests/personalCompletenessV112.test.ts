@@ -169,7 +169,9 @@ describe('D/F: professional expression with complete source tracing', () => {
     const restored = applyDecision(p, r, item.sourceId, 'zh', 'restored');
     expect(restored.items.find((x) => x.sourceId === item.sourceId)!.zh).toBe(p.projects[0].bullets.map((x) => x.zh).join('\n'));
     const off = toggleBullet(p, r, 'projects', 'core', p.projects[0].bullets[1], false);
-    expect(off.items.find((x) => x.sourceId === 'core-b1')!.zh).toBe(p.projects[0].bullets[0].zh);
+    // 合并句整体取消，不能悄悄改回母库句子而丢掉人工文案。
+    expect(off.items.some((x) => x.sourceId === 'core-b1')).toBe(false);
+    expect(toggleBullet(p, off, 'projects', 'core', p.projects[0].bullets[1], true).items.find((x) => x.sourceId === item.sourceId)!.zh).toBe(expression);
     expect(off.items.some((x) => x.sourceId === 'core-b2')).toBe(false);
     expect(toggleEntry(p, r, 'projects', 'core', false).items.some((x) => x.sourceId.startsWith('core'))).toBe(false);
   });

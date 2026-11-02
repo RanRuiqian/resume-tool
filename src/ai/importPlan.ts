@@ -12,7 +12,7 @@ export type PlanStatus = 'new' | 'duplicate' | 'maybe' | 'conflict' | 'internal'
 /** undecided：可能重复 / 有冲突时的默认值，必须由用户明确选择后才能导入（A1） */
 /** replace：用识别结果替换已有条目（保留条目 id 与合并记录） */
 export type PlanAction = 'add' | 'merge' | 'replace' | 'skip' | 'undecided';
-export interface FieldConflict { field: string; label: string; old: string; new: string; useNew: boolean; /** 旧值已被用户确认过：覆盖前必须二次确认 */ oldConfirmed?: boolean }
+export interface FieldConflict { field: string; label: string; old: string; new: string; useNew: boolean; /** 旧确认状态，仅保留作兼容元数据 */ oldConfirmed?: boolean }
 export interface PlanItem {
   key: string; section: PlanSection; incomingId: string; title: string;
   status: PlanStatus; matchId?: string; matchTitle?: string; similarity: number;
@@ -23,7 +23,7 @@ export interface PlanItem {
   intoIncomingId?: string; intoTitle?: string;
   /** 判定依据（日期相同、名称一致……） */
   reasons?: string[];
-  /** 已有条目被用户确认过：替换前必须勾选 overrideConfirmed */
+  /** 历史确认元数据；用户的处理选择即生效，不再要求二次确认 */
   matchConfirmed?: boolean; overrideConfirmed?: boolean;
 }
 export interface BasicChange { path: string; label: string; old: string; new: string; useNew: boolean }
@@ -206,9 +206,6 @@ export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportP
   if (source?.integrity?.complete === false) throw new Error('编号母库完整性检查未通过，请先处理遗漏或冲突');
   const pending = plan.items.filter((i) => i.action === 'undecided');
   if (pending.length) throw new Error(`还有 ${pending.length} 条可能重复 / 有冲突的条目未选择处理方式：${pending.map((i) => i.title).join('、')}`);
-  for (const it of plan.items) if (it.action === 'replace' && it.matchConfirmed && !it.overrideConfirmed) throw new Error(`「${it.matchTitle ?? it.title}」已被你确认过，替换前需要再次确认`);
-  for (const it of plan.items) for (const c of it.conflicts) if (c.useNew && c.oldConfirmed && !(c as FieldConflict & { overrideConfirmed?: boolean }).overrideConfirmed)
-    throw new Error(`「${it.title}」的${c.label}已确认过，覆盖前需要再次确认`);
   const out = structuredClone(base); const src = structuredClone(inc);
   out.courses ??= []; src.courses ??= [];
   if (src.profile.notes?.length) out.profile.notes = [...new Set([...(out.profile.notes ?? []), ...src.profile.notes])];

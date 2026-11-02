@@ -203,8 +203,6 @@ export function SmartImport() {
             {it.matchId && it.newPoints.length > 0 && <div>{it.newPoints.map((x, i) => <div key={i} className="new">＋ {x}</div>)}</div>}
             {it.conflicts.map((c) => <div key={c.field} className="conflict-line">{c.label}：<span className={c.useNew ? 'old' : ''}>{c.old}</span> → <span className={c.useNew ? 'new' : 'muted'}>{c.new}</span>
               <label className="check"><input type="checkbox" checked={c.useNew} onChange={(ev) => setConflict(it.key, c.field, ev.target.checked)} /> {L('用新值覆盖', 'use new')}</label></div>)}
-            {it.conflicts.some((c) => c.oldConfirmed && c.useNew) && <label className="check uncertain"><input type="checkbox" checked={it.conflicts.every((c) => !c.oldConfirmed || !c.useNew || (c as { overrideConfirmed?: boolean }).overrideConfirmed)} onChange={(ev) => setItem(it.key, (x) => ({ ...x, conflicts: x.conflicts.map((c) => (c.oldConfirmed ? { ...c, overrideConfirmed: ev.target.checked } : c)) }))} /> {L('该字段你已确认过，仍要用新值覆盖', 'Override confirmed field')}</label>}
-            {it.action === 'replace' && it.matchConfirmed && <label className="check uncertain"><input type="checkbox" checked={!!it.overrideConfirmed} onChange={(ev) => setItem(it.key, (x) => ({ ...x, overrideConfirmed: ev.target.checked }))} /> {L('这条已有记录你确认过，仍要整条替换', 'Replace a confirmed entry anyway')}</label>}
             {it.uncertain.map((x, i) => <div key={i} className="hint-missing">• {x}</div>)}
           </div>
         )}

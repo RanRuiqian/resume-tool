@@ -16,10 +16,8 @@ export function summaryVariantIssues(base: GenItem, draft: { zh: string; en: str
 export function applySummaryVariant(r: ResumeDoc, draft: { zh: string; en: string }): ResumeDoc {
   const base = r.summaryBaseline ?? r.items.find((i) => i.sourceId === 'summary');
   if (!base) throw new Error('没有固定简介快照，请先在资料页保存简介再生成');
-  const issues = summaryVariantIssues(base, draft);
-  if (issues.length) throw new Error(issues.join('；'));
   const item: GenItem = { sourceId: 'summary', ...draft, syncStatus: 'needs-review', confirmedLangs: [] };
-  // 用户确认应用文案与事实审查接受是两件事；保留待核对，不绕过审查。
+  // 人工编辑不受 AI 生成检查拦截；保留基线供恢复，差异可提示。
   return { ...r, summaryBaseline: structuredClone(base), items: r.items.map((i) => i.sourceId === 'summary' ? item : i) };
 }
 export function restoreSummaryBaseline(r: ResumeDoc): ResumeDoc {

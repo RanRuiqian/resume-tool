@@ -1,4 +1,5 @@
 import { compactGpaNote, tidyProjectTitle } from './resumeText';
+import { profileWithResumeEdits } from './resumeEdits';
 import { LANG_TEST } from '../ai/relevance';
 import { eduDateText } from './degree';
 import { inferWorkKind, isCampusKind } from './classify';
@@ -75,6 +76,7 @@ const PERSONAL_LABEL: Record<Lang, Record<string, string>> = {
 };
 
 export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resume?: ResumeDoc | null): LayoutModel {
+  p = profileWithResumeEdits(p, resume);
   const loc = tpl.locales[lang];
   const sel = resume?.selection ?? selectionFromProfile(p);
   const itemMap = new Map((resume?.items ?? []).map((i) => [i.sourceId, i]));
@@ -82,7 +84,9 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   /** bullet：生成结果优先，否则资料库原文 */
   const B = (t: LocalizedText) => {
     const it = t.id ? itemMap.get(t.id) : undefined;
-    return (it && (it[lang] || '').trim()) || T(t);
+    if (!it) return T(t);
+    // 人工清空主版本不恢复母库原文；新勾选素材缺少译文时先展示原文。
+    return it[lang] || (!it.confirmedLangs?.includes(lang) ? it[lang === 'zh' ? 'en' : 'zh'] : '');
   };
   /** 生成结果中若存在某条目的 bullet 子集，则只取已选 bullet */
   const pickBullets = (arr: LocalizedText[]) => {
@@ -135,8 +139,9 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   // v1.10：生成的简历副本里，GPA 后的核验说明只保留「估算 / 非官方」等必要限定（资料库原文不变）
   const ed = byIds(p.education, sel.education).map((e) => {
     const courses = courseLines(p, resume, e.id, lang);
-    // 同时检查原始 highlight 和用户编辑的生成句，避免旧缓存绕过默认隐藏。
-    const bullets = pickBullets(e.highlights.filter((b) => !academicHighlight(b))).filter((t) => !academicGradeText(t));
+    // 自动生成仍默认隐藏成绩；用户单独选用或手工编辑的文字应如实预览和导出。
+    const highlights = e.highlights.filter((b) => (b.id && itemMap.get(b.id)?.manual) || !academicHighlight(b));
+    const bullets = pickBullets(highlights).filter((t) => !academicGradeText(t) || highlights.some((b) => b.id && itemMap.get(b.id)?.manual && B(b) === t));
     return { title: T(e.school), subtitle: eduSub(e), date: eduRange(e), bullets: [...(resume ? bullets.map((x) => compactGpaNote(x, lang)) : bullets), ...(courses.length ? [`${lang === 'zh' ? '相关课程（课程知识）' : 'Relevant coursework (academic knowledge)'}: ${courses.join(lang === 'zh' ? '、' : '; ')}`] : [])] };
   });
   if (ed.length) sections.education = { key: 'education', title: title('education'), blocks: ed };
