@@ -317,6 +317,8 @@ export interface ResumeDoc {
   entryEdits?: Record<string, ResumeEntryEdit>;
   /** 2026-11：按岗位定制的姓名下求职方向；缺省时显示资料库 profile.headline。 */
   headline?: Bi;
+  /** 2026-11：AI 按岗位给出的技能分组（显示顺序与组名）；缺省或未覆盖的技能按资料库 category 分组。 */
+  skillGroups?: { zh: string; en: string; ids: string[] }[];
   consistency: { checkedAt: string; issues: ConsistencyIssue[] };
   generatedBy: 'ai' | 'rules';
   /** v1.12：新生成简历保持用户设置的正文字号，超页用提示或两页，不靠继续缩字容纳。旧记录缺省沿用原逻辑。 */

@@ -28,6 +28,7 @@ export interface AiSelectionOutput {
   awards?: string[];
   summaryFocus?: string;
   tradeoffs?: string;
+  skillGroups?: { zh?: string; en?: string; skillIds?: string[] }[];
 }
 
 export interface AiSelectionResult {
@@ -42,6 +43,7 @@ export interface AiSelectionResult {
   summaryFocus: string;
   tradeoffs: string;
   chosenReasons: string[];
+  skillGroups: { zh: string; en: string; ids: string[] }[];
 }
 
 const textOf = (p: { zh?: string; en?: string }, lang: Lang) => (p[lang] || p[other(lang)] || '').trim();
@@ -271,7 +273,13 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     .map((e) => ({ id: e.id, reason: 'AI 比较完整资料和岗位要求后认为优先级较低（母库保留）' }));
   const plan: ResumePlan = { entries, skills, certificates, awards, caps: { core: targetPages > 1 ? 4 : 3, minor: targetPages > 1 ? 2 : 1 },
     budgets, dropped, model, ranked };
-  return { courses, jointSummary: job.joint ? raw.jointSummary : undefined, plan, reserves, omissions, requirements, gaps: requirements.filter((r) => r.assessment === 'gap' || r.assessment === 'learning').map((r) => r.text).slice(0, 8),
+  // 技能分组只影响显示，不作为校验失败条件：无效 ID、重复或空组直接丢弃。
+  const grouped = new Set<string>();
+  const skillGroups = (Array.isArray(raw.skillGroups) ? raw.skillGroups : []).map((g) => ({
+    zh: String(g?.zh ?? '').trim(), en: String(g?.en ?? '').trim(),
+    ids: (Array.isArray(g?.skillIds) ? g.skillIds : []).filter((id): id is string => typeof id === 'string' && skills.includes(id) && !grouped.has(id) && !!grouped.add(id)),
+  })).filter((g) => (g.zh || g.en) && g.ids.length);
+  return { skillGroups, courses, jointSummary: job.joint ? raw.jointSummary : undefined, plan, reserves, omissions, requirements, gaps: requirements.filter((r) => r.assessment === 'gap' || r.assessment === 'learning').map((r) => r.text).slice(0, 8),
     matchScore: total ? Math.round(100 * supported / total) : 0,
     summaryFocus: String(raw.summaryFocus ?? '').trim(), tradeoffs: String(raw.tradeoffs ?? '').trim(), chosenReasons };
 }

@@ -78,7 +78,8 @@ export async function fitContent(p: ProfileDoc, pool: ResumeDoc, reserveIds: str
     const w = p.work.find((x) => x.id === id);
     const missingBackground = w && ((isProfessionalWork(w) && !p.work.some((x) => r.selection.work.includes(x.id) && isProfessionalWork(x)))
       || (isCampusWork(w) && !p.work.some((x) => r.selection.work.includes(x.id) && isCampusWork(x))));
-    if (estimateUsage(p, template, r) >= 0.84 && !missingBackground) continue;
+    // 2026-11：负责人希望一页基本填满（相关写细、其它简短带上），候补补到约 95% 再停。
+    if (estimateUsage(p, template, r) >= 0.95 && !missingBackground) continue;
     shown.add(id); const next = make();
     if (estimateUsage(p, template, next) > 1) { shown.delete(id); continue; }
     r = next;
@@ -98,7 +99,7 @@ export async function fitContent(p: ProfileDoc, pool: ResumeDoc, reserveIds: str
       }
     } catch { notes.push('PDF 页数测量暂不可用，当前仅为排版估算；请在导出预览中核对。'); }
   } else notes.push('内容空间为本地排版估算；实际 PDF / Word 仍需检查。');
-  if (estimateUsage(p, template, r) < 0.55) notes.push('内容较少：已考虑 AI 提供的候补；可在素材池补选真实经历，留白不以废话或重复内容填充。');
+  if (estimateUsage(p, template, r) < 0.75) notes.push('内容较少：已考虑 AI 提供的候补；可在素材池补选真实经历，留白不以废话或重复内容填充。');
   const finalOmissions = { ...omissions };
   for (const id of reserveIds.filter((x) => !shown.has(x))) {
     const work = p.work.find((x) => x.id === id);

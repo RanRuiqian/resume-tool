@@ -28,7 +28,8 @@ export function resumeLabelTargets(p: ProfileDoc, r: ResumeDoc): LabelRef[] {
   for (const e of pick(p.education, sel.education)) { push(e.school); push(e.degree); push(e.major); }
   for (const e of pick(p.work, sel.work)) { push(e.company); push(e.title); }
   for (const e of pick(p.projects, sel.projects)) { push(e.name); push(e.role); }
-  for (const e of pick(p.skills, sel.skills)) { push(e.name); push(e.category); }
+  const grouped = new Set((r.skillGroups ?? []).flatMap((g) => g.ids));
+  for (const e of pick(p.skills, sel.skills)) { push(e.name); if (!grouped.has(e.id)) push(e.category); }
   for (const e of [...pick(p.certificates, sel.certificates), ...pick(p.awards, sel.awards)]) { push(e.name); push(e.issuer); }
   for (const c of p.courses ?? []) if (r.courseSelection?.ids.includes(c.id)) push(c.name, { id: c.id });
   return out;

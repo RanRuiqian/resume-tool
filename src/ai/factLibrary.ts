@@ -44,6 +44,32 @@ function bilingual(s: string): LocalizedText {
 function dates(s: string): string[] {
   return [...s.matchAll(/\b(\d{4})(?:[年./-](\d{1,2})(?:月|[./-](\d{1,2})日?)?)?/g)].map((m) => [m[1], ...(m[2] ? [m[2].padStart(2, '0')] : []), ...(m[3] ? [m[3].padStart(2, '0')] : [])].join('-'));
 }
+/** 「LAB2A」「ASSIGNMENT2」→「Lab 2A」「Assignment 2」 */
+function taskLabel(task: string): string {
+  const m = /^(LAB|ASSIGNMENT|WORKSHOP|Q)(\w+)$/i.exec(task);
+  if (!m) return task;
+  return m[1].toUpperCase() === 'Q' ? `Q${m[2]}` : `${m[1][0].toUpperCase()}${m[1].slice(1).toLowerCase()} ${m[2]}`;
+}
+/** 期间、月份暂缺等说明不是经历内容。 */
+const ORG_NOTE = /[（(][^）)]*(?:暂缺|未补充|期间|待补)[^）)]*[）)]|具体[^；;。]*(?:暂缺|未补充)[^；;。]*/g;
+/**
+ * 组织 / 兼职 / 志愿的首句拆成「单位」与「职务」，例如：
+ * 「X 大学校学生会外联部成员（本科期间…）」→ 单位「X 大学校学生会」、职务「外联部成员」；
+ * 「本科期间曾在肯德基（KFC）兼职」→ 单位「肯德基（KFC）」、职务「兼职」。拆不出时单位留空，整句作职务（旧行为）。
+ */
+export function splitOrg(body: string): { org: string; role: string; rest: string } {
+  const head = body.split(/[；;。]/)[0].replace(ORG_NOTE, '');
+  const [first, ...more] = head.split(/[，,]/);
+  const rest = [more.join('，'), ...body.split(/[；;。]/).slice(1)].filter((x) => x.trim()).join('；');
+  const plain = clean(first.replace(ORG_NOTE, ''));
+  const job = /^(?:本科期间|硕士期间|在校期间)?曾?在(.+?)(兼职|实习|工作)$/.exec(plain);
+  if (job) return { org: clean(job[1]), role: job[2], rest };
+  const vol = /^参与(.*?社区|.*?学校|.*?协会)?(.*志愿(?:活动|服务))$/.exec(plain);
+  if (vol) return { org: clean(vol[1] ?? ''), role: clean(vol[2]), rest };
+  const unit = /^(.*?(?:学生会|社团|协会|俱乐部|研究会|校办|团委))(.+)$/.exec(plain);
+  if (unit && unit[2].length <= 16) return { org: clean(unit[1]), role: clean(unit[2]), rest };
+  return { org: '', role: plain, rest };
+}
 /** 小标题 → 简历技能分组：去掉「课程实验」「与真实实践」等证据说明，只留领域名。 */
 export function skillGroup(context: string): string {
   return clean(context.replace(/^【|】$/g, '').replace(/(?:课程实验|课程项目|课程方法与设备|课程方法|与真实实践|与基础技能|专业方法与技能)$/u, '').replace(/[/／]$/, ''));
@@ -159,7 +185,13 @@ export function parseFactLibrary(input: string): { profile: ProfileDoc; integrit
     const entries: ProjectEntry[] = [];
     for (const [task, rs] of tasks) {
       const head = rs[0].body.split(/[：:]/)[0];
-      const e = addProject(`${scope}-${task}`, rs, 'auxiliary', head, `${rs[0].context || scope} · ${task === 'course' ? head : task}`);
+      const ctx = clean((rs[0].context || scope).split(/[｜|]/)[0].replace(/[（(][^）)]*(?:核对|确认|备注)[^）)]*[）)]/g, ''));
+      const label = task === 'course' ? head : taskLabel(task);
+      // 课程内只有一组事实、或首句很长 / 与课程名重复时，标题就用课程名本身。
+      const title = task === 'course' && (label.length > 20 || ctx.includes(label) || tasks.size === 1) ? ctx : `${ctx} · ${label}`;
+      const e = addProject(`${scope}-${task}`, rs, 'auxiliary', head, title);
+      // 标题已含课程名；性质只写活动类型，避免副标题重复课程名。
+      e.nature = /^LAB/i.test(task) || /实验/.test(ctx) ? '课程实验' : /^(?:ASSIGNMENT|Q\d)/i.test(task) || /作业/.test(ctx) ? '课程作业' : /^WORKSHOP/i.test(task) ? '课程练习' : '课程项目';
       const hints = (rs[0].context.replace(/^课程[：:]\s*/, '').split(/[、，,/｜]/).map((x) => x.trim())).filter((x) => x.length >= 2);
       const candidates = p.courses.filter((c) => c.level === 'master' && hints.some((h) => [c.name.zh, c.name.en, c.code].some((n) => n && (n.includes(h) || h.includes(n)))));
       if (candidates.length === 1) { e.courseIds = [candidates[0].id]; candidates[0].projectIds.push(e.id); }
@@ -180,10 +212,17 @@ export function parseFactLibrary(input: string): { profile: ProfileDoc; integrit
     orgActive = [f]; orgGroups.push(orgActive);
   }
   for (const fs of orgGroups) {
-    const ds = dates(fs[0].body), body = fs[0].body, club = /学生会/.test(body);
-    const e = { ...base(fs[0].id, fs), company: lt(''), title: lt(clean(body.split(/[；;。]/)[0]), fs[0].reviewed), start: ds[0] ?? '', end: ds[1] ?? '',
+    const ds = dates(fs[0].body), body = fs[0].body, club = /学生会|社团|协会|俱乐部|校办|团委|助教|教师助手/.test(body);
+    const { org, role, rest } = splitOrg(body);
+    // 首条事实是「单位 + 职务」的标题行；有其它事实时不再重复当作要点。只有一条时保留其中真正的内容作为要点。
+    const detail = fs.length > 1 ? fs.slice(1) : [];
+    void rest;
+    const single = clean(body.replace(ORG_NOTE, '').split(/[；;。]/).filter((x) => x.trim()).join('；'));
+    const bullets = detail.length ? detail.map((f) => ({ ...lt(f.body, f.reviewed), id: `library-${f.id}-b` }))
+      : [{ ...lt(single, fs[0].reviewed), id: `library-${fs[0].id}-b` }];
+    const e = { ...base(fs[0].id, fs), company: lt(org, fs[0].reviewed), title: lt(role, fs[0].reviewed), start: ds[0] ?? '', end: ds[1] ?? '',
       kind: club ? 'club' as const : /志愿/.test(body) ? 'volunteer' as const : /兼职/.test(body) ? 'parttime' as const : 'other' as const,
-      bullets: fs.map((f) => ({ ...lt(f.body, f.reviewed), id: `library-${f.id}-b` })), tags: [], notes: club ? orgShared.map((f) => f.body) : [] };
+      bullets, tags: [], notes: club ? orgShared.map((f) => f.body) : [] };
     p.work.push(e); bind(fs, e.id); if (club) bind(orgShared, e.id);
   }
   for (const f of select(/^(?:SKL|LANG)-/)) {

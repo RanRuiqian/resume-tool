@@ -139,3 +139,62 @@ describe('D. one bilingual writing pass', () => {
     expect(en.header.name).toBeTruthy();
   });
 });
+
+describe('E. fuller resumes: org entries, task titles, AI skill groups', () => {
+  it('splits student-union / part-time rows into unit and role and drops availability notes', async () => {
+    const { splitOrg } = await import('../src/ai/factLibrary');
+    expect(splitOrg('模拟大学校学生会外联部成员（本科期间，具体起止月份暂缺）。')).toMatchObject({ org: '模拟大学校学生会', role: '外联部成员' });
+    expect(splitOrg('模拟大学航海学院学生会宣传部成员（本科期间，具体起止月份暂缺）')).toMatchObject({ org: '模拟大学航海学院学生会', role: '宣传部成员' });
+    expect(splitOrg('本科期间曾在模拟快餐店（MOCK）兼职；具体日期、岗位未补充。')).toMatchObject({ org: '模拟快餐店（MOCK）', role: '兼职' });
+    expect(splitOrg('Monash 模拟学生会公关部部长；任期 2026-07 至 2026-12。')).toMatchObject({ org: 'Monash 模拟学生会', role: '公关部部长' });
+    expect(splitOrg('参与家乡社区抗疫志愿活动，并获得社区荣誉证书。')).toMatchObject({ org: '家乡社区', role: '抗疫志愿活动' });
+  });
+  it('does not use the heading fact as a bullet when the org has detail rows', () => {
+    const text = ['10｜学生组织、兼职与志愿活动',
+      row('ORG-001', '模拟学生会公关部部长；2024年8月—2025年6月'), row('ORG-002', '担任模拟学生会公关部负责人，参与活动策划'),
+      row('ORG-011', '本科期间曾在模拟快餐店兼职；具体日期、岗位未补充。')].join('\n');
+    const w = parseFactLibrary(`01｜个人基本信息\n${row('ID-001', '中文姓名：测试用户丙')}\n${text}`)!.profile.work;
+    expect(w[0]).toMatchObject({ company: { zh: '模拟学生会' }, title: { zh: '公关部部长' }, kind: 'club' });
+    expect(w[0].bullets.map((b) => b.zh)).toEqual(['担任模拟学生会公关部负责人，参与活动策划']);
+    expect(w[1]).toMatchObject({ company: { zh: '模拟快餐店' }, title: { zh: '兼职' }, kind: 'parttime' });
+    expect(w[1].bullets[0].zh).not.toMatch(/未补充/);
+  });
+  it('renders skills in the AI-chosen groups and order, falling back to profile categories for the rest', () => {
+    const p = parseFactLibrary(v7())!.profile;
+    const [sw, ame, matlab] = p.skills;
+    const r = { selection: { work: [], projects: [], education: [], skills: [sw.id, ame.id, matlab.id], certificates: [], awards: [] }, items: [],
+      skillGroups: [{ zh: '设计与仿真', en: 'Design & Simulation', ids: [ame.id, sw.id] }] } as never;
+    const zh = buildLayout(p, structuredClone(BUILTIN_TEMPLATES[0]), 'zh', r);
+    const blocks = [...zh.main, ...zh.side].find((s) => s.key === 'skills')!.blocks;
+    expect(blocks[0]).toMatchObject({ title: '设计与仿真', text: 'AMESim、SolidWorks' });
+    expect(blocks[1]).toMatchObject({ title: '机器人/视觉计算', text: 'MATLAB' });
+    const en = buildLayout(p, structuredClone(BUILTIN_TEMPLATES[0]), 'en', r);
+    expect([...en.main, ...en.side].find((s) => s.key === 'skills')!.blocks[0].title).toBe('Design & Simulation');
+  });
+});
+
+describe('F. tailored summary gets one rewrite before falling back', () => {
+  it('accepts the rewritten summary when the first one used a term missing from the library', async () => {
+    const p = personalFixture();
+    let call = 0;
+    api.mockImplementation(async (_s, msgs) => {
+      call++;
+      if (call === 1) return personalPlan();
+      const content = String(msgs.at(-1)!.content);
+      if (call === 2) {
+        const payload = JSON.parse(content.split('\n\n').at(-1)!);
+        return { summary: { zh: '熟练使用 CATIA 的结构工程师', en: 'Structural engineer skilled in CATIA' },
+          items: payload.facts.map((x: { sourceId: string; text: string; alt: string }) => ({ sourceId: x.sourceId, zh: x.text, en: x.alt || 'Native English' })) };
+      }
+      if (content.includes('在候选人资料里找不到')) {
+        expect(content).toContain('CATIA');
+        return { summary: { zh: `面向结构岗位：${p.profile.summary.zh}`, en: `Targeting structural roles. ${p.profile.summary.en}` } };
+      }
+      const payload = JSON.parse(content.split('\n\n').at(-1)!);
+      return { items: (payload.items ?? []).map((x: { sourceId: string; sourceIds?: string[] }) => ({ sourceId: x.sourceId, text: sourceText(p, x).en })) };
+    });
+    const r = await generateResume(settings, p, jobs().A, 'zh', 1);
+    expect(r.items.find((i) => i.sourceId === 'summary')!.zh).toBe(`面向结构岗位：${p.profile.summary.zh}`);
+    expect(JSON.stringify(r.items)).not.toContain('CATIA');
+  });
+});

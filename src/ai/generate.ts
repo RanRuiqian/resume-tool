@@ -189,23 +189,41 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   let fallback = 0, secondaryDropped = 0;
   // 简介：按岗位定制；未返回或未通过检查则回退到资料库固定简介。
   const summaryCorpus = [kctx.corpus, ...facts.flatMap((f) => [f.text, f.alt]), fixedSummary.zh, fixedSummary.en, JSON.stringify(education)].join('\n');
-  const tailored = (v: Partial<Bi> | undefined): Bi | null => {
+  const tailoredIssues = (v: Partial<Bi> | undefined): { value: Bi | null; bad: string[] } => {
     const zh = String(v?.zh ?? '').trim(), en = String(v?.en ?? '').trim();
-    if (!zh && !en) return null;
+    if (!zh && !en) return { value: null, bad: [] };
     const bad = (['zh', 'en'] as const).flatMap((l) => {
       const t = l === 'zh' ? zh : en;
       if (!t) return [];
       const extraNums = numberTokens(t).filter((n) => !numberTokens(summaryCorpus).includes(n));
       return [...extraNums.map((n) => `数字 ${n}`), ...entityTokens(t, l).filter((x) => !hasTerm(summaryCorpus, x)), ...unsupportedEntities(t, l, summaryCorpus, [], kctx.majors).filter((x) => !summaryCorpus.includes(x))];
     });
-    if (bad.length) { notes.push(`AI 定制简介 / 求职方向出现资料中没有的内容（${bad.slice(0, 4).join('、')}），已改用资料库原文`); return null; }
-    return { zh, en };
+    return { value: { zh, en }, bad };
   };
-  const summary = tailored(out.summary);
+  // 简介 / 求职方向：一次检查不过，先请 AI 去掉问题词重写一次；仍不过才回退资料库原文。
+  let checkedSummary = tailoredIssues(out.summary), checkedHeadline = tailoredIssues(out.headline);
+  if (checkedSummary.bad.length || checkedHeadline.bad.length) {
+    try {
+      onStep?.('2/3 简介中有资料里没有的词，正在让 AI 改写一次…');
+      const fix = await chatJson<WriteOut>(s, [{ role: 'system', content: SYS_FACTS },
+        { role: 'user', content: `下面是你为岗位「${job.title.zh || job.title.en}」写的个人简介和求职方向。其中这些词在候选人资料里找不到：${[...checkedSummary.bad, ...checkedHeadline.bad].join('、')}。请去掉或换成资料里真实存在的说法，保持按岗位定制、自然专业，中英文都给。只输出 JSON {"summary":{"zh":"","en":""},"headline":{"zh":"","en":""}}。\n${JSON.stringify({ summary: out.summary, headline: out.headline, candidate: brief.candidate, facts: facts.map((f) => f.text) })}` }],
+      { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 4_000 });
+      if (checkedSummary.bad.length) checkedSummary = tailoredIssues(fix.summary);
+      if (checkedHeadline.bad.length) checkedHeadline = tailoredIssues(fix.headline);
+    } catch (e) { notes.push(`简介改写未完成：${(e as Error).message}`); }
+  }
+  const accept = (c: { value: Bi | null; bad: string[] }, label: string) => {
+    if (c.value && c.bad.length) notes.push(`AI 定制${label}出现资料中没有的内容（${c.bad.slice(0, 4).join('、')}），已改用资料库原文`);
+    return c.value && !c.bad.length ? c.value : null;
+  };
+  const summary = accept(checkedSummary, '简介');
   const fixed = fixedSummaryItem(p);
   if (summary) items.push({ sourceId: 'summary', zh: summary.zh || fixed?.zh || '', en: summary.en || fixed?.en || '', syncStatus: summary.zh && summary.en ? 'in-sync' : 'needs-review' });
-  else if (fixed) items.push(fixed);
-  const headline = tailored(out.headline);
+  else {
+    if (fixed) items.push(fixed);
+    if (!out.summary) notes.push('AI 没有返回定制简介，已使用资料库固定简介');
+  }
+  const headline = accept(checkedHeadline, '求职方向');
   const grouped = new Set([...provenance.entries()].flatMap(([main, ids]) => ids.filter((id) => id !== main)));
   for (const e of plan.entries) for (const id of e.bulletIds) {
     if (grouped.has(id)) continue;
@@ -231,7 +249,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   const selection: Sel = { work: ids('work'), projects: ids('projects'), education: ids('education').length ? ids('education') : p.education.filter((x) => x.enabled).map((x) => x.id), skills: plan.skills, certificates: plan.certificates, awards: plan.awards };
   return { resume: {
     id: uid('resume'), jobId: job.id, templateId: '', primaryLanguage: primary, createdAt: new Date().toISOString(),
-    matchScore: decision.matchScore, gaps: decision.gaps, selection, items, ...(headline ? { headline } : {}),
+    matchScore: decision.matchScore, gaps: decision.gaps, selection, items, ...(headline ? { headline } : {}), ...(decision.skillGroups?.length ? { skillGroups: decision.skillGroups } : {}),
     courseSelection: courseSelectionSnapshot(p, decision.courses, []), evidenceReport: createEvidenceReport(p, job, decision.requirements, decision.chosenReasons, decision.jointSummary),
     consistency: { checkedAt: '', issues: [] }, generatedBy: 'ai', layoutPolicy: 'readable',
     notes: [...(summary ? [] : fixedSummaryNotes(p)), `AI 选材：${decision.tradeoffs || '已比对完整岗位与候选经历'}`,

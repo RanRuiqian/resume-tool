@@ -147,9 +147,15 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   if (ed.length) sections.education = { key: 'education', title: title('education'), blocks: ed };
   const sk = byIds(p.skills, sel.skills);
   if (sk.length) {
-    // 按分类分组
+    // 2026-11：先按 AI 给本岗位的分组与顺序；未分组的（如用户后来手动勾选的）再按资料库分类。
     const groups = new Map<string, string[]>();
-    sk.forEach((s) => { const raw = T(s.category), c = resumeSkillCategory(raw, T(s.name), lang);
+    const placed = new Set<string>();
+    for (const g of resume?.skillGroups ?? []) {
+      const names = g.ids.map((id) => sk.find((s) => s.id === id)).filter((s): s is typeof sk[number] => !!s && !placed.has(s.id) && !!placed.add(s.id)).map((s) => skillName(T(s.name), ''));
+      const label = (g[lang] || g[lang === 'zh' ? 'en' : 'zh'] || '').trim();
+      if (names.length) groups.set(label, [...(groups.get(label) ?? []), ...names]);
+    }
+    sk.filter((s) => !placed.has(s.id)).forEach((s) => { const raw = T(s.category), c = resumeSkillCategory(raw, T(s.name), lang);
       groups.set(c, [...(groups.get(c) ?? []), skillName(T(s.name), raw)]); });
     sections.skills = { key: 'skills', title: title('skills'), blocks: [...groups].map(([c, names]) => ({ title: c || undefined, bullets: [], text: names.join(lang === 'zh' ? '、' : ', ') })) };
   }
@@ -158,7 +164,7 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   if (langCerts.length) {
     const names = langCerts.map((e) => [T(e.name), formatDate(e.date, loc.dateFormat, loc.presentLabel)].filter(Boolean).join(lang === 'zh' ? '，' : ', '));
     const blocks = sections.skills?.blocks ?? [];
-    const g = blocks.find((b) => /^(?:语言|语言能力|外语|languages?|language skills)$/i.test((b.title ?? '').trim()));
+    const g = blocks.find((b) => /语言|外语|languages?/i.test((b.title ?? '').trim()));
     if (g) g.text = [g.text, ...names].filter(Boolean).join(lang === 'zh' ? '；' : '; ');
     else blocks.push({ title: lang === 'zh' ? '语言' : 'Languages', bullets: [], text: names.join(lang === 'zh' ? '；' : '; ') });
     sections.skills = { key: 'skills', title: title('skills'), blocks };
