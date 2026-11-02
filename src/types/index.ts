@@ -192,6 +192,8 @@ export interface ProfileDoc {
   courses?: CourseEntry[];
   /** v1.6 智能导入的完整原始文本（母库原件），可检索；不参与简历生成 */
   sourceTexts?: SourceText[];
+  /** 一事实一编号的母库账本；多个事实可映射到同一实体，原文只作私有追溯。 */
+  sourceFacts?: { id: string; section: string; raw: string; reviewed: boolean; entityIds: string[] }[];
 }
 export interface ImportIntegrity {
   format: 'numbered-library';

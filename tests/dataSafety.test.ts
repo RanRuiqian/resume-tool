@@ -269,3 +269,19 @@ it('numbered library survives isolated DB reopen and private backup with provena
   expect(saved.courses!.find((c) => c.sourceRecord?.id === 'BSC-011')!.grade.raw).toBe('成绩遮挡 **');
   await reloaded.delete();
 });
+
+it('fact ledger and grouped mappings survive private backup/reopen, remain private in snapshots and clear only with the profile', async () => {
+  const { mockFactLibrary } = await import('./fixtures/factLibrary');
+  const { clearPersonalData } = await import('../src/storage/clearProfile');
+  const r = parseStructuredLibrary(mockFactLibrary())!, base = normalizeProfile({});
+  const profile = normalizeProfile(applyImportPlan(base, r.profile, buildImportPlan(base, r.profile), { id: 'mock-facts', at: '', files: ['mock.txt'], text: mockFactLibrary(), integrity: r.integrity }));
+  const d = new ResumeDB('mock-fact-ledger-safety'); await persistProfile(d, profile, await profileEpoch(d));
+  await d.table('settings').put({ id: 'settings', apiKey: 'FAKE-LEDGER-ONLY' }); await d.table('applications').put({ id: 'mock-application', note: 'preserve' });
+  const json = await exportLightJson(d), result = await readArchive(d, json);
+  expect(result.errors).toEqual([]); expect(result.data!.profile).toEqual(profile); expect(json).not.toContain('FAKE-LEDGER-ONLY');
+  d.close(); const reload = new ResumeDB('mock-fact-ledger-safety');
+  expect((await reload.profile.get('me'))!.doc.sourceFacts).toEqual(profile.sourceFacts);
+  expect(JSON.stringify(profileForGeneration(profile))).not.toContain('sourceFacts');
+  await clearPersonalData(reload); expect((await reload.profile.get('me'))!.doc.sourceFacts).toBeUndefined();
+  expect((await reload.table('settings').get('settings')).apiKey).toBe('FAKE-LEDGER-ONLY'); expect(await reload.table('applications').count()).toBe(1); await reload.delete();
+});

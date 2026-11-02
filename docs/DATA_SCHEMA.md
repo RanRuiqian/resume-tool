@@ -170,4 +170,4 @@ EDU 只建立能确认学校名称的教育记录；项目学分单元不创建�
 
 新增字段随私有 JSON / ZIP 的 profile section 完整备份（无须新 section）。生成副本和投递快照移除 sourceTexts、sourceRecord 与包含原文快照的 mergeHistory，避免旁路带出隐藏成绩；私有母库仍完整保留它们。PR #15 精准清空整份 profile/原文/快照的行为覆盖上述字段，API 设置与投递记录不受导入影响。
 
-**验收边界**：当前已提交样本为完全虚构的 14 栏编号结构，不能替代用户 V7 原件。V7 原件尚未出现在本轮可读附件中，具体字段布局与原先 15/80 项仍待原件核验，不能声明真实 V7 已完整通过。
+**真实 V7 的事实级格式**：`01｜栏目` / `[x] ID｜事实` 以事实为单位，不能每行建立实体。EDU-M/B 按教育命名空间组装；PRO 按项目前缀组装；LRN 在课程范围内按 Q/Lab/Assignment/Workshop 分组。课程固定列分别读取，不把 MSC-S 汇总当授课课程；缺失的逐门硕士学分留空。新增可选 `ProfileDoc.sourceFacts = {id, section, raw, reviewed, entityIds[]}[]` 保存私有逐条事实账本，实体 ID 写入后统一映射；作为 profile section 备份，无数据库/section 迁移。生成副本移除 sourceFacts 及原件备注中的成绩页摘要，清空个人资料覆盖账本。原件已本地隔离验证 299/299 编号事实（不含标记说明中的 [x]）、本科76/76、硕士6/6、核心项目2/2，详见 V7_STRUCTURED_IMPORT.zh-CN.md。CI 仅用虚构 fixture；历史15/80清单未提供，不伪造逐项对照。

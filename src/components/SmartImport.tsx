@@ -253,10 +253,12 @@ export function SmartImport() {
         <details className="small source-texts" data-testid="source-texts"><summary>{L(`原始资料记录（${profile.sourceTexts!.length} 份，完整保存，不进简历）`, `Saved source texts (${profile.sourceTexts!.length})`)}</summary>
           {profile.sourceTexts!.map((s) => <details key={s.id}><summary>{s.at.slice(0, 16).replace('T', ' ')} · {s.files.join('、') || L('粘贴文字', 'pasted')} · {s.text.length} 字</summary><pre className="src-pre">{s.text}</pre></details>)}
         </details>)}
+      {!res && profile.sourceFacts?.length ? <FactLedger profile={profile} /> : null}
       {res && plan && p && sum && (
         <div className="review" data-testid="import-review">
           <h4>{L('识别结果预览（尚未写入资料）', 'Preview — nothing saved yet')}</h4>
           {res.src.integrity && <IntegrityPreview report={res.src.integrity} />}
+          {p.sourceFacts?.length ? <FactLedger profile={p} /> : null}
           <div className="notice-levels">
             {notices.critical.length > 0 && <details open className="lv lv-critical" data-testid="lv-critical"><summary>❗ {L(`需要你决定 / 重要问题（${notices.critical.length}）`, `Needs decision (${notices.critical.length})`)}</summary><ul>{notices.critical.map((x, i) => <li key={i}>{x}</li>)}</ul></details>}
             {notices.missing.length > 0 && <details className="lv lv-missing" data-testid="lv-missing"><summary>⚠ {L(`缺失信息 / 待核对（${notices.missing.length}）`, `Missing / to check (${notices.missing.length})`)}</summary><ul>{notices.missing.map((x, i) => <li key={i}>{x}</li>)}</ul></details>}
@@ -308,4 +310,11 @@ function IntegrityPreview({ report }: { report: ImportIntegrity }) {
     {report.groups.map((g) => <div key={g.label} data-testid="integrity-group">{g.label}：{L('原文', 'Source')} {g.declared ?? g.expected.length} / {L('已识别', 'Recognized')} {g.recognized.length} / {L('遗漏', 'Missing')} {Math.max(g.missing.length, (g.declared ?? 0) - g.recognized.length)}{g.missing.length > 0 && `（${g.missing.join('、')}）`}</div>)}
     {report.issues.length > 0 && <ul>{report.issues.map((x, i) => <li key={i}>{x.id}：{x.reason}</li>)}</ul>}
   </div>;
+}
+
+function FactLedger({ profile }: { profile: ProfileDoc }) {
+  const L = useL();
+  return <details className="small source-texts" data-testid="source-fact-ledger"><summary>{L('逐条事实来源', 'Fact provenance')}（{profile.sourceFacts?.length ?? 0}）</summary>
+    {profile.sourceFacts?.map((f) => <details key={f.id} data-testid="source-fact"><summary>{f.id} · {f.section} · {f.entityIds.length ? L('已映射', 'Mapped') : L('未映射', 'Unmapped')}</summary><pre className="src-pre">{f.raw}</pre></details>)}
+  </details>;
 }

@@ -315,6 +315,18 @@ export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportP
     for (const sid of ev.skillIds) { const k = out.skills.find((x) => x.id === sid); if (k) k.evidenceIds = [...new Set([...(k.evidenceIds ?? []), ev.id])]; }
   }
   if (source?.text.trim() && !out.sourceTexts?.some((s) => s.text === source.text)) out.sourceTexts = [...(out.sourceTexts ?? []), source];
+  if (inc.sourceFacts) {
+    const known = new Map((out.sourceFacts ?? []).map((f) => [f.id, f]));
+    const savedEntries = new Map((['education', 'work', 'projects', 'skills', 'courses', 'certificates', 'awards'] as const).flatMap((key) => (out[key] ?? []).map((e) => [e.id, e] as const)));
+    for (const fact of inc.sourceFacts) {
+      const entityIds = fact.entityIds.map((id) => id === 'profile' ? id : idMap.get(internalTo.get(id) ?? id)).filter((id): id is string => !!id);
+      const old = known.get(fact.id);
+      // 冲突选择保留旧字段时，来源账本同样保留旧版本；新版本完整留在 sourceTexts。
+      const acceptedNew = entityIds.length > 0 && entityIds.every((id) => savedEntries.get(id)?.sourceRecord?.raw.includes(fact.raw));
+      if (!old || old.raw === fact.raw || acceptedNew) known.set(fact.id, { ...structuredClone(fact), entityIds: [...new Set([...(old?.entityIds ?? []), ...entityIds])] });
+    }
+    out.sourceFacts = [...known.values()];
+  }
   return out;
 }
 

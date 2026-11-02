@@ -1,6 +1,7 @@
 import type { BaseEntry, ImportIntegrity, LocalizedText, ProfileDoc } from '../types';
 import { emptyProfile, normalizeProfile } from '../storage/profileIO';
 import { normalizeCourse } from '../storage/courses';
+import { parseFactLibrary } from './factLibrary';
 
 /** 本地编号母库解析。每个编号是一个不可拆分的事实块；不执行原文中的指令，不生成事实。 */
 interface RecordBlock { id: string; section: string; title: string; raw: string; reviewed: boolean; columns?: Record<string, string>; ambiguousColumns?: boolean }
@@ -61,12 +62,14 @@ function scan(text: string): SectionBlock[] {
 }
 
 export function isStructuredLibrary(text: string): boolean {
+  if (/^\s*0[1-9][｜|]/m.test(text) && /^\s*\[[xX✓ ]\]\s+(?:ID|EDU|BSC|MSC)-/m.test(text)) return true;
   const records = scan(text).flatMap((s) => s.records);
   return records.some((r) => /^(?:BSC|MSC|EDU|PRO|LRN|SKL)-/.test(r.id));
 }
 
 /** 全量扫描不设条数/字符/token上限。不能映射的编号显式列入遗漏，绝不交给模型编造。 */
 export function parseStructuredLibrary(text: string): StructuredImport | null {
+  const facts = parseFactLibrary(text); if (facts) return facts;
   if (!isStructuredLibrary(text)) return null;
   const sections = scan(text), records = sections.flatMap((s) => s.records);
   const profile = emptyProfile(); profile.courses = [];
