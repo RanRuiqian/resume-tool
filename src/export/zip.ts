@@ -1,3 +1,4 @@
+import { refreshReportSelection } from '../joint/report';
 import JSZip from 'jszip';
 import { pdf } from '@react-pdf/renderer';
 import { createElement } from 'react';
@@ -65,6 +66,7 @@ export async function buildZip(p: ProfileDoc, tpl: TemplateConfig, r: ResumeDoc 
     try { files[docxName] = await docxBytes(buildLayout(p, used, lang, r)); zip.file(docxName, files[docxName], { binary: true }); }
     catch (e) { errors.push(`${docxName}: ${(e as Error).message}`); }
   }
+  if (r?.evidenceReport) { const n = 'evidence-and-gaps.json', b = new TextEncoder().encode(JSON.stringify(refreshReportSelection(r), null, 2)); files[n] = b; zip.file(n, b, { binary: true }); }
   for (const [n, b] of Object.entries(extraFiles)) { files[n] = b; zip.file(n, b, { binary: true }); }
   // 按 CN.pdf, CN.docx, EN.pdf, EN.docx 顺序；JSZip 对非 ASCII 文件名写入 UTF-8 标志位
   const out = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });

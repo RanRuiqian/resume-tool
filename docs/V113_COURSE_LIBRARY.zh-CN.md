@@ -1,4 +1,6 @@
-# v1.13 P0/P1 可验收增量（Draft，尚未发布）
+# v1.13 P0/P1 阶段历史报告（Draft，尚未发布）
+
+此文件记录前一阶段交付，下面“P2 未完成”是当时状态。当前 P2 已继续实现，最新范围/测试/验收见 [V113_P2_JOINT_MATCH.zh-CN.md](V113_P2_JOINT_MATCH.zh-CN.md)。
 
 本批按任务允许的 P0→P1→P2 分批交付，**不是整份 v1.13 需求已全部完成**。分支 `feat/v1.13-course-library` 基于尚未合并的 Draft PR #13 提交 `f7d947c347d24f86cf98b94d8274e39f6d0cca51`；PR base 为 `feat/ai-led-resume-planning`。main、PR #12、PR #13 不修改、不合并，不部署 Pages。
 

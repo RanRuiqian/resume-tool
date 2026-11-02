@@ -92,3 +92,11 @@ export function missingLang(r: ResumeDoc): { id: string; to: Lang; text: string 
 export function fillWithOriginal(r: ResumeDoc): ResumeDoc {
   return runConsistency({ ...r, items: r.items.map((i) => i.sourceId === 'summary' ? i : ({ ...i, zh: i.zh || i.en, en: i.en || i.zh })) });
 }
+
+/** 本份简历的人工条目顺序；不改变母库，也不重新调用 AI。 */
+export function reorderEntry(r: ResumeDoc, key: SelKey, id: string, direction: -1 | 1): ResumeDoc {
+  const ids = [...r.selection[key]], at = ids.indexOf(id), next = at + direction;
+  if (at < 0 || next < 0 || next >= ids.length) return r;
+  [ids[at], ids[next]] = [ids[next], ids[at]];
+  return { ...r, selection: { ...r.selection, [key]: ids } };
+}

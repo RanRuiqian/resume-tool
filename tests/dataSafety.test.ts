@@ -55,7 +55,7 @@ describe('migration v1 → v2', () => {
     old.close();
     const db = new ResumeDB('mig-test');
     await db.open();
-    expect(db.verno).toBe(5);
+    expect(db.verno).toBe(6);
     const r = (await db.resumes.get('r-old'))!;
     expect(r.items[0]).toMatchObject({ sourceId: 'p1-b1', zh: '漏检率降低 40%', syncStatus: 'in-sync' });
     expect(r.audit).toBeUndefined();
@@ -201,7 +201,7 @@ async function makeV4(name: string) {
 describe('v1.13 transactional migration v4 → v5 and protected rollback backups', () => {
   it('backs up raw v4 before appending courses, keeps every other store byte-for-byte and can restore raw profile', async () => {
     const name = 'v113-migrate-all-stores'; const { profile, unchanged } = await makeV4(name); const d = new ResumeDB(name);
-    await d.open(); expect(d.verno).toBe(5);
+    await d.open(); expect(d.verno).toBe(6);
     expect((await d.profile.get('me'))!.doc).toEqual({ ...profile, courses: [] });
     const snapshot = (await d.backups.get('bk-premigrate-v4-me'))!;
     expect(snapshot.doc).toEqual(profile); expect(snapshot.doc).not.toHaveProperty('courses');
@@ -225,4 +225,18 @@ describe('v1.13 transactional migration v4 → v5 and protected rollback backups
     expect(await old.table('backups').count()).toBe(1); old.close();
     const retry = new ResumeDB(name); await retry.open(); expect((await retry.profile.get('me'))!.doc.courses).toEqual([]); await retry.delete();
   });
+});
+
+it('v5 → v6 only adds empty joint tables; existing profile, credentials, history, drafts and all table rows remain identical', async () => {
+  const schema = new ResumeDB('v6-schema-inspect-only');
+  const stores = Object.fromEntries(schema.tables.filter((t) => !['jdGroups', 'resumeVersions'].includes(t.name)).map((t) => [t.name, [t.schema.primKey.src, ...t.schema.indexes.map((i) => i.src)].join(',')]));
+  schema.close(); const name = 'v5-to-v6-safety', old = new Dexie(name); old.version(5).stores(stores);
+  const before: Record<string, unknown[]> = {};
+  for (const table of old.tables) {
+    const row = table.name === 'profile' ? { id: 'me', doc: mockUser() } : { id: `sentinel-${table.name}`, content: ['保留', 1], ...(table.name === 'settings' ? { apiKey: 'FAKE-ONLY-KEEP' } : {}) };
+    await table.put(row); before[table.name] = await table.toArray();
+  }
+  old.close(); const current = new ResumeDB(name); await current.open(); expect(current.verno).toBe(6);
+  for (const [name, rows] of Object.entries(before)) expect(await current.table(name).toArray()).toEqual(rows);
+  expect(await current.jdGroups.count()).toBe(0); expect(await current.resumeVersions.count()).toBe(0); await current.delete();
 });

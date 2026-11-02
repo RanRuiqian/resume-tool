@@ -7,17 +7,17 @@ import { AI_PLAN_PROMPT, AI_PLAN_REPAIR_PROMPT, SYS_FACTS } from './prompts';
 import type { PlanEntry, ResumePlan } from './relevance';
 import { inferWorkKind } from '../render/classify';
 import { isProfessionalWork, isCampusWork, pageBudget, type ContentCategory } from './contentStrategy';
-import { profileForGeneration } from '../privacy/resume';
+import { jobRequirements } from '../joint/jobs';
+import { validateJointReasoning } from '../joint/validation';
+import type { JointSynthesis, RequirementAssessment } from '../types/joint';
+import { printableCourse, profileForGeneration } from '../privacy/resume';
 
 /** AI 对岗位要求作出的可追溯判断：非官方 ATS 分数。 */
-export interface RequirementDecision {
-  text: string;
-  tier: 'must' | 'responsibility' | 'preferred';
-  assessment: 'direct' | 'transferable' | 'gap';
-  evidenceIds: string[];
-}
+export type RequirementDecision = RequirementAssessment;
 
 export interface AiSelectionOutput {
+  courses?: string[];
+  jointSummary?: JointSynthesis;
   requirements?: RequirementDecision[];
   entries?: { entryId: string; bulletIds: string[]; reason?: string }[];
   reserveEntries?: { entryId: string; bulletIds: string[]; reason?: string }[];
@@ -31,6 +31,8 @@ export interface AiSelectionOutput {
 }
 
 export interface AiSelectionResult {
+  courses: string[];
+  jointSummary?: JointSynthesis;
   plan: ResumePlan;
   reserves: PlanEntry[];
   omissions: Partial<Record<ContentCategory, string>>;
@@ -52,7 +54,7 @@ export const decisionModel = (s: Settings) => isOfficialDeepSeek(s) ? 'deepseek-
 // 同一个 ID 不得同时指向两个条目；否则后续 textIndex 的 Map 可能覆盖真正的来源。
 function checkLibraryIds(p: ProfileDoc) {
   const seen = new Set(['summary']);
-  const ids = [...p.work, ...p.projects, ...p.education, ...p.skills, ...p.certificates, ...p.awards].map((x) => x.id);
+  const ids = [...p.work, ...p.projects, ...p.education, ...p.skills, ...p.certificates, ...p.awards, ...(p.courses ?? [])].map((x) => x.id);
   const facts = [...p.work, ...p.projects].flatMap((x) => x.bullets).concat(p.education.flatMap((x) => x.highlights));
   ids.push(...facts.flatMap((x) => x.id ? [x.id] : []));
   for (const id of ids) {
@@ -88,6 +90,8 @@ export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetP
     category: textOf(x.category ?? {}, lang), proficiency: x.proficiency ?? '', usedIn: x.usedIn ?? [], scenarios: x.scenarios ?? '' })).filter((x) => x.name);
   const named = (a: ProfileDoc['certificates']) => a.filter((x) => x.enabled).map((x) => ({ id: x.id, name: textOf(x.name, lang), issuer: textOf(x.issuer, lang), date: x.date })).filter((x) => x.name);
   const certificates = named(p.certificates), awards = named(p.awards);
+  const courses = (p.courses ?? []).filter((c) => printableCourse(p, c)).map((c) => ({ id: c.id, educationId: c.educationId, name: c.name, code: c.code, term: c.term, aliases: c.aliases ?? [],
+    synopsis: c.synopsis, knowledgeTags: c.knowledgeTags, evidenceLevel: c.evidenceLevel, projectIds: c.projectIds.filter((id) => projects.some((x) => x.entryId === id)), evidenceCategory: 'course' as const, boundary: '仅课程知识；推断概述不是已掌握软件、实操或任职经验；具体项目实践必须另引真实项目 sourceId' }));
   // 唯一白名单：只从实际发送的素材派生，校验与修复都使用同一结构。
   const entries = [...work.map((x) => ({ ...x, kind: 'work' as const })), ...projects.map((x) => ({ ...x, kind: 'projects' as const }))]
     .map((x) => ({ entryId: x.entryId, kind: x.kind, bulletIds: x.facts.map((f) => f.sourceId) }));
@@ -95,14 +99,17 @@ export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetP
     entries, education: education.map((x) => ({ entryId: x.entryId, bulletIds: x.facts.map((f) => f.sourceId) })),
     // 教育主体本身包含学校、专业、学位及预计授予状态；无需杜撰一个 highlight 才能引用这些真实字段。
     educationEvidenceIds: education.map((x) => x.entryId),
+    courses: courses.map((c) => c.id),
     skills: skills.map((x) => x.id), certificates: certificates.map((x) => x.id), awards: awards.map((x) => x.id),
     evidenceIds: [...work, ...projects, ...education].flatMap((x) => x.facts.map((f) => f.sourceId))
-      .concat(education.map((x) => x.entryId), skills.map((x) => x.id), certificates.map((x) => x.id), awards.map((x) => x.id)),
+      .concat(education.map((x) => x.entryId), skills.map((x) => x.id), courses.map((x) => x.id), certificates.map((x) => x.id), awards.map((x) => x.id)),
   };
   return {
+    targets: job.joint?.targets.map((t) => ({ roleId: t.roleId, revision: t.revision, name: t.name, job: { id: t.job.id, title: t.job.title, rawText: t.job.rawText, company: t.job.company, mustHave: t.job.mustHave, responsibilities: t.job.responsibilities ?? [], niceToHave: t.job.niceToHave, keywords: t.job.keywords } })),
+    requirementRefs: job.joint ? jobRequirements(job) : undefined,
     job: { title: job.title, rawText: job.rawText, responsibilities: job.responsibilities ?? [], mustHave: job.mustHave,
       niceToHave: job.niceToHave, keywords: job.keywords },
-    candidate: { work, projects, education,
+    candidate: { work, projects, education, courses,
       skills, certificates, awards },
     allowedIds,
     constraints: { language: lang, layout: pageBudget(targetPages, lang, template, p),
@@ -206,6 +213,7 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     if (invalid.length) issue(path, 'invalid_id', `AI 选用了不存在、未启用或未提供的${name}：${invalid.join('、')}`, invalid);
     return ids;
   };
+  const courses = raw.courses === undefined ? [] : selectSide(raw.courses, allowed.courses, '/courses', '课程');
   const skills = selectSide(raw.skills, allowed.skills, '/skills', '技能');
   const certificates = selectSide(raw.certificates, allowed.certificates, '/certificates', '证书');
   const awards = selectSide(raw.awards, allowed.awards, '/awards', '奖项');
@@ -219,7 +227,7 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     const text = typeof r?.text === 'string' ? r.text.trim() : '';
     const label = `岗位要求 #${i + 1}「${text || '未提供要求文本'}」`;
     if (!r || !text || !['must', 'responsibility', 'preferred'].includes(r.tier)
-      || !['direct', 'transferable', 'gap'].includes(r.assessment)) {
+      || !['direct', 'transferable', 'learning', 'gap'].includes(r.assessment)) {
       issue(path, 'format', `${label}：岗位匹配判断格式不正确`, undefined, text); continue;
     }
     const ids = idArray(r.evidenceIds, path, `${label}的证据`);
@@ -230,9 +238,14 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     }
     if ((r.assessment === 'gap' && ids.length) || (r.assessment !== 'gap' && !ids.length))
       issue(path, 'inconsistent', `${label}：匹配结论 ${r.assessment} 与证据不一致`, ids, text);
-    requirements.push({ text, tier: r.tier, assessment: r.assessment, evidenceIds: ids });
+    const courseProof = ids.filter((id) => allowed.courses.includes(id));
+    if (courseProof.length && r.assessment !== 'learning') issue(path, 'inconsistent', `${label}：课程不能当作直接/可迁移实操证据，请以 learning 判断知识支持，实践要求仍需独立证据`, courseProof, text);
+    if (r.assessment === 'learning' && (!courseProof.length || ids.some((id) => !allowed.courses.includes(id)))) issue(path, 'inconsistent', `${label}：learning 只允许引用实际课程 ID；项目/工作事实应独立判断`, ids, text);
+    if (r.assessment === 'learning' && (typeof r.reason !== 'string' || !r.reason.trim())) issue(path, 'format', `${label}：请解释课程内容与能力的语义关联及不能证明的实践边界`, ids, text);
+    requirements.push({ text, tier: r.tier, assessment: r.assessment, evidenceIds: ids, ...(r.requirementId ? { requirementId: r.requirementId } : {}), ...(typeof r.reason === 'string' ? { reason: r.reason } : {}) });
   }
   if (Array.isArray(raw.requirements) && !raw.requirements.length) issue('/requirements', 'format', 'AI 未分析任何岗位要求');
+  issues.push(...validateJointReasoning(job, requirements, raw.jointSummary));
   const omissions: Partial<Record<ContentCategory, string>> = {};
   for (const key of ['education', 'professionalWork', 'campus', 'projects', 'skills', 'certificates'] as const) {
     const reason = raw.omissions?.[key];
@@ -258,13 +271,13 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     .map((e) => ({ id: e.id, reason: 'AI 比较完整资料和岗位要求后认为优先级较低（母库保留）' }));
   const plan: ResumePlan = { entries, skills, certificates, awards, caps: { core: targetPages > 1 ? 4 : 3, minor: targetPages > 1 ? 2 : 1 },
     budgets, dropped, model, ranked };
-  return { plan, reserves, omissions, requirements, gaps: requirements.filter((r) => r.assessment === 'gap').map((r) => r.text).slice(0, 8),
+  return { courses, jointSummary: job.joint ? raw.jointSummary : undefined, plan, reserves, omissions, requirements, gaps: requirements.filter((r) => r.assessment === 'gap' || r.assessment === 'learning').map((r) => r.text).slice(0, 8),
     matchScore: total ? Math.round(100 * supported / total) : 0,
     summaryFocus: String(raw.summaryFocus ?? '').trim(), tradeoffs: String(raw.tradeoffs ?? '').trim(), chosenReasons };
 }
 
 /** 只接受失败位置的替换，防止修复时重排或覆盖已通过的选材。合并后仍做完整校验。 */
-function applyRepairs(original: AiSelectionOutput, response: unknown, allowedPaths: string[]): AiSelectionOutput {
+function applyRepairs(original: AiSelectionOutput, response: unknown, allowedPaths: string[], requirementIds: string[] = []): AiSelectionOutput {
   const repairs = (response as { repairs?: unknown })?.repairs;
   if (!Array.isArray(repairs) || repairs.length !== allowedPaths.length)
     throw new Error('AI 局部修复格式错误：必须且只能替换列出的错误位置');
@@ -283,6 +296,7 @@ function applyRepairs(original: AiSelectionOutput, response: unknown, allowedPat
       throw new Error(`AI 局部修复操作无效或缺少替换值：${repair.path}`);
     if (field === 'requirements' && index !== undefined) {
       const previous = original.requirements?.[Number(index)];
+      if (previous?.requirementId && requirementIds.includes(previous.requirementId) && repair.value?.requirementId !== previous.requirementId) throw new Error(`AI 局部修复不得挪用其他岗位要求 ID：${repair.path}`);
       if ((typeof previous?.text === 'string' && previous.text.trim() && repair.value?.text !== previous.text)
         || (['must', 'responsibility', 'preferred'].includes(previous?.tier ?? '') && repair.value?.tier !== previous?.tier))
         throw new Error(`AI 局部修复不得通过改换岗位要求或层级来绕过证据检查：${repair.path}`);
@@ -315,7 +329,7 @@ export async function planWithAi(s: Settings, p: ProfileDoc, job: JobParse, lang
       })}` }];
     try {
       const repair = await chatJson<unknown>(s, repairMessages, options);
-      const fixed = applyRepairs(original, repair, allowedPaths);
+      const fixed = applyRepairs(original, repair, allowedPaths, brief.requirementRefs?.map((r) => r.id));
       const result = validateSelection(fixed, p, job, lang, targetPages, brief);
       onStep?.('1/3 选材局部修复完成，整个方案已重新通过事实来源与篇幅校验');
       return result;

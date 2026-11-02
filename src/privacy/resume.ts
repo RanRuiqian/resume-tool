@@ -17,7 +17,7 @@ export function profileForGeneration(profile: ProfileDoc): ProfileDoc {
   p.education = p.education.map((e) => ({ ...e, highlights: e.highlights.filter((b) => !academicHighlight(b)) }));
   return p;
 }
-export const printableCourse = (p: ProfileDoc, c: CourseEntry) => c.enabled && c.confirmation === 'confirmed' && c.kind === 'taught'
+export const printableCourse = (p: ProfileDoc, c: CourseEntry) => c.enabled && c.confirmation === 'confirmed' && c.kind === 'taught' && !!(c.name.zh?.trim() || c.name.en?.trim())
   && !!p.education.find((e) => e.id === c.educationId && e.enabled);
 export function courseSelectionSnapshot(p: ProfileDoc, ids: string[], gradeIds: string[]): NonNullable<ResumeDoc['courseSelection']> {
   const unique = [...new Set(ids)], eligible = unique.map((id) => p.courses?.find((c) => c.id === id)).filter((c): c is CourseEntry => !!c && printableCourse(p, c));

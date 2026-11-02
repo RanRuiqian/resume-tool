@@ -29,7 +29,7 @@ export function ResumeFactsOptions() {
         <button disabled={selected.indexOf(c.id) === selected.length - 1} onClick={() => { const ids = [...selected], i = ids.indexOf(c.id); [ids[i + 1], ids[i]] = [ids[i], ids[i + 1]]; change(ids, selection.gradeIds); }}>↓</button>
       </>}
     </div>)}
-    <p className="muted small">课程和链接的选择仅影响本份简历，可使用「撤销」。新增课程尚不参与 AI 自动选材；联合岗位和课程语义匹配将在下一增量接入。</p>
+    <p className="muted small">课程和链接的选择仅影响本份简历，可使用「撤销」。AI 已按课程内容与岗位能力选择课程；推断不等于实操。手工调整会保留，证据报告会标明当前是否采用来源。</p>
     <button onClick={() => { const item = resume.items.find((i) => i.sourceId === 'summary'); if (item) { setDraft({ zh: item.zh, en: item.en }); setError(''); } else setError('没有固定简介快照，请在资料页保存后重新生成。'); }}>特殊岗位微调（人工候选，确认后应用）</button>
     {resume.summaryBaseline && <button onClick={() => { setResume(runConsistency(restoreSummaryBaseline(resume))); setDraft(null); }}>恢复本份简历的固定简介</button>}
     {draft && <div className="notice" data-testid="summary-variant-draft"><p>只修改本份简历，绝不写回母库。请保留学位原名、经历性质、限定和数值，并同时核对双语。应用后仍进入事实审查。</p>

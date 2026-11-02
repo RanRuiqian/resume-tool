@@ -83,9 +83,9 @@ describe('v1.13 privacy and source safety', () => {
     const profile = p(), before = structuredClone(profile), brief = selectionBrief(profile, jobs().A, 'zh', 1), clean = profileForGeneration(profile);
     expect(JSON.stringify(brief)).not.toContain('MOCK-UG-GRADE'); expect(JSON.stringify(brief)).not.toContain('MOCK-PG-GRADE'); expect(JSON.stringify(brief)).not.toContain('GPA 3.6');
     expect(clean.courses![0].grade.raw).toBe(''); expect(clean.courses![0].sources).toEqual([]); expect(profile).toEqual(before);
-    // 本增量课程为人工选择：不能伪装成已接通 AI 课程语义决策，更不能借课程 ID 绕过事实校验。
+    // P2 允许课程语义关联，但绝不能借课程 ID 绕过实践事实边界。
     const falsePractice = personalPlan(); falsePractice.requirements![0] = { text: '供应商开发 / PLC 编程经验', tier: 'must', assessment: 'direct', evidenceIds: [profile.courses![0].id] };
-    expect(() => validateAiSelection(falsePractice, profile, jobs().A, 'zh', 1)).toThrow(/无效资料证据/);
+    expect(() => validateAiSelection(falsePractice, profile, jobs().A, 'zh', 1)).toThrow(/课程不能当作直接/);
   });
   it('retains unconfirmed imports in the master library but excludes them from automatic selection and rendered profile', () => {
     const profile = p(); profile.work[0].importedFrom = { importTag: 'fake-import', incomingId: 'incoming', at: '2026-01-01' };

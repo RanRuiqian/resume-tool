@@ -19,9 +19,13 @@ it('keeps original AI plan/write/localize calls, excludes hidden scores from eve
   api.mockResolvedValueOnce(personalPlan()).mockResolvedValueOnce({ items: [] }).mockResolvedValue({ items: translations });
   const r = await generateResume(s, p, job, 'zh', 1);
   expect(api).toHaveBeenCalledTimes(3);
-  const payloads = JSON.stringify(api.mock.calls);
+  const payloads = JSON.stringify(api.mock.calls.map((c) => c[1]));
   expect(payloads).not.toMatch(/MOCK-(?:UG|PG)-GRADE|GPA 3.6|虚构本科成绩单/);
-  expect(payloads).not.toContain('PLC 内容待核实');
+  const planning = JSON.parse(String(api.mock.calls[0][1].at(-1)!.content).split('\n\n').at(-1)!);
+  expect(planning.candidate.courses[1].evidenceLevel).toBe('inferred');
+  expect(planning.candidate.courses[1].synopsis.zh).toContain('PLC 内容待核实');
+  const writer = JSON.parse(String(api.mock.calls[1][1].at(-1)!.content).split('\n\n').at(-1)!);
+  expect(JSON.stringify(writer.facts)).not.toContain('PLC 内容待核实');
   expect(JSON.stringify(r)).not.toMatch(/MOCK-(?:UG|PG)-GRADE/); expect(p).toEqual(before);
   expect(r.items.find((i) => i.sourceId === 'summary')!.zh).toBe(p.profile.summary.zh);
 });
@@ -29,7 +33,7 @@ it('does not send old academic highlights when resynchronizing a cached resume, 
   const p = coursesFixture(); p.education[0].highlights = [{ id: 'old-academic', zh: 'GPA约 3.6（估算）；PTE Academic MOCK', en: 'Estimated GPA 3.6; PTE Academic MOCK' }];
   const r = generateRules(p, jobs().A, 'zh'); r.items.push({ sourceId: 'old-academic', zh: p.education[0].highlights[0].zh!, en: '', syncStatus: 'pending' });
   api.mockResolvedValue({ items: [] }); const localized = await localizeAi(s, p, jobs().A, r);
-  expect(JSON.stringify(api.mock.calls)).not.toContain('GPA'); expect(localized.items.some((i) => i.sourceId === 'old-academic')).toBe(false);
+  expect(JSON.stringify(api.mock.calls.map((c) => c[1]))).not.toContain('GPA'); expect(localized.items.some((i) => i.sourceId === 'old-academic')).toBe(false);
   expect(p.education[0].highlights[0].zh).toContain('GPA');
 });
 it('new immutable application snapshots omit hidden raw grades; private master retains them and only opted-in grade stays in resume snapshot', async () => {

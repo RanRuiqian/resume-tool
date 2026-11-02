@@ -1,6 +1,6 @@
 # 数据结构（DATA_SCHEMA）
 
-数据库：真实数据 `resume-tool`，演示数据 `resume-tool-demo`。Dexie 版本 **5**（浏览器里 `indexedDB` 版本显示为 50）。
+数据库：真实数据 `resume-tool`，演示数据 `resume-tool-demo`。Dexie 版本 **6**（浏览器里 `indexedDB` 版本显示为 60）。
 
 ## 版本历史
 | 版本 | 变化 |
@@ -8,6 +8,7 @@
 | v1 | `profile, jobs, resumes, exports, settings, state, templates` |
 | v2 | 新增 `backups`（资料快照）；升级前自动快照旧资料，再规范化资料结构 |
 | v3 | 历史简历条目补齐 `syncStatus`；事实审查 `audit` 为可选字段 |
+| v6 | 仅新增 jdGroups / resumeVersions；旧数据原样保留 |
 | v5 | 事务内原始资料备份后追加空 courses，其他表原样保留；失败整体回滚 |
 | v4 | 新增 `postings, applications, appEvents, artifacts, attachments, attachmentBlobs`（只新增，不改旧表） |
 
@@ -134,3 +135,15 @@
 - `ResumeDoc.summaryBaseline?` 保留本份简历固定简介；人工变体显式确认后只改本份 resume，进入事实审查，支持恢复固定版/撤销。母库 manual/旧无状态/machine/stale 简介不再消失，而是原样显示并标待确认；只有真实 confirmed 状态才显示已确认。
 - 生成副本去掉结构化课程成绩、原文全文及教育学术分数亮点；语言考试证据不换算。新申请快照不复制隐藏的课程成绩。母库 JSON/完整档案备份和本地回滚快照**仍完整保存私人成绩**，请勿公开它们。已有 artifacts 保持不可变，不迁移/脱敏旧内容。自由文本中没有学术标签的任意分数不属于自动识别保证范围，投递前仍需人工审阅。
 - 现有 `SECTIONS` 已包含 profile/resumes/artifacts，不新增归档 section；旧归档无 courses 时默认空，旧记录原样保留。
+
+## v1.13 P2（Dexie 6 / IndexedDB 60，归档格式 v2）
+
+- 迁移 v6 只新增 `jdGroups: id,updatedAt` 与 `resumeVersions: id,digest,createdAt`，不重写任何 v5 行。v5 的迁移前备份、资料、设置/Key、历史/投递/附件原样保留；DB 事务失败不清库。
+- `JointGroup` 保存企业、1–3 个 `JointRole`、归档岗位及创建/修改时间。每个 role 独立 ID、名称、正文、链接、截图+OCR 原文；`analyses[]` 只追加 `{jobId,revision,inputHash,at}`，`analysisId` 指向当前解析。角色移除归档可恢复，强制重解析产生新 JD ID，旧 job 不覆盖。companyConfirmed 仅表示用户明确核对了异语/简称的同一企业，不由模型猜测授权。
+- `JobParse.joint?: {groupId,company,targets:[{roleId,revision,name,url,job}]}` 是公司级协调快照。每个 target.job 是独立 JD 的完整快照，不嵌套其他 joint。不把多段 JD 拼成一个 rawText。文本不变复用独立解析，协调内容相同复用协调 ID；内容改变生成新的协调版本，旧简历不自动覆盖。
+- 联合岗位每条要求使用 `<job.id>:<must|responsibility|preferred>:<index>`。AI 必须逐条完整引用 requirementId、原 text/tier、evidenceIds 和 reason；本地校验 ID、岗位归属、重复、遗漏、共同/互补覆盖及跨岗冲突引用。原有效要求 ID/层级/文本在局部修复中不得挪用或降低。
+- 已确认授课课程进入同一精确证据白名单（不含成绩/来源位置）；候选包含名称、内容概述、知识域、概述证据等级和关联真实项目。仅允许 `learning` 引用课程，不能用课程作为 `direct/transferable` 实操证明；学习判断仍保留实践缺口。`courses[]` 由 AI 决定打印哪些课程名，正文写作 facts 仍仅实际工作/项目事实，不复制课程概述。母库与成绩开关继续沿用 P0/P1。
+- `ResumeDoc.evidenceReport?` 保存逐岗判断、程序派生的来源类别/原文/证据等级/风险、AI 选材原因及共同/互补/冲突归纳。当前采用状态随手动勾选/排序现算，来源在母库但未选入正文时明确标注；不伪称为当前正文亮点。报告附于 ZIP 的 evidence-and-gaps.json，UI/独立下载均可查阅；不是官方 ATS 或录用保证。
+- `SharedResumeVersion` 内容寻址 ID=`version-<SHA256>`，digest 覆盖规范化 profile/template/resume/job（排序使用固定字符串顺序，不依赖地区）。profile 使用隐私副本，隐藏课程分数不复制；明确开启的原始成绩只在 resume.courseSelection 保存。冻结完整模板，旧导出不受后来模板修改影响。哈希只验证内容完整性，不证明用户事实本身真实。
+- `Application.resumeVersionId?` 指向同一共同版本；`ResumeArtifact.versionId?` 是只读引用，不各复制一份正文。批量关联事务创建/复用该组角色的岗位/申请、共同版本与引用，默认新状态 pending、没有 appliedAt；已有状态/手工岗位不覆盖，已有 artifacts 不修改。重复关联同内容幂等；编辑后显式关联产生新版本，旧内容和实际提交标记仍保留。删除一条申请不删除其他申请共用的版本。
+- 归档新增 jdGroups/resumeVersions sections，archiveVersion=2（旧 v1 可读，旧客户端应拒绝新版以免漏掉关联）。恢复前检查版本哈希；不可变版本同 ID 冲突拒绝，artifacts/版本已有记录不覆盖。选中有关联指针的记录时，必须一并恢复共用版本或确保本机已有该版本，防止静默悬空。

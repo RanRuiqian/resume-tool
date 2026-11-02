@@ -25,6 +25,7 @@ export interface SourceInfo { kind: 'manual' | 'csv' | 'json' | 'ran-application
 
 /** 一个招聘岗位（只是岗位，不代表已申请） */
 export interface JobPosting {
+  jointGroupId?: string; jointRoleId?: string;
   id: string;
   company: string; title: string; city: string;
   companyType?: string; category?: string; recruitType?: RecruitType;
@@ -45,6 +46,7 @@ export interface InterviewItem { id: string; at: string; round: string; mode?: s
 
 /** 针对某个岗位的一次具体申请；状态变化写入 ApplicationEvent */
 export interface Application {
+  resumeVersionId?: string;
   id: string; postingId: string;
   status: AppStatus;
   appliedAt?: string;
@@ -65,6 +67,7 @@ export interface ApplicationEvent {
 
 /** 投递时实际使用的简历版本：不可变快照，后续修改资料或重新生成都不会影响 */
 export interface ResumeArtifact {
+  versionId?: string;
   id: string; applicationId: string;
   kind: 'snapshot' | 'uploaded';
   label: string;

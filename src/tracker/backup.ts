@@ -1,3 +1,5 @@
+import type { JointGroup, SharedResumeVersion } from '../types/joint';
+import { canonicalJson, verifySharedVersion } from '../joint/versions';
 import JSZip from 'jszip';
 import { snapshotProfile, type ResumeDB } from '../storage/db';
 import { normalizeProfile } from '../storage/profileIO';
@@ -7,7 +9,7 @@ import type { Application, ApplicationEvent, Attachment, JobPosting, ResumeArtif
 import { TRACKER_SCHEMA_VERSION } from './types';
 
 export const ARCHIVE_FORMAT = 'resume-tool-archive';
-export const ARCHIVE_VERSION = 1;
+export const ARCHIVE_VERSION = 2;
 /** 绝不进入备份的字段名（任何层级） */
 const SECRET_KEYS = /^(apikey|api_key|authorization|token|secret|password)$/i;
 export function scrubSecrets<T>(v: T): T {
@@ -17,6 +19,7 @@ export function scrubSecrets<T>(v: T): T {
 }
 
 export interface ArchiveData {
+  jdGroups: JointGroup[]; resumeVersions: SharedResumeVersion[];
   profile: ProfileDoc | null;
   postings: JobPosting[]; applications: Application[]; events: ApplicationEvent[];
   artifacts: ResumeArtifact[]; attachments: Attachment[];
@@ -24,9 +27,9 @@ export interface ArchiveData {
 }
 // v1.13：独立课程位于 profile.courses；课程/成绩选择快照位于 resumes / artifacts，
 // 现有 section 已逐字段保留它们。母库备份保留私人成绩；新生成快照不携带隐藏成绩。
-export const SECTIONS = ['profile', 'postings', 'applications', 'events', 'artifacts', 'attachments', 'jobs', 'resumes'] as const;
+export const SECTIONS = ['profile', 'postings', 'applications', 'events', 'artifacts', 'attachments', 'jobs', 'resumes', 'jdGroups', 'resumeVersions'] as const;
 export type Section = (typeof SECTIONS)[number];
-export const SECTION_LABEL: Record<Section, string> = { profile: '个人事实档案', postings: '岗位库', applications: '申请记录', events: '状态历史', artifacts: '简历版本', attachments: '附件', jobs: '已解析 JD', resumes: '生成的简历' };
+export const SECTION_LABEL: Record<Section, string> = { profile: '个人事实档案', postings: '岗位库', applications: '申请记录', events: '状态历史', artifacts: '简历版本', attachments: '附件', jobs: '已解析 JD', resumes: '生成的简历', jdGroups: '联合 JD 组', resumeVersions: '不可变共同简历版本' };
 export interface Manifest {
   format: typeof ARCHIVE_FORMAT; archiveVersion: number; trackerSchemaVersion: number; dbVersion: number;
   generatedAt: string; light: boolean; counts: Record<Section, number>;
@@ -36,10 +39,10 @@ export interface Manifest {
 }
 
 export async function collect(d: ResumeDB): Promise<ArchiveData> {
-  const [p, postings, applications, events, artifacts, attachments, jobs, resumes] = await Promise.all([
-    d.profile.get('me'), d.postings.toArray(), d.applications.toArray(), d.appEvents.toArray(), d.artifacts.toArray(), d.attachments.toArray(), d.jobs.toArray(), d.resumes.toArray(),
+  const [p, postings, applications, events, artifacts, attachments, jobs, resumes, jdGroups, resumeVersions] = await Promise.all([
+    d.profile.get('me'), d.postings.toArray(), d.applications.toArray(), d.appEvents.toArray(), d.artifacts.toArray(), d.attachments.toArray(), d.jobs.toArray(), d.resumes.toArray(), d.jdGroups.toArray(), d.resumeVersions.toArray(),
   ]);
-  return scrubSecrets({ profile: p?.doc ?? null, postings, applications, events, artifacts, attachments, jobs, resumes });
+  return scrubSecrets({ profile: p?.doc ?? null, postings, applications, events, artifacts, attachments, jobs, resumes, jdGroups, resumeVersions });
 }
 function manifestOf(d: ResumeDB, data: ArchiveData, light: boolean, attachmentFiles: Manifest['attachmentFiles']): Manifest {
   return {
@@ -96,11 +99,13 @@ export async function readArchive(d: ResumeDB, file: Uint8Array | string): Promi
   if (manifest?.format !== ARCHIVE_FORMAT) throw new Error('不是「完整求职档案」格式（manifest.format 不匹配）');
   if (manifest.archiveVersion > ARCHIVE_VERSION) errors.push(`备份来自更新版本的工具（档案版本 ${manifest.archiveVersion}），请先升级本工具`);
   const data: ArchiveData = scrubSecrets({
+    jdGroups: asArr<JointGroup>(raw.jdGroups, '联合 JD 组', errors), resumeVersions: asArr<SharedResumeVersion>(raw.resumeVersions, '共用版本', errors),
     profile: raw.profile && typeof raw.profile === 'object' ? normalizeProfile(raw.profile) : null,
     postings: asArr<JobPosting>(raw.postings, '岗位库', errors), applications: asArr<Application>(raw.applications, '申请记录', errors), events: asArr<ApplicationEvent>(raw.events, '状态历史', errors),
     artifacts: asArr<ResumeArtifact>(raw.artifacts, '简历版本', errors), attachments: asArr<Attachment>(raw.attachments, '附件', errors), jobs: asArr<JobParse>(raw.jobs, '已解析 JD', errors), resumes: asArr<ResumeDoc>(raw.resumes, '生成的简历', errors),
   });
   for (const s of SECTIONS) if (s !== 'profile') for (const x of data[s] as { id?: unknown }[]) if (!x || typeof x.id !== 'string') { errors.push(`${SECTION_LABEL[s]} 中有记录缺少 id`); break; }
+  for (const v of data.resumeVersions) if (!await verifySharedVersion(v)) errors.push(`共用版本校验失败：${v?.id}`);
   const pIds = new Set(data.postings.map((p) => p.id)), aIds = new Set(data.applications.map((a) => a.id));
   const orphanApps = data.applications.filter((a) => !pIds.has(a.postingId)).length; if (orphanApps) warnings.push(`${orphanApps} 条申请记录找不到对应岗位（仍可导入）`);
   const orphanEv = data.events.filter((e) => !aIds.has(e.applicationId)).length; if (orphanEv) warnings.push(`${orphanEv} 条状态历史找不到对应申请`);
@@ -121,17 +126,21 @@ export async function readArchive(d: ResumeDB, file: Uint8Array | string): Promi
   if (dupIds.length) warnings.push(`以下记录在本机已存在（同一 ID）：${dupIds.join('、')}。默认跳过，不覆盖。`);
   return { manifest, data, blobs, errors, warnings, existing, incoming };
 }
-const tables = (d: ResumeDB) => ({ postings: d.postings, applications: d.applications, events: d.appEvents, artifacts: d.artifacts, attachments: d.attachments, jobs: d.jobs, resumes: d.resumes }) as const;
+const tables = (d: ResumeDB) => ({ postings: d.postings, applications: d.applications, events: d.appEvents, artifacts: d.artifacts, attachments: d.attachments, jobs: d.jobs, resumes: d.resumes, jdGroups: d.jdGroups, resumeVersions: d.resumeVersions }) as const;
 
 export interface RestoreOptions { sections: Section[]; overwrite: boolean; replaceProfile: boolean }
 export interface RestoreResult { written: Record<Section, number>; skipped: Record<Section, number>; profileSnapshotId: string | null }
 /** 恢复：单个事务写入，任一步失败整体回滚；覆盖资料前先存快照 */
 export async function restoreArchive(d: ResumeDB, chk: ArchiveCheck, opt: RestoreOptions): Promise<RestoreResult> {
   if (chk.errors.length) throw new Error(`备份验证未通过，未写入任何数据：${chk.errors.join('；')}`);
+  const available = new Set((await d.resumeVersions.toArray()).map((v) => v.id));
+  if (opt.sections.includes('resumeVersions')) chk.data.resumeVersions.forEach((v) => available.add(v.id));
+  const references = [...(opt.sections.includes('applications') ? chk.data.applications.map((a) => a.resumeVersionId) : []), ...(opt.sections.includes('artifacts') ? chk.data.artifacts.map((a) => a.versionId) : [])];
+  if (references.some((id) => id && !available.has(id))) throw new Error('所选申请 / 快照引用共用版本，请同时恢复「不可变共同简历版本」，没有写入任何数据');
   const written = Object.fromEntries(SECTIONS.map((s) => [s, 0])) as Record<Section, number>, skipped = { ...written };
   let profileSnapshotId: string | null = null;
   const tbl = tables(d);
-  await d.transaction('rw', [d.profile, d.backups, d.postings, d.applications, d.appEvents, d.artifacts, d.attachments, d.attachmentBlobs, d.jobs, d.resumes], async () => {
+  await d.transaction('rw', [d.profile, d.backups, d.postings, d.applications, d.appEvents, d.artifacts, d.attachments, d.attachmentBlobs, d.jobs, d.resumes, d.jdGroups, d.resumeVersions], async () => {
     for (const s of opt.sections) {
       if (s === 'profile') {
         if (!chk.data.profile) continue;
@@ -143,7 +152,8 @@ export async function restoreArchive(d: ResumeDB, chk: ArchiveCheck, opt: Restor
       const t = tbl[s] as unknown as { bulkGet: (k: string[]) => Promise<unknown[]>; bulkPut: (x: unknown[]) => Promise<unknown> };
       const rows = chk.data[s] as { id: string }[];
       const ex = await t.bulkGet(rows.map((r) => r.id));
-      const put = rows.filter((_, i) => opt.overwrite || !ex[i]);
+      if (s === 'resumeVersions') for (let i = 0; i < rows.length; i++) if (ex[i] && canonicalJson(ex[i]) !== canonicalJson(rows[i])) throw new Error(`不可变共用版本冲突：${rows[i].id}，未覆盖任何数据`);
+      const put = rows.filter((_, i) => (opt.overwrite && s !== 'resumeVersions' && s !== 'artifacts') || !ex[i]);
       skipped[s] += rows.length - put.length;
       if (s === 'attachments') for (const a of put as Attachment[]) { const b = chk.blobs.get(a.id); if (b) await d.attachmentBlobs.put({ id: a.id, data: b }); }
       await t.bulkPut(put); written[s] += put.length;

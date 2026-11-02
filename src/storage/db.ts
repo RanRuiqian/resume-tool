@@ -1,3 +1,4 @@
+import type { JointGroup, SharedResumeVersion } from '../types/joint';
 import Dexie, { type Table } from 'dexie';
 import type { ExportRecord, JobParse, ProfileDoc, ResumeDoc, Settings, TemplateConfig } from '../types';
 import { normalizeProfile } from './profileIO';
@@ -10,6 +11,8 @@ export interface StateRow { id: string; value: unknown }
 export interface BackupRow { id: string; createdAt: string; reason: string; doc: ProfileDoc }
 
 export class ResumeDB extends Dexie {
+  jdGroups!: Table<JointGroup, string>;
+  resumeVersions!: Table<SharedResumeVersion, string>;
   profile!: Table<ProfileRow, string>;
   templates!: Table<TemplateConfig, string>;
   jobs!: Table<JobParse, string>;
@@ -65,6 +68,8 @@ export class ResumeDB extends Dexie {
         await tx.table('profile').put(row);
       }
     });
+    // v6 仅新增联合 JD 草稿与不可变共用版本；所有旧表原样保留。
+    this.version(6).stores({ jdGroups: 'id, updatedAt', resumeVersions: 'id, digest, createdAt' });
   }
 }
 

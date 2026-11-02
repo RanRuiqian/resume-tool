@@ -1,3 +1,4 @@
+import type { EvidenceReport, JointSet } from './joint';
 export type Lang = 'zh' | 'en';
 export const LANGS: Lang[] = ['zh', 'en'];
 export type TransStatus = 'manual' | 'machine' | 'confirmed' | 'stale';
@@ -234,6 +235,7 @@ export interface Bi { zh: string; en: string }
 /** 备考大方向：每条必须引用 JD 原文 */
 export interface PrepDirection { area: Bi; why: Bi; source: string }
 export interface JobParse {
+  joint?: JointSet;
   id: string;
   /** 原始岗位截图（data URL，仅存本机） */
   screenshots?: string[];
@@ -277,6 +279,7 @@ export interface GenItem {
 }
 export interface ConsistencyIssue { sourceId?: string; type: 'missing' | 'extra' | 'number' | 'empty' | 'count'; message: string }
 export interface ResumeDoc {
+  evidenceReport?: EvidenceReport;
   id: string;
   jobId: string;
   templateId: string;
