@@ -61,10 +61,10 @@ describe('案例 A–D 与「曾」（中英文）', () => {
     expect(crossCheck(CASE_D, 'Implemented variable focus with hospital doctors.').join()).toMatch(/讨论|未完成|否定/);
     expect(crossCheck(CASE_B, 'Estimated core material cost of the prototype was about USD 22; this does not represent a validated mass-production cost or retail price.')).toEqual([]);
   });
-  it('只删「曾」：不产生任何建议（无需修改），也不送 AI', async () => {
+  it('明确选择 AI 时审阅干净文字，仍不为只删「曾」生成建议', async () => {
     const p = realRunLike(); p.projects = [{ ...p.projects[0], bullets: [{ id: 'k', zh: KFC, en: 'Worked part-time at KFC during undergraduate studies.', status: { zh: 'manual', en: 'machine' } }] }] as never; mock.mockClear();
     const plan = await planOrganize(S, p, { useAi: true });
-    expect(plan.proposals.length).toBe(0); expect(mock).not.toHaveBeenCalled(); expect(plan.stats?.unchanged).toBe(1);
+    expect(plan.proposals.length).toBe(0); expect(mock).toHaveBeenCalledTimes(1); expect(plan.aiItems).toBe(1); expect(plan.stats?.unchanged).toBe(1);
   });
   it('带说明句的「曾」条目：AI 只删了「曾」→ 视为无价值，不产生 B，只做本地清洗', async () => {
     const p = realRunLike(); p.projects = [{ ...p.projects[0], bullets: [{ id: 'k', zh: `${KFC}以上信息仅供参考。`, status: { zh: 'manual' } }] }] as never;

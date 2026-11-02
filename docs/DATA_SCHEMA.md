@@ -171,3 +171,7 @@ EDU 只建立能确认学校名称的教育记录；项目学分单元不创建�
 新增字段随私有 JSON / ZIP 的 profile section 完整备份（无须新 section）。生成副本和投递快照移除 sourceTexts、sourceRecord 与包含原文快照的 mergeHistory，避免旁路带出隐藏成绩；私有母库仍完整保留它们。PR #15 精准清空整份 profile/原文/快照的行为覆盖上述字段，API 设置与投递记录不受导入影响。
 
 **真实 V7 的事实级格式**：`01｜栏目` / `[x] ID｜事实` 以事实为单位，不能每行建立实体。EDU-M/B 按教育命名空间组装；PRO 按项目前缀组装；LRN 在课程范围内按 Q/Lab/Assignment/Workshop 分组。课程固定列分别读取，不把 MSC-S 汇总当授课课程；缺失的逐门硕士学分留空。新增可选 `ProfileDoc.sourceFacts = {id, section, raw, reviewed, entityIds[]}[]` 保存私有逐条事实账本，实体 ID 写入后统一映射；作为 profile section 备份，无数据库/section 迁移。生成副本移除 sourceFacts 及原件备注中的成绩页摘要，清空个人资料覆盖账本。原件已本地隔离验证 299/299 编号事实（不含标记说明中的 [x]）、本科76/76、硕士6/6、核心项目2/2，详见 V7_STRUCTURED_IMPORT.zh-CN.md。CI 仅用虚构 fixture；历史15/80清单未提供，不伪造逐项对照。
+
+## AI 措辞整理的临时执行报告
+
+`OrganizePlan.ai` 只在预览内存保存 requested/requestedModel/responseModels、实际请求尝试数、eligible、skipped/noCallReason 和逐批状态/错误；不新增数据库表或备份 section。`AiObservation` 为每个 chat/chatJson 请求可选回调，不包含 Key/请求正文；usage.reportedModel 只取服务明确返回的 model，无此字段时不冒充实际模型。原 `LocalizedText.organized` 指纹盐升级，以区分新的主动措辞审阅策略。实体、学历、日期、课程成绩、sourceFacts/sourceRecord 等模式不变，整理只修改经用户选择的正文和既有追溯元数据。

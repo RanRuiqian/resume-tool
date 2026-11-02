@@ -11,12 +11,14 @@ type Content = string | ({ type: 'text'; text: string } | { type: 'image_url'; i
 export interface ChatMsg { role: 'system' | 'user' | 'assistant'; content: Content }
 
 /** v1.11：每次调用的用量（不含任何 Key / 正文），供调试面板或测试脚本统计耗时与费用 */
-export interface AiUsage { model: string; ms: number; promptTokens?: number; completionTokens?: number; cacheHitTokens?: number; cacheMissTokens?: number; finishReason?: string }
+export interface AiUsage { model: string; reportedModel?: string; ms: number; promptTokens?: number; completionTokens?: number; cacheHitTokens?: number; cacheMissTokens?: number; finishReason?: string }
 const usageListeners = new Set<(u: AiUsage) => void>();
 export function onAiUsage(fn: (u: AiUsage) => void): () => void { usageListeners.add(fn); return () => { usageListeners.delete(fn); }; }
+/** 单次业务请求的无正文观测，避免全局监听混入其它页面的调用；不提供 Key/请求内容。 */
+export interface AiObservation { onAttempt?: (model: string) => void; onUsage?: (usage: AiUsage) => void }
 
 /** OpenAI 兼容 Chat Completions；请求直连用户配置的服务商（PRD 8） */
-export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: string; json?: boolean; timeoutMs?: number; maxTokens?: number; thinking?: 'enabled' | 'disabled' } = {}): Promise<string> {
+export async function chat(s: Settings, messages: ChatMsg[], opts: AiObservation & { model?: string; json?: boolean; timeoutMs?: number; maxTokens?: number; thinking?: 'enabled' | 'disabled' } = {}): Promise<string> {
   if (!s.apiKey) throw new AiError('尚未启用 API：请到「设置 → AI API 管理」添加或启用一套 API，或开启演示模式', 'nokey');
   const bad = baseUrlProblem(s.baseUrl);
   if (bad) throw new AiError(`已阻止发送请求：${bad}。请到「设置 → AI API 管理」编辑这套配置的 Base URL`, 'other');
@@ -33,6 +35,7 @@ export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: str
     if (isOfficialDeepSeek(s)) body.thinking = { type: opts.thinking ?? 'disabled' };
     let res: Response;
     try {
+      try { opts.onAttempt?.(String(body.model)); } catch { /* 观测失败不影响实际请求 */ }
       res = await fetch(url, { method: 'POST', signal: ctrl.signal, headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${s.apiKey}` }, body: JSON.stringify(body) });
     } catch (e) {
       if ((e as Error).name === 'AbortError') throw e;
@@ -46,7 +49,8 @@ export async function chat(s: Settings, messages: ChatMsg[], opts: { model?: str
     const data = await res.json();
     const fin: string | undefined = data?.choices?.[0]?.finish_reason;
     const u = data?.usage ?? {};
-    const usage: AiUsage = { model: String(data?.model ?? body.model), ms: Date.now() - t0, promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, cacheHitTokens: u.prompt_cache_hit_tokens, cacheMissTokens: u.prompt_cache_miss_tokens, finishReason: fin };
+    const usage: AiUsage = { model: String(data?.model ?? body.model), ...(typeof data?.model === 'string' && data.model ? { reportedModel: data.model } : {}), ms: Date.now() - t0, promptTokens: u.prompt_tokens, completionTokens: u.completion_tokens, cacheHitTokens: u.prompt_cache_hit_tokens, cacheMissTokens: u.prompt_cache_miss_tokens, finishReason: fin };
+    try { opts.onUsage?.(usage); } catch { /* 同全局统计：不影响主流程 */ }
     usageListeners.forEach((fn) => { try { fn(usage); } catch { /* 统计回调出错不影响主流程 */ } });
     // 输出被 max_tokens 截断时，JSON 往往不完整；明确提示而不是报「格式异常」
     if (fin === 'length') throw new AiError('AI 输出过长被截断（finish_reason=length），请减少一次处理的内容或稍后重试', 'format');
@@ -96,7 +100,7 @@ export function parseJson<T>(s: string): T {
   }
 }
 
-export async function chatJson<T>(s: Settings, messages: ChatMsg[], opts: { model?: string; maxTokens?: number; timeoutMs?: number; thinking?: 'enabled' | 'disabled' } = {}): Promise<T> {
+export async function chatJson<T>(s: Settings, messages: ChatMsg[], opts: AiObservation & { model?: string; maxTokens?: number; timeoutMs?: number; thinking?: 'enabled' | 'disabled' } = {}): Promise<T> {
   try { return parseJson<T>(await chat(s, messages, { ...opts, json: true })); }
   catch (e) {
     // 部分服务不支持 response_format，降级重试一次

@@ -77,8 +77,9 @@ with sync_playwright() as p:
     sent=len({x['zh'] for b in reqs[n:] if '已经导入的个人资料母库' in b for x in json.loads(json.loads(b)['messages'][-1]['content'][json.loads(b)['messages'][-1]['content'].rfind('{"items"'):])['items']})
     num=lambda t: int(pg.locator(f'[data-testid={t}]').inner_text().split('：')[1].split(' ')[0])
     st={t:num(t) for t in ['stat-meta','stat-improved','stat-unchanged','stat-rejected','stat-review']}; print('  stats:', st, 'sent', sent)
-    chk(f'干净条目（A–D 原句 + 肯德基）不发送 AI、计为无需修改（发送 {sent} 条，无需修改 {st["stat-unchanged"]}）', st['stat-unchanged']>=5 and sent<=6)
-    chk(f'五类数量：说明 5 / 改善 1 / 拒绝 4 / 需要审核 0（{st}）', st['stat-meta']==5 and st['stat-improved']==1 and st['stat-rejected']==4 and st['stat-review']==0)
+    sent_keys={x['key'] for b in reqs[n:] if '已经导入的个人资料母库' in b for x in json.loads(json.loads(b)['messages'][-1]['content'][json.loads(b)['messages'][-1]['content'].rfind('{"items"'):])['items']}
+    chk(f'主动AI审阅包含全部11条正文，干净版的坏建议仍被拦截（审阅 {len(sent_keys)} 条，原文保持 {st["stat-unchanged"]}）', len(sent_keys)==11 and st['stat-unchanged']>=5)
+    chk(f'不同维度统计：说明5 / 改善1 / 拒绝8（干净与脏版均核对）/ 需要审核0（{st}）', st['stat-meta']==5 and st['stat-improved']==1 and st['stat-rejected']==8 and st['stat-review']==0)
     pg.locator('[data-testid=organize-stats]').scroll_into_view_if_needed(); pg.screenshot(path=S+'p17_organize_counts.png')
     rj=pg.locator('[data-testid=organize-rejected]'); rj.locator('summary').click(); rj.scroll_into_view_if_needed(); pg.screenshot(path=S+'p17_organize_rejected.png')
     pg.click('[data-testid=organize-accept-all]'); pg.click('[data-testid=organize-apply]'); pg.wait_for_selector('[data-testid=organize-done]')

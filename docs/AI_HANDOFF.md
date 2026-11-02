@@ -1,5 +1,7 @@
 # AI 交接说明（AI_HANDOFF）
 
+PR #16 后续：AI 整理按钮已修复“已确认/干净文字被整体跳过”的发送前筛选，新增逐请求模型/成功失败/跳过原因报告，人工确认与事实保护保留。详见 [AI_ORGANIZE_DISPATCH.zh-CN.md](AI_ORGANIZE_DISPATCH.zh-CN.md)。
+
 编号母库导入后续：`feat/v7-structured-import` 基于 PR #15 `c3c27ee`，保留 #13/#14/#15 功能，继续以 Draft 叠加 PR 交付。实现与待验边界见 [V7_STRUCTURED_IMPORT.zh-CN.md](V7_STRUCTURED_IMPORT.zh-CN.md)。已收到真实 V7 并完成本地隔离回归：299/299 编号事实、76/76 本科、6/6 硕士、2/2 核心项目；私有原件不入 Git/CI。历史 15/80 项清单未提供，报告区分历史不可还原与当前预览实测。
 
 本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-11-02（v1.13 P2 已接入：同企业 1–3 JD 联合语义选材、逐岗证据报告与共同不可变版本；仍为 Draft PR #14，依赖未合并的 PR #13；未合并未部署）。
