@@ -51,24 +51,24 @@ describe('joint JD input/revisions and strict semantic decisions', () => {
     g.group.roles[0].companyConfirmed = true; expect(makeJointJob(g.group, g.jobs).joint!.targets).toHaveLength(3);
     g.group.roles.push(structuredClone(g.group.roles[0])); expect(() => makeJointJob(g.group, g.jobs)).toThrow(/1–3/);
   });
-  it.each(['unknown-proof', 'wrong-requirement', 'missing-requirement', 'course-as-practice', 'false-aggregation', 'unknown-course'] as const)('rejects %s and never removes fact checks', (kind) => {
+  it.each(['unknown-proof', 'wrong-requirement', 'missing-requirement', 'false-aggregation', 'unknown-course'] as const)('rejects %s and never removes fact checks', (kind) => {
     const f = jointFixture();
     if (kind === 'unknown-proof') f.plan.requirements![0].evidenceIds = ['fake-proof'];
     if (kind === 'wrong-requirement') f.plan.requirements![0].requirementId = 'made-up-jd:must:0';
     if (kind === 'missing-requirement') f.plan.requirements!.pop();
-    if (kind === 'course-as-practice') { f.plan.requirements![4].assessment = 'direct'; f.plan.requirements![4].evidenceIds = [f.p.courses![1].id]; }
     if (kind === 'false-aggregation') f.plan.jointSummary!.common[0].requirementIds = ['fictional-job-0:must:0'];
     if (kind === 'unknown-course') f.plan.courses = ['unconfirmed-or-fictional-course'];
     expect(() => validateAiSelection(f.plan, f.p, f.job, 'zh', 1)).toThrow();
   });
-  it('repairs a course falsely cited as PLC practice locally, revalidates the same requirement and stops on failed repair', async () => {
-    const f = jointFixture(), at = f.plan.requirements!.length - 1, original = structuredClone(f.plan);
+  // 2026-11：课程被标成「直接 / 可迁移实操」证据时不再让整份简历失败，而是自动降级为「仅课程知识」（只会往低说，不会抬高）。
+  it('downgrades a course cited as direct PLC practice to course knowledge without blocking generation', async () => {
+    const f = jointFixture(), at = f.plan.requirements!.length - 1;
     f.plan.requirements![at].assessment = 'direct'; f.plan.requirements![at].evidenceIds = [f.p.courses![1].id];
-    api.mockResolvedValueOnce(f.plan).mockResolvedValueOnce({ repairs: [{ path: `/requirements/${at}`, value: original.requirements![at] }] });
-    const result = await planWithAi(s, f.p, f.job, 'zh', 1); expect(result.requirements[at].assessment).toBe('gap'); expect(api).toHaveBeenCalledTimes(2);
-    const repair = JSON.stringify(api.mock.calls[1][1]); expect(repair).toContain(f.p.courses![1].id); expect(repair).toContain('PLC 编程实际经验'); expect(repair).toContain('allowedIds');
-    api.mockReset(); api.mockResolvedValueOnce(f.plan).mockResolvedValueOnce({ repairs: [{ path: `/requirements/${at}`, value: f.plan.requirements![at] }] });
-    await expect(planWithAi(s, f.p, f.job, 'zh', 1)).rejects.toThrow(/局部修复失败/);
+    api.mockResolvedValueOnce(f.plan);
+    const result = await planWithAi(s, f.p, f.job, 'zh', 1);
+    expect(result.requirements[at]).toMatchObject({ assessment: 'learning', evidenceIds: [f.p.courses![1].id] });
+    expect(result.requirements[at].reason).toBeTruthy();
+    expect(api).toHaveBeenCalledTimes(1);
   });
   it('keeps report provenance after manual deselection and warns that source is no longer in current resume', async () => {
     const f = jointFixture(); mockGeneration(f); const r = await generateResume(s, f.p, f.job, 'zh', 1);
@@ -124,7 +124,7 @@ it('malformed semantic explanations produce actionable validation paths instead 
   const f = jointFixture(); (f.plan.requirements![4] as unknown as { reason: unknown }).reason = 42;
   (f.plan.jointSummary!.common[0] as unknown as { reason: unknown }).reason = {};
   try { validateAiSelection(f.plan, f.p, f.job, 'zh', 1); throw new Error('must fail'); }
-  catch (e) { expect((e as Error).name).toBe('AiSelectionValidationError'); expect((e as Error).message).toContain('/jointSummary'); expect((e as Error).message).toContain('/requirements/4'); }
+  catch (e) { expect((e as Error).name).toBe('AiSelectionValidationError'); expect((e as Error).message).toContain('/jointSummary'); }
 });
 it('requires the canonical versions section when restoring linked records, preventing orphan pointers', async () => {
   const f = jointFixture(), d = new ResumeDB('joint-restore-source'), target = new ResumeDB('joint-restore-target'); mockGeneration(f);

@@ -85,7 +85,8 @@ describe('v1.13 privacy and source safety', () => {
     expect(clean.courses![0].grade.raw).toBe(''); expect(clean.courses![0].sources).toEqual([]); expect(profile).toEqual(before);
     // P2 允许课程语义关联，但绝不能借课程 ID 绕过实践事实边界。
     const falsePractice = personalPlan(); falsePractice.requirements![0] = { text: '供应商开发 / PLC 编程经验', tier: 'must', assessment: 'direct', evidenceIds: [profile.courses![0].id] };
-    expect(() => validateAiSelection(falsePractice, profile, jobs().A, 'zh', 1)).toThrow(/课程不能当作直接/);
+    // 2026-11：不再报错阻断，而是降级为「仅课程知识」——课程 ID 依旧不能证明实践。
+    expect(validateAiSelection(falsePractice, profile, jobs().A, 'zh', 1).requirements[0]).toMatchObject({ assessment: 'learning', evidenceIds: [profile.courses![0].id] });
   });
   it('uses imported facts without a certification step, leaving master data and provenance unchanged', () => {
     const profile = p(); profile.work[0].importedFrom = { importTag: 'fake-import', incomingId: 'incoming', at: '2026-01-01' };

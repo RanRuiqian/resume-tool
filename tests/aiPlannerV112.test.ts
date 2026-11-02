@@ -334,10 +334,16 @@ describe('v1.12 evidence catalog and bounded local correction', () => {
   it.each([
     ['duplicate evidence', ['work-1-b1', 'work-1-b1']],
     ['withheld GPA', ['edu-1-b1']],
-    ['empty direct evidence', []],
   ])('retains strict checks after repair: %s', async (_label, ids) => {
     api.mockResolvedValueOnce(invalidProposal()).mockResolvedValueOnce(requirementRepair(ids));
     await expect(planWithAi(S, library(), J, 'zh', 1)).rejects.toThrow('局部修复失败');
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+  // 2026-11：修复后「直接匹配」却没有证据 → 降级为缺口（只往低说），不再让整份简历失败。
+  it('downgrades a repaired direct claim with no evidence to a gap', async () => {
+    api.mockResolvedValueOnce(invalidProposal()).mockResolvedValueOnce(requirementRepair([]));
+    const r = await planWithAi(S, library(), J, 'zh', 1);
+    expect(r.requirements.some((x) => x.assessment === 'gap' && !x.evidenceIds.length)).toBe(true);
     expect(api).toHaveBeenCalledTimes(2);
   });
 

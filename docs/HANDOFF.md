@@ -70,13 +70,19 @@
 - **V7 组织 / 兼职 / 志愿**（`factLibrary.ts` `splitOrg`）：首句拆成单位 + 职务（「X 校学生会外联部成员（本科期间…）」→ 单位「X 校学生会」、职务「外联部成员」；「曾在肯德基（KFC）兼职」→ 单位「肯德基（KFC）」、职务「兼职」），去掉「起止月份暂缺」等说明；有详细事实时首句不再作为要点。校办 / 助教归为校园（`club`）。
 - **V7 课程任务标题**：`ASSIGNMENT2` → `Assignment 2`，`LAB2A` → `Lab 2A`；性质只写「课程作业 / 课程实验 / 课程项目」，不再与标题重复；单组或首句过长时标题就是课程名。
 
+### 2.6 第二轮实测后的热修复：岗位要求判断不再卡死整份简历
+负责人实测第二轮时，ABB 生成直接失败：「AI 选材局部修复失败……learning 只允许引用实际课程 ID；项目/工作事实应独立判断」。原因：AI 把几条岗位要求判为 `learning`（仅课程知识），却同时引用了课程和项目事实；局部修复也没修对，`planWithAi` 就抛错，整份简历没有生成。这些判断只用于「匹配说明」，不进入简历正文。
+- `validateSelection` 现在先**自动纠正类别**（只会往低说，不会抬高）：`learning` 引用了项目 / 工作事实 → `transferable`，证据只留实践事实；`direct/transferable` 只有课程 → `learning`；`gap` 却有证据 → `transferable` 或 `learning`；非 `gap` 但没有证据 → `gap`；`learning` 缺说明 → 填默认说明。**编造 / 不存在的 ID 仍报错**并走原局部修复。
+- `planWithAi`：局部修复后若剩下的问题**只在 `/requirements/N` 且不是 invalid_id**（非联合模式），就去掉这几条匹配说明继续生成，并写进 tradeoffs。
+- 按新行为更新的测试：`jointV113`（课程冒充实操 → 降级而非报错；格式错误用例不再要求 requirements/4 报错）、`coursesV113`、`aiPlannerV112`（修复后空证据 direct → gap）。新增 `writingV2026_11` G 组复现 ABB 失败。
+
 ## 3. 验证（本轮实际运行结果）
 
 | 检查 | 结果 |
 |---|---|
 | `npx tsc -b` | 通过 |
 | `npm run lint` | 通过 |
-| `npm test` | 42 个文件，641/641 通过（`tests/writingV2026_11.test.ts` 共 14 项：V7 清理、放宽护栏、名称补译、中英一次撰写、组织拆分、技能分组、简介重写；按新规则更新了 `tests/factLibrary.test.ts` 成绩句号、`tests/personalCompletenessV112.test.ts` 固定简介→定制简介） |
+| `npm test` | 42 个文件，641/641 通过（`tests/writingV2026_11.test.ts` 共 15 项：V7 清理、放宽护栏、名称补译、中英一次撰写、组织拆分、技能分组、简介重写；按新规则更新了 `tests/factLibrary.test.ts` 成绩句号、`tests/personalCompletenessV112.test.ts` 固定简介→定制简介） |
 | `npm run build` | 通过 |
 | `npm run verify:export` | 三套模板 CN/EN PDF/Word 均生成 |
 | `python3 tests/e2e/resume_workspace_e2e.py`（需 `CHROMIUM_PATH`、PyMuPDF） | 25/25 通过 |

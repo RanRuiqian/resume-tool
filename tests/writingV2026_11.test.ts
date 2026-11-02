@@ -198,3 +198,19 @@ describe('F. tailored summary gets one rewrite before falling back', () => {
     expect(JSON.stringify(r.items)).not.toContain('CATIA');
   });
 });
+
+describe('G. requirement evidence categories never block the resume (ABB 2026-11-02 failure)', () => {
+  it('turns a "learning" claim that also cites project facts into transferable, with no repair call', async () => {
+    const { jointFixture } = await import('./helpers/v113JointFixture');
+    const { planWithAi } = await import('../src/ai/aiPlanner');
+    const f = jointFixture();
+    const learning = f.plan.requirements!.findIndex((r) => r.assessment === 'learning');
+    const practical = f.plan.requirements!.find((r) => r.assessment === 'direct' || r.assessment === 'transferable')!.evidenceIds;
+    const req = f.plan.requirements![learning];
+    req.evidenceIds = [...req.evidenceIds, ...practical];
+    api.mockResolvedValueOnce(f.plan);
+    const r = await planWithAi(settings, f.p, f.job, 'zh', 1);
+    expect(r.requirements[learning]).toMatchObject({ assessment: 'transferable', evidenceIds: practical });
+    expect(api).toHaveBeenCalledTimes(1);
+  });
+});

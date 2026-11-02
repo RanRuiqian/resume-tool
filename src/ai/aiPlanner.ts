@@ -232,19 +232,31 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
       || !['direct', 'transferable', 'learning', 'gap'].includes(r.assessment)) {
       issue(path, 'format', `${label}：岗位匹配判断格式不正确`, undefined, text); continue;
     }
-    const ids = idArray(r.evidenceIds, path, `${label}的证据`);
+    let ids = idArray(r.evidenceIds, path, `${label}的证据`);
     const invalid = ids.filter((id) => !proof.has(id));
+    // 2026-11：岗位要求的「匹配类型」与证据类别不一致时自动纠正，不再让整份简历生成失败。
+    // 这些判断只用于匹配说明，不进入简历正文；编造 / 不存在的 ID 仍按原规则报错并局部修复。
+    let assessment = r.assessment as RequirementDecision['assessment'];
+    let reason = typeof r.reason === 'string' ? r.reason : undefined;
+    if (!invalid.length) {
+      const courseIds = ids.filter((id) => allowed.courses.includes(id)), practical = ids.filter((id) => !allowed.courses.includes(id));
+      if (assessment === 'learning' && practical.length) { assessment = 'transferable'; ids = practical; }
+      else if ((assessment === 'direct' || assessment === 'transferable') && courseIds.length) { if (practical.length) ids = practical; else assessment = 'learning'; }
+      else if (assessment === 'gap' && ids.length) { assessment = practical.length ? 'transferable' : 'learning'; ids = practical.length ? practical : courseIds; }
+      else if (assessment !== 'gap' && !ids.length) assessment = 'gap';
+      if (assessment === 'learning' && !reason?.trim()) reason = '课程知识支持；实际操作经验仍需补充';
+    }
     if (invalid.length) {
       const details = invalid.map((id) => `${id}${allEntryIds.has(id) ? '（这是经历分组 ID，请引用其具体事实 sourceId）' : '（不存在或未提供的证据 ID）'}`);
       issue(path, 'invalid_id', `${label} 引用了无效资料证据：${details.join('、')}`, invalid, text);
     }
-    if ((r.assessment === 'gap' && ids.length) || (r.assessment !== 'gap' && !ids.length))
-      issue(path, 'inconsistent', `${label}：匹配结论 ${r.assessment} 与证据不一致`, ids, text);
+    if ((assessment === 'gap' && ids.length) || (assessment !== 'gap' && !ids.length))
+      issue(path, 'inconsistent', `${label}：匹配结论 ${assessment} 与证据不一致`, ids, text);
     const courseProof = ids.filter((id) => allowed.courses.includes(id));
-    if (courseProof.length && r.assessment !== 'learning') issue(path, 'inconsistent', `${label}：课程不能当作直接/可迁移实操证据，请以 learning 判断知识支持，实践要求仍需独立证据`, courseProof, text);
-    if (r.assessment === 'learning' && (!courseProof.length || ids.some((id) => !allowed.courses.includes(id)))) issue(path, 'inconsistent', `${label}：learning 只允许引用实际课程 ID；项目/工作事实应独立判断`, ids, text);
-    if (r.assessment === 'learning' && (typeof r.reason !== 'string' || !r.reason.trim())) issue(path, 'format', `${label}：请解释课程内容与能力的语义关联及不能证明的实践边界`, ids, text);
-    requirements.push({ text, tier: r.tier, assessment: r.assessment, evidenceIds: ids, ...(r.requirementId ? { requirementId: r.requirementId } : {}), ...(typeof r.reason === 'string' ? { reason: r.reason } : {}) });
+    if (courseProof.length && assessment !== 'learning') issue(path, 'inconsistent', `${label}：课程不能当作直接/可迁移实操证据，请以 learning 判断知识支持，实践要求仍需独立证据`, courseProof, text);
+    if (assessment === 'learning' && (!courseProof.length || ids.some((id) => !allowed.courses.includes(id)))) issue(path, 'inconsistent', `${label}：learning 只允许引用实际课程 ID；项目/工作事实应独立判断`, ids, text);
+    if (assessment === 'learning' && (!reason?.trim())) issue(path, 'format', `${label}：请解释课程内容与能力的语义关联及不能证明的实践边界`, ids, text);
+    requirements.push({ text, tier: r.tier, assessment: assessment, evidenceIds: ids, ...(r.requirementId ? { requirementId: r.requirementId } : {}), ...(reason !== undefined ? { reason } : {}) });
   }
   if (Array.isArray(raw.requirements) && !raw.requirements.length) issue('/requirements', 'format', 'AI 未分析任何岗位要求');
   issues.push(...validateJointReasoning(job, requirements, raw.jointSummary));
@@ -342,6 +354,18 @@ export async function planWithAi(s: Settings, p: ProfileDoc, job: JobParse, lang
       onStep?.('1/3 选材局部修复完成，整个方案已重新通过事实来源与篇幅校验');
       return result;
     } catch (repairError) {
+      // 2026-11：问题只在「岗位要求匹配说明」（不进入简历正文）时，去掉这几条说明继续生成，而不是让整份简历失败。
+      // 编造 / 不存在的证据 ID（invalid_id）仍然报错；这里只放过「类别不一致 / 缺少说明」这类不影响正文的问题。
+      const onlyRequirements = !job.joint && error.issues.every((x) => /^\/requirements\/\d+$/.test(x.path) && x.code !== 'invalid_id');
+      if (onlyRequirements) {
+        const bad = new Set(error.issues.map((x) => Number(x.path.split('/')[2])));
+        const kept = (original.requirements ?? []).filter((_, i) => !bad.has(i));
+        try {
+          const result = validateSelection({ ...original, requirements: kept }, p, job, lang, targetPages, brief);
+          onStep?.(`1/3 有 ${bad.size} 条岗位要求的匹配说明无法核实，已从说明中省略；简历选材不受影响`);
+          return { ...result, tradeoffs: [result.tradeoffs, `${bad.size} 条岗位要求的匹配说明引用不一致，已省略（不影响简历正文）`].filter(Boolean).join('；') };
+        } catch { /* 仍不通过则按原逻辑报错 */ }
+      }
       throw new Error(`AI 选材局部修复失败，未采用该方案。首次问题：${error.message}。修复结果：${(repairError as Error).message}`);
     }
   }
