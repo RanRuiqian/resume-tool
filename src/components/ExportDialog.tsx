@@ -1,3 +1,4 @@
+import { assertProfileEpoch } from '../storage/clearProfile';
 import { useAuditSummary } from '../audit/useAudit';
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store';
@@ -12,7 +13,7 @@ import { kitExportState } from '../quality/kitVerify';
 /** 导出前确认公司名 / 岗位缩写，预览 zip 与 4 个文件名（F6.6–F6.9） */
 export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?: boolean }) {
   const auditSum = useAuditSummary();
-  const { profile, template, resume, job } = useApp();
+  const { profile, profileEpoch, template, resume, job } = useApp();
   const [company, setCompany] = useState(job?.company.short ?? '');
   const [abbr, setAbbr] = useState(job?.roleAbbr ?? '');
   const [count, setCount] = useState(0);
@@ -57,8 +58,9 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
     try {
       const { exportZip } = await import('../export/client');
       const r = await exportZip(profile, template, resume, names, (f) => setBusy(`生成 ${f} …`), await buildKit());
+      await db.transaction('r', db.state, () => assertProfileEpoch(db, profileEpoch));
       downloadBytes(r.zip, names.zipName, 'application/zip');
-      await db.exports.put({ id: uid('export'), resumeId: resume?.id ?? '', company: names.company, roleAbbr: names.roleAbbr, date, seq: names.seq, zipName: names.zipName, files: Object.keys(r.files), exportedAt: new Date().toISOString(), jobId: job?.id, zip: r.zip, blobs: r.files });
+      await db.transaction('rw', db.exports, db.state, async () => { await assertProfileEpoch(db, profileEpoch); await db.exports.put({ id: uid('export'), resumeId: resume?.id ?? '', company: names.company, roleAbbr: names.roleAbbr, date, seq: names.seq, zipName: names.zipName, files: Object.keys(r.files), exportedAt: new Date().toISOString(), jobId: job?.id, zip: r.zip, blobs: r.files }); });
       setCount((c) => c + 1);
       setDone(`已下载 ${names.zipName}（中文 ${r.pages.zh} 页 / 英文 ${r.pages.en} 页${r.fitLevel.zh || r.fitLevel.en ? '，已自动缩排以控制页数' : ''}）`);
       if (r.errors.length) { setErr('部分文件生成失败（已导出其余文件）：\n' + r.errors.join('\n')); setBusy(''); return; }

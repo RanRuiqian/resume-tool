@@ -1,3 +1,4 @@
+import { assertProfileEpoch } from './clearProfile';
 import type { JointGroup, SharedResumeVersion } from '../types/joint';
 import Dexie, { type Table } from 'dexie';
 import type { ExportRecord, JobParse, ProfileDoc, ResumeDoc, Settings, TemplateConfig } from '../types';
@@ -84,7 +85,8 @@ export async function countExports(company: string, roleAbbr: string, date: stri
 
 const MAX_BACKUPS = 20;
 /** 覆盖前保存快照；空资料不保存 */
-export async function snapshotProfile(d: ResumeDB, doc: ProfileDoc, reason: string): Promise<string | null> {
+export async function snapshotProfile(d: ResumeDB, doc: ProfileDoc, reason: string, expectedEpoch?: string): Promise<string | null> {
+  if (expectedEpoch !== undefined) return d.transaction('rw', d.backups, d.state, async () => { await assertProfileEpoch(d, expectedEpoch); return snapshotProfile(d, doc, reason); });
   const empty = !doc.profile.name.zh && !doc.profile.name.en && !doc.work.length && !doc.education.length && !doc.projects.length && !doc.skills.length && !doc.courses?.length;
   if (empty) return null;
   const id = `bk-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;

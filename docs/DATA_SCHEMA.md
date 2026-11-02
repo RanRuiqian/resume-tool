@@ -147,3 +147,13 @@
 - `SharedResumeVersion` 内容寻址 ID=`version-<SHA256>`，digest 覆盖规范化 profile/template/resume/job（排序使用固定字符串顺序，不依赖地区）。profile 使用隐私副本，隐藏课程分数不复制；明确开启的原始成绩只在 resume.courseSelection 保存。冻结完整模板，旧导出不受后来模板修改影响。哈希只验证内容完整性，不证明用户事实本身真实。
 - `Application.resumeVersionId?` 指向同一共同版本；`ResumeArtifact.versionId?` 是只读引用，不各复制一份正文。批量关联事务创建/复用该组角色的岗位/申请、共同版本与引用，默认新状态 pending、没有 appliedAt；已有状态/手工岗位不覆盖，已有 artifacts 不修改。重复关联同内容幂等；编辑后显式关联产生新版本，旧内容和实际提交标记仍保留。删除一条申请不删除其他申请共用的版本。
 - 归档新增 jdGroups/resumeVersions sections，archiveVersion=2（旧 v1 可读，旧客户端应拒绝新版以免漏掉关联）。恢复前检查版本哈希；不可变版本同 ID 冲突拒绝，artifacts/版本已有记录不覆盖。选中有关联指针的记录时，必须一并恢复共用版本或确保本机已有该版本，防止静默悬空。
+
+## 用户明确清空个人资料（不升级 schema，仍为 Dexie 6）
+
+「我的资料」顶部的「🔴 清空所有个人资料」须在确认窗口点击「确认清空」才执行。事务内清空 profile（写回 emptyProfile）、backups（含升级前快照）、resumes、exports，重置 state.resumeId 并更新 state.profileClearEpoch；不建立删除前快照，所以不可撤销。所有母库字段、双语内容、课程/证据/关联、sourceTexts 及导入记录一并移除，不删整个数据库。
+
+保留 settings（全部 API 配置、Key、模型、语言）、templates、jobs/jdGroups、postings/applications/appEvents、artifacts/resumeVersions、attachments/attachmentBlobs 及其他界面设置。**投递记录内已关联的只读历史简历/附件可能含旧个人信息，按求职记录要求原样保留，确认窗口明确说明；它们不自动恢复母库。** 用户自己保存的外部备份/已下载文件不由网页删除，主动重新导入外部文件属于新操作。
+
+清空提交后丢弃内存里的导入/整理/翻译草稿和撤销栈，向导回到第一步。清空代次在同一事务里校验：旧标签页、旧异步导入/翻译/生成/导出和快照写入不能跨代恢复旧资料；初始化也一致读取 profile 与代次。演示库清空后刷新不自动重新注入示例。新代次允许重新上传 TXT 识别并保存全新资料，API 调用方式不变。
+
+自动化只在虚构的独立测试库执行删除：`tests/clearPersonalData.test.ts` 与 `tests/e2e/clear_personal_data_e2e.py`。复现浏览器测试先运行 `CLEAR_OUT=/tmp/clear-profile npx vitest run tests/clearPersonalData.test.ts` 生成虚构 fixture，再启动 4173 预览并执行 `CLEAR_OUT=/tmp/clear-profile python3 tests/e2e/clear_personal_data_e2e.py`。不向真实库播种或执行删除测试。
