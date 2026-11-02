@@ -142,7 +142,7 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
     // 自动生成仍默认隐藏成绩；用户单独选用或手工编辑的文字应如实预览和导出。
     const highlights = e.highlights.filter((b) => (b.id && itemMap.get(b.id)?.manual) || !academicHighlight(b));
     const bullets = pickBullets(highlights).filter((t) => !academicGradeText(t) || highlights.some((b) => b.id && itemMap.get(b.id)?.manual && B(b) === t));
-    return { title: T(e.school), subtitle: eduSub(e), date: eduRange(e), bullets: [...(resume ? bullets.map((x) => compactGpaNote(x, lang)) : bullets), ...(courses.length ? [`${lang === 'zh' ? '相关课程（课程知识）' : 'Relevant coursework (academic knowledge)'}: ${courses.join(lang === 'zh' ? '、' : '; ')}`] : [])] };
+    return { title: T(e.school), subtitle: eduSub(e), date: eduRange(e), bullets: [...(resume ? bullets.map((x) => compactGpaNote(x, lang)) : bullets), ...(courses.length ? [`${lang === 'zh' ? '相关课程' : 'Relevant coursework'}: ${courses.join(lang === 'zh' ? '、' : '; ')}`] : [])] };
   });
   if (ed.length) sections.education = { key: 'education', title: title('education'), blocks: ed };
   const sk = byIds(p.skills, sel.skills);
@@ -205,7 +205,7 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   return {
     lang, pageSize: tpl.page.size, marginMm: tpl.page.marginMm, columns: tpl.layout.columns, sidebarWidthPercent: tpl.layout.sidebarWidthPercent,
     headerStyle: tpl.layout.headerStyle, titleStyle: tpl.layout.titleStyle ?? 'underline', style: tpl.layout.style ?? 'default', headerAlign: tpl.layout.headerAlign ?? 'left', colors: tpl.colors, spacing: tpl.spacing, typography: loc.typography, photo,
-    header: { name: T(p.profile.name), headline: T(p.profile.headline), contacts, personal },
+    header: { name: T(p.profile.name), headline: (resume?.headline?.[lang] ?? '').trim() || T(p.profile.headline), contacts, personal },
     main, side: sideS, movedFromSide,
   };
 }

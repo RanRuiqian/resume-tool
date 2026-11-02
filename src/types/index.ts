@@ -315,6 +315,8 @@ export interface ResumeDoc {
   itemOrder?: string[];
   /** 仅用于本份简历的标题、名称和日期编辑，取消素材后仍保留。 */
   entryEdits?: Record<string, ResumeEntryEdit>;
+  /** 2026-11：按岗位定制的姓名下求职方向；缺省时显示资料库 profile.headline。 */
+  headline?: Bi;
   consistency: { checkedAt: string; issues: ConsistencyIssue[] };
   generatedBy: 'ai' | 'rules';
   /** v1.12：新生成简历保持用户设置的正文字号，超页用提示或两页，不靠继续缩字容纳。旧记录缺省沿用原逻辑。 */

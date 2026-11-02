@@ -1,3 +1,5 @@
+> **2026-11-02 起，最新状态见 [HANDOFF.md](HANDOFF.md)**（事实护栏放宽、简介按岗位定制、中英文一次撰写、V7 导入清理）。本文件以下内容为历史记录，冲突时以 HANDOFF.md 为准。
+
 # AI 交接说明（AI_HANDOFF）
 
 PR #16 后续：AI 整理按钮已修复“已确认/干净文字被整体跳过”的发送前筛选，新增逐请求模型/成功失败/跳过原因报告，用户选择应用建议与 AI 事实保护保留，不再作风险二次确认。详见 [AI_ORGANIZE_DISPATCH.zh-CN.md](AI_ORGANIZE_DISPATCH.zh-CN.md)。

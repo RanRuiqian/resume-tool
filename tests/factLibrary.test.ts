@@ -18,7 +18,7 @@ describe('one numbered fact per row, fictional V7-format regression', () => {
   it('preserves column names, bilingual course names, source number/code, credits and raw grades separately from explanations', () => {
     const r = parse(), c = r.profile.courses![0], bachelor = r.profile.courses!.find((c) => c.sourceRecord?.id === 'BSC-028')!;
     expect(c.term).toBe('2025 S1'); expect(c.code).toBe('MOCK5000'); expect(c.name.zh).toBe('工程物联网'); expect(c.name.en).toBe('Mock Course');
-    expect(c.credits).toBe(''); expect(c.grade.raw).toBe('70 / C。'); expect(c.grade.raw).not.toContain('内容'); expect(c.synopsis.zh).toBe('示例课程说明，不代表职业实践。');
+    expect(c.credits).toBe(''); expect(c.grade.raw).toBe('70 / C'); expect(c.grade.raw).not.toContain('内容'); expect(c.synopsis.zh).toBe('示例课程说明，不代表职业实践。');
     expect(bachelor.credits).toBe('2.5'); expect(bachelor.grade.raw).toBe('成绩受遮挡【待复核】'); expect(bachelor.grade.status).toBe('unverified'); expect(bachelor.confirmation).toBe('confirmed');
     expect(r.profile.courses!.find((c) => c.sourceRecord?.id === 'MSC-04')!.grade.status).toBe('not-released'); expect(r.profile.courses!.some((c) => c.code === 'ENG5813')).toBe(false);
   });

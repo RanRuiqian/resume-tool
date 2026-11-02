@@ -1,6 +1,6 @@
 # AGENTS.md — 给 AI 编程助手（Codex / Cursor / Claude 等）的说明
 
-不需要任何聊天记录即可接手。阅读顺序：本文件 → `docs/AI_HANDOFF.md` → `docs/DATA_SCHEMA.md` → `docs/PROJECT_STATUS.md`。
+不需要任何聊天记录即可接手。**先读 `docs/HANDOFF.md`（最新一轮的状态、负责人决定与下一步，每轮结束必须更新并推送）**，再按顺序读：本文件 → `docs/AI_HANDOFF.md` → `docs/DATA_SCHEMA.md` → `docs/PROJECT_STATUS.md`。旧文档与 `docs/HANDOFF.md` 冲突时以后者为准。
 
 ## 项目一句话
 纯前端（React + TypeScript + Vite + Dexie/IndexedDB）的 AI 辅助个人简历生成与编辑工具。核心三步：建立个人资料库 → 岗位语义匹配与 AI 生成 → 左侧素材选择/编辑、右侧实时预览及导出。投递管理作为辅助功能保留。用户数据在用户浏览器内。

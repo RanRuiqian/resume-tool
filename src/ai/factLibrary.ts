@@ -8,6 +8,10 @@ const SEC = /^\s*(?:#{1,6}\s*)?(0[1-9]|1[0-4])[｜|]\s*(.+)$/;
 const ROW = /^\s*(?:[-*]\s*)?\[([xX✓ ])\]\s+([A-Z]{2,8}-(?:[A-Z0-9]+-)*[A-Z0-9]+)[｜|](.*)$/;
 const lt = (s: string, reviewed = true): LocalizedText => !s ? {} : { [/[\u3400-\u9fff]/.test(s) ? 'zh' : 'en']: s, source: /[\u3400-\u9fff]/.test(s) ? 'zh' : 'en', status: { [/[\u3400-\u9fff]/.test(s) ? 'zh' : 'en']: reviewed ? 'confirmed' : 'manual' } };
 const value = (f: Fact) => f.body.replace(/^[^：:\n]{1,40}[：:]\s*/, '').trim();
+/** 标量字段（姓名、单位、职位、名称）不带句末标点；正文要点保留原样。 */
+export const clean = (s: string) => s.trim().replace(/[。．.；;，,、\s]+$/u, '').trim();
+/** 课程性质列（专必 / 通必 / 实践…），不是课程英文名。 */
+const COURSE_TYPE = /^(?:专必|通必|专选|通选|任选|方向|实践|课外|必修|选修|公共课|专业课)$/;
 const label = (f: Fact) => /^([^：:\n]{1,40})[：:]/.exec(f.body)?.[1] ?? '';
 const root = (id: string) => id.replace(/(?:-\d+|(?<=[A-Z])\d+)$/, '');
 const parts = (s: string) => s.split(/[｜|]/).map((s) => s.trim());
@@ -31,11 +35,18 @@ export function scanFactLibrary(input: string): Fact[] {
 
 function bilingual(s: string): LocalizedText {
   // Only an explicitly present parenthesized Chinese name is a second name, never a generated translation.
-  const m = /^([A-Za-z][^\n（）]+)（([^（）]*[\u3400-\u9fff][^（）]*)）[。.]?$/.exec(s);
-  return m ? { ...lt(m[1].trim()), zh: m[2].trim(), status: { zh: 'confirmed', en: 'confirmed' } } : lt(s);
+  s = clean(s);
+  const m = /^([A-Za-z][^\n（）]+)（([^（）]*[\u3400-\u9fff][^（）]*)）$/.exec(s);
+  if (m) return { ...lt(m[1].trim()), zh: m[2].trim(), status: { zh: 'confirmed', en: 'confirmed' } };
+  const r = /^([^\n（）]*[\u3400-\u9fff][^\n（）]*)[（(]([A-Za-z][A-Za-z0-9 &,.'/-]+)[）)]$/.exec(s);
+  return r ? { ...lt(r[1].trim()), en: r[2].trim(), status: { zh: 'confirmed', en: 'confirmed' } } : lt(s);
 }
 function dates(s: string): string[] {
   return [...s.matchAll(/\b(\d{4})(?:[年./-](\d{1,2})(?:月|[./-](\d{1,2})日?)?)?/g)].map((m) => [m[1], ...(m[2] ? [m[2].padStart(2, '0')] : []), ...(m[3] ? [m[3].padStart(2, '0')] : [])].join('-'));
+}
+/** 小标题 → 简历技能分组：去掉「课程实验」「与真实实践」等证据说明，只留领域名。 */
+export function skillGroup(context: string): string {
+  return clean(context.replace(/^【|】$/g, '').replace(/(?:课程实验|课程项目|课程方法与设备|课程方法|与真实实践|与基础技能|专业方法与技能)$/u, '').replace(/[/／]$/, ''));
 }
 const escapeRE = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
@@ -69,14 +80,14 @@ export function parseFactLibrary(input: string): { profile: ProfileDoc; integrit
   const basics = select(/^ID-/);
   for (const f of basics) {
     const k = label(f), v = value(f);
-    if (/^(?:中文姓名|姓名)$/.test(k)) p.profile.name = { ...p.profile.name, zh: v, source: 'zh', status: { ...p.profile.name.status, zh: f.reviewed ? 'confirmed' : 'manual' } };
-    else if (k === '英文姓名') p.profile.name = { ...p.profile.name, en: v, status: { ...p.profile.name.status, en: f.reviewed ? 'confirmed' : 'manual' } };
+    if (/^(?:中文姓名|姓名)$/.test(k)) p.profile.name = { ...p.profile.name, zh: clean(v), source: 'zh', status: { ...p.profile.name.status, zh: f.reviewed ? 'confirmed' : 'manual' } };
+    else if (k === '英文姓名') p.profile.name = { ...p.profile.name, en: clean(v), status: { ...p.profile.name.status, en: f.reviewed ? 'confirmed' : 'manual' } };
     else if (/^(?:个人邮箱|邮箱)$/.test(k)) p.profile.contacts.email = v.replace(/[。.]$/, '');
-    else if (/^(?:中国手机号|手机|电话)$/.test(k)) p.profile.contacts.phone = v.replace(/。$/, '');
+    else if (/^(?:中国手机号|手机|电话)$/.test(k)) p.profile.contacts.phone = clean(v);
     else if (k === '性别') p.profile.personal.gender = v;
     else if (k === '出生日期') p.profile.personal.birth = v;
     else if (k === '籍贯') p.profile.personal.hometown = v;
-    else if (k === '求职兴趣方向') p.profile.headline = lt(v, f.reviewed);
+    else if (k === '求职兴趣方向') p.profile.headline = lt(clean(v), f.reviewed);
     bind([f], 'profile');
   }
   p.profile.notes = basics.map((f) => f.body); // Other numbers, intent and contact variants remain private, never guessed into public fields.
@@ -84,7 +95,7 @@ export function parseFactLibrary(input: string): { profile: ProfileDoc; integrit
     scalarCheck(fs, ['学校', '学位', '专业', '专业方向', '入学时间', '修读时间']);
     const school = get(fs, '学校'); if (!school) { issues.push({ id: fs[0].id, reason: '教育事实组没有学校，不能新建学历' }); continue; }
     const start = dates(get(fs, '入学时间', '开始时间', '修读时间')), end = dates(get(fs, '修读时间'));
-    const e = { ...base(key, fs), school: bilingual(school.replace(/。$/, '')), degree: lt(get(fs, '学位', '学历').replace(/。$/, '')), major: lt(get(fs, '专业', '专业方向').replace(/。$/, '')),
+    const e = { ...base(key, fs), school: bilingual(school), degree: bilingual(get(fs, '学位', '学历')), major: bilingual(get(fs, '专业', '专业方向')),
       start: start[0] ?? '', end: end[1] ?? '', highlights: [], notes: fs.map((f) => f.body),
       ...(get(fs, '预计毕业') && dates(get(fs, '预计毕业'))[0] ? { expectedConferralDate: dates(get(fs, '预计毕业'))[0] } : {}),
     };
@@ -93,9 +104,11 @@ export function parseFactLibrary(input: string): { profile: ProfileDoc; integrit
   for (const f of select(/^(?:BSC-\d+|MSC-\d+)$/)) {
     const cells = parts(f.body.split('\n')[0]), master = f.id.startsWith('MSC-');
     const edu = p.education.filter((e) => (master ? /硕士|master|m\.?eng|m\.?sc/i : /学士|本科|bachelor/i).test(`${e.degree.zh ?? ''} ${e.degree.en ?? ''}`));
-    const name = master ? bilingual(cells[2] ?? '') : { ...lt(cells[0] ?? '', f.reviewed), en: cells[1], status: { zh: f.reviewed ? 'confirmed' as const : 'manual' as const, en: f.reviewed ? 'confirmed' as const : 'manual' as const } };
+    // 本科行：名称｜性质｜学分｜成绩｜概述。第二列是课程性质，不是英文名（旧版本曾把「专必」当英文名导出）。
+    const name = master ? bilingual(cells[2] ?? '') : COURSE_TYPE.test(cells[1] ?? '') || /[\u3400-\u9fff]/.test(cells[1] ?? '')
+      ? bilingual(cells[0] ?? '') : { ...lt(clean(cells[0] ?? ''), f.reviewed), en: clean(cells[1] ?? ''), status: { zh: f.reviewed ? 'confirmed' as const : 'manual' as const, en: f.reviewed ? 'confirmed' as const : 'manual' as const } };
     if (cells.length < (master ? 4 : 5) || !text(name)) { issues.push({ id: f.id, reason: '课程列不足或名称缺失，不能声明完整' }); continue; }
-    const grade = cells[master ? 3 : 3], synopsis = master ? f.body.split('\n').slice(1).join('\n').replace(/^内容[：:]\s*/, '') : cells.slice(4).join('｜').replace(/^概述[：:]\s*/, '');
+    const grade = clean(cells[3] ?? ''), synopsis = master ? f.body.split('\n').slice(1).join('\n').replace(/^内容[：:]\s*/, '') : cells.slice(4).join('｜').replace(/^概述[：:]\s*/, '');
     const c = normalizeCourse({ ...base(f.id, [f]), name, level: master ? 'master' : 'bachelor', educationId: edu.length === 1 ? edu[0].id : '', school: edu.length === 1 ? text(edu[0].school) : '',
       code: master ? cells[1] : f.id, term: master ? cells[0] : f.context, credits: master ? '' : cells[2].replace(/\s*学分[。.]?$/, ''),
       grade: { raw: grade, status: /未公布|尚未|未发布/.test(grade) ? 'not-released' : UNKNOWN.test(grade) || !grade ? 'unverified' : 'recorded' },
@@ -111,7 +124,7 @@ export function parseFactLibrary(input: string): { profile: ProfileDoc; integrit
   }
   for (const [key, fs] of groupsOf(select(/^WRK-/), (f) => f.section)) {
     scalarCheck(fs, ['单位', '职位', '时间', '性质']); const ds = dates(get(fs, '时间'));
-    const e = { ...base(fs[0].id, fs), company: lt(get(fs, '单位')), title: lt(get(fs, '职位')), start: ds[0] ?? '', end: ds[1] ?? '',
+    const e = { ...base(fs[0].id, fs), company: lt(clean(get(fs, '单位'))), title: lt(clean(get(fs, '职位'))), start: ds[0] ?? '', end: ds[1] ?? '',
       kind: /实习/.test(get(fs, '性质')) ? 'internship' as const : /兼职/.test(get(fs, '性质')) ? 'parttime' as const : '' as const,
       bullets: fs.filter((f) => /内容|职责/.test(label(f))).map((f) => ({ ...lt(value(f), f.reviewed), id: `library-${f.id}-b` })), tags: [], notes: fs.map((f) => f.body) };
     if (!text(e.company) && !text(e.title)) { issues.push({ id: key.slice(0, 2), reason: '工作事实组缺少单位与职位' }); continue; }
@@ -119,10 +132,15 @@ export function parseFactLibrary(input: string): { profile: ProfileDoc; integrit
   }
   const addProject = (key: string, fs: Fact[], kind: 'core' | 'auxiliary', fallback: string, title?: string) => {
     scalarCheck(fs, ['中文名', '英文名', '名称', '论文题目']);
-    const name: LocalizedText = title ? lt(title) : { ...lt(get(fs, '中文名', '名称', '论文题目') || fallback), ...(get(fs, '英文名') ? { en: get(fs, '英文名').replace(/。$/, '') } : {}) };
-    const metadata = /^(?:中文名|英文名|名称|年份|所属单位|主要导师|指导教师|作者|本人作者顺序|会议|单位|仓库)$/;
-    const e: ProjectEntry = { ...base(key, fs), name, role: lt(get(fs, '个人角色', '角色')), kind, nature: get(fs, '性质') || fs[0].context || fs[0].section,
-      start: dates(get(fs, '年份'))[0] ?? '', end: '', tags: [], bullets: fs.filter((f) => !metadata.test(label(f))).map((f) => ({ ...lt(f.body, f.reviewed), id: `library-${f.id}-b` })),
+    const name: LocalizedText = title ? lt(clean(title)) : { ...lt(clean(get(fs, '中文名', '名称', '论文题目') || fallback)), ...(get(fs, '英文名') ? { en: clean(get(fs, '英文名')) } : {}) };
+    // 「性质」可能写在同一行的其它分句里（如「年份：2026；性质：应用工程硕士毕业项目。」）；不再用栏目标题冒充性质。
+    const inline = (key: string) => fs.flatMap((f) => f.body.split(/[；;]/)).map((x) => new RegExp(`^\\s*${key}[：:]\\s*(.+)$`).exec(x)?.[1] ?? '').find(Boolean) ?? '';
+    const natureRaw = get(fs, '性质') || inline('性质');
+    const natureDates = dates(natureRaw.split(/[；;]/).slice(1).join(' '));
+    const nature = clean(natureRaw.split(/[；;]/)[0] ?? '') || (kind === 'auxiliary' ? clean(fs[0].context.split(/[｜|]/)[0]) : '');
+    const metadata = /^(?:中文名|英文名|名称|年份|性质|所属单位|主要导师|指导教师|作者|本人作者顺序|会议|单位|仓库)$/;
+    const e: ProjectEntry = { ...base(key, fs), name, role: lt(clean(get(fs, '个人角色', '角色'))), kind, nature,
+      start: dates(get(fs, '年份') || inline('年份'))[0] ?? natureDates[0] ?? '', end: get(fs, '年份') || inline('年份') ? '' : natureDates[1] ?? '', tags: [], bullets: fs.filter((f) => !metadata.test(label(f))).map((f) => ({ ...lt(f.body, f.reviewed), id: `library-${f.id}-b` })),
       dossier: { technicalWork: fs.map((f) => f.body).join('\n') }, courseIds: [] };
     p.projects.push(e); bind(fs, e.id); return e;
   };
@@ -163,21 +181,27 @@ export function parseFactLibrary(input: string): { profile: ProfileDoc; integrit
   }
   for (const fs of orgGroups) {
     const ds = dates(fs[0].body), body = fs[0].body, club = /学生会/.test(body);
-    const e = { ...base(fs[0].id, fs), company: lt(''), title: lt(body.split(/[；;。]/)[0], fs[0].reviewed), start: ds[0] ?? '', end: ds[1] ?? '',
+    const e = { ...base(fs[0].id, fs), company: lt(''), title: lt(clean(body.split(/[；;。]/)[0]), fs[0].reviewed), start: ds[0] ?? '', end: ds[1] ?? '',
       kind: club ? 'club' as const : /志愿/.test(body) ? 'volunteer' as const : /兼职/.test(body) ? 'parttime' as const : 'other' as const,
       bullets: fs.map((f) => ({ ...lt(f.body, f.reviewed), id: `library-${f.id}-b` })), tags: [], notes: club ? orgShared.map((f) => f.body) : [] };
     p.work.push(e); bind(fs, e.id); if (club) bind(orgShared, e.id);
   }
   for (const f of select(/^(?:SKL|LANG)-/)) {
     const m = /^(.*?)【([^】]+)】[：:]?\s*([\s\S]*)$/.exec(f.body);
-    const named = m?.[1] || (/^LANG-/.test(f.id) ? '语言能力' : label(f) || f.body.split(/[：:。；]/)[0]);
-    const e = { ...base(f.id, [f]), name: lt(named), category: lt(m?.[2] || (/^LANG-/.test(f.id) ? '语言' : f.context)), scenarios: m?.[3] || value(f), usedIn: [] as string[] };
+    const named = m?.[1] || (/^LANG-/.test(f.id) ? (/英语|English/i.test(f.body) ? '英语' : '语言能力') : label(f) || f.body.split(/[：:。；]/)[0]);
+    // 【…】是熟练度 / 证据性质（如「基础使用」「课程仿真」），不是简历上的分组名；分组用所在小标题。
+    const group = /^LANG-/.test(f.id) ? '语言' : skillGroup(f.context) || clean(m?.[2] ?? '');
+    // 纯英文工具名列表（「MATLAB、Computer Vision Toolbox」）在英文简历里不能带中文顿号。
+    const toolList = /[\u3400-\u9fff]/.test(named) ? clean(named) : clean(named).replace(/\s*[、，]\s*/g, ', ');
+    const e = { ...base(f.id, [f]), name: lt(toolList), category: lt(group), ...(m?.[2] ? { level: clean(m[2]) } : {}), scenarios: m?.[3] || value(f), usedIn: [] as string[] };
     p.skills.push(e); bind([f], e.id);
   }
   // Literal actual-use links only. Longer qualified tool names mask shorter names, e.g. VC Python Commands ≠ Python.
+  // 证据性质标签（旧版存在 category，新版存在 level）。
+  const tagOf = (s: ProfileDoc['skills'][number]) => s.level || text(s.category ?? {});
   const toolNames = p.skills.map((s) => ({ s, names: text(s.name).split(/[、，,]/).map((n) => n.trim()).filter((n) => n.length > 1) }));
   for (const { s, names } of toolNames) {
-    if (/知识|兴趣/.test(text(s.category!)) && !/实操|实践|应用|实验|仿真/.test(text(s.category!))) continue;
+    if (/知识|兴趣/.test(tagOf(s)) && !/实操|实践|应用|实验|仿真/.test(tagOf(s))) continue;
     for (const e of [...p.projects, ...p.work]) {
       let raw = e.sourceRecord?.raw ?? '';
       for (const { s: other, names: long } of toolNames) if (other.id !== s.id) for (const n of long) for (const short of names) if (n.length > short.length && n.includes(short)) {
@@ -187,22 +211,24 @@ export function parseFactLibrary(input: string): { profile: ProfileDoc; integrit
       }
       if (names.some((n) => new RegExp(`(?:^|[^A-Za-z0-9])${escapeRE(n)}(?:$|[^A-Za-z0-9])`, 'i').test(raw))) (s.usedIn ??= []).push(e.id);
     }
-    const context = text(s.category!).replace(/课程项目|课程实践|课程|软件|工作|实操|基础|使用/g, '').trim();
+    const context = tagOf(s).replace(/课程项目|课程实践|课程|软件|工作|实操|基础|使用/g, '').trim();
     const candidates = context.length >= 2 ? p.projects.filter((e) => [text(e.name), e.nature ?? ''].some((n) => n.includes(context))) : [];
     if (candidates.length === 1) s.usedIn = unique([...(s.usedIn ?? []), candidates[0].id]);
-    if (text(s.category!) === '工作实践') {
+    if (tagOf(s) === '工作实践') {
       const work = p.work.filter((e) => e.sourceRecord?.id.startsWith('WRK-'));
       if (work.length === 1) s.usedIn = unique([...(s.usedIn ?? []), work[0].id]);
     }
   }
   for (const f of select(/^(?:CERT|AWD)-/)) {
     const sec = f.id.startsWith('AWD-') ? 'awards' : 'certificates';
-    const e = { ...base(f.id, [f]), name: lt(f.body.split(/[；;。]/)[0], f.reviewed), issuer: {}, date: '', notes: [f.body] };
+    const e = { ...base(f.id, [f]), name: lt(clean(f.body.split(/[；;。]/)[0]), f.reviewed), issuer: {}, date: '', notes: [f.body] };
     p[sec].push(e); bind([f], e.id);
   }
   for (const f of select(/^INTRO-/)) {
-    if (/^中文个人简介[：:]/.test(f.body)) p.profile.summary = { ...p.profile.summary, ...lt(value(f), f.reviewed) };
-    else if (/^英文个人简介[：:]/.test(f.body) || !/[\u3400-\u9fff]/.test(f.body)) p.profile.summary = { ...p.profile.summary, en: /^英文/.test(f.body) ? value(f) : f.body, status: { ...p.profile.summary.status, en: f.reviewed ? 'confirmed' : 'manual' } };
+    // 「中文个人简介：」「English personal summary:」等是字段名，不是简介正文。
+    const introBody = f.body.replace(/^(?:中文个人简介|英文个人简介|个人简介|(?:English\s+)?(?:personal\s+)?(?:summary|profile))\s*[：:]\s*/i, '').trim();
+    if (/^中文个人简介[：:]/.test(f.body)) p.profile.summary = { ...p.profile.summary, ...lt(introBody, f.reviewed) };
+    else if (/^英文个人简介[：:]/.test(f.body) || !/[\u3400-\u9fff]/.test(introBody)) p.profile.summary = { ...p.profile.summary, en: introBody, status: { ...p.profile.summary.status, en: f.reviewed ? 'confirmed' : 'manual' } };
     else p.profile.notes.push(f.body);
     bind([f], 'profile');
   }

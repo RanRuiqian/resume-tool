@@ -67,3 +67,35 @@ export function guardRewrite(src: string, out: string, lang: Lang): string[] {
   return [...new Set(r)];
 }
 export const rewriteSafe = (src: string, out: string, lang: Lang) => guardRewrite(src, out, lang).length === 0;
+
+/**
+ * 2026-11（Claude 接手）：岗位简历撰写的「事实护栏」放宽版。
+ * 拦截：原文没有的数字 / 百分比 / 币种；原文没有、却被凭空加上的「抬高」说法（完成、部署、商业、全职、独立、工厂…）；参与程度被抬高。
+ * 不再拦截：省略了某个限定词（课程 / 仿真 / 协助…）。旧的 guardRewrite 会因为一个词没出现就整条退回母库原文，
+ * 导致简历读起来像实验报告；省略限定交给提示词（要求自然保留）和用户最终审阅。
+ * 新增工具 / 专有名词的检查由调用方（kitVerify.entityTokens / unsupportedEntities）负责。
+ */
+const INFLATE = new Set(['已获得 / 已授予', '全职 / 正式', '商业', '独立 / 个人', '公司', '医院', '工厂 / 车间 / 现场']);
+const UNFINISHED = /尚未|未完成|未能|计划|设想|讨论|考虑过|预计|后续方向|not (?:yet )?(?:completed|finished)|planned|proposed|discussed|future/i;
+export function factGuard(src: string, out: string, lang: Lang): string[] {
+  const r: string[] = [];
+  if (!out.trim()) return ['改写为空'];
+  if (!src.trim()) return r;
+  const exN = subset(numberTokens(out), numberTokens(src));
+  if (exN.length) r.push(`使用了原文没有的数字：${exN.join(', ')}`);
+  const fs = factTokens(src), fo = factTokens(out);
+  const exP = subset(fo.pct, fs.pct); if (exP.length) r.push(`使用了原文没有的百分比：${exP.join(', ')}`);
+  const exC = fo.cur.filter((c) => !fs.cur.includes(c)); if (exC.length) r.push(`新增了币种：${exC.join(', ')}`);
+  for (const [name, rz, re] of XPAIRS) {
+    const rx = lang === 'zh' ? rz : re;
+    // 原文可能是另一种语言（英文要点依据中文原文撰写）：两种写法任一命中都算原文已有。
+    const inSrc = rz.test(src) || re.test(src);
+    if (!inSrc && rx.test(out) && INFLATE.has(name)) r.push(`新增了原文没有的说法：${name}`);
+    // 「完成 / 实现」是常用动词；只有原文明确是计划、讨论或未完成时，才算把未完成写成完成。
+    if (!inSrc && rx.test(out) && (name === '已完成' || name === '实现') && UNFINISHED.test(src)) r.push(`把原文未完成 / 设想的内容写成了${name}`);
+  }
+  const ls = [...levels(src, 'zh'), ...levels(src, 'en')], lo = [...levels(out, lang)];
+  const maxS = ls.length ? Math.max(...ls) : 0, maxO = lo.length ? Math.max(...lo) : 0;
+  if (maxO > maxS) r.push('参与程度被抬高');
+  return [...new Set(r)];
+}

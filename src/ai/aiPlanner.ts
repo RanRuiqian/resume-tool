@@ -87,7 +87,7 @@ export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetP
     facts: byEntry(x.id, 'education').filter((f) => !unverifiedGpa(`${f.text} ${f.alternateText}`)),
   }));
   const skills = p.skills.filter((x) => x.enabled).map((x) => ({ id: x.id, name: textOf(x.name, lang),
-    category: textOf(x.category ?? {}, lang), proficiency: x.proficiency ?? '', usedIn: x.usedIn ?? [], scenarios: x.scenarios ?? '' })).filter((x) => x.name);
+    category: textOf(x.category ?? {}, lang), proficiency: x.proficiency ?? '', level: x.level ?? '', usedIn: x.usedIn ?? [], scenarios: x.scenarios ?? '' })).filter((x) => x.name);
   const named = (a: ProfileDoc['certificates']) => a.filter((x) => x.enabled).map((x) => ({ id: x.id, name: textOf(x.name, lang), issuer: textOf(x.issuer, lang), date: x.date })).filter((x) => x.name);
   const certificates = named(p.certificates), awards = named(p.awards);
   const courses = (p.courses ?? []).filter((c) => printableCourse(p, c)).map((c) => ({ id: c.id, educationId: c.educationId, name: c.name, code: c.code, term: c.term, aliases: c.aliases ?? [],

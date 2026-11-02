@@ -189,3 +189,10 @@ EDU 只建立能确认学校名称的教育记录；项目学分单元不创建�
 ## AI 措辞整理的临时执行报告
 
 `OrganizePlan.ai` 只在预览内存保存 requested/requestedModel/responseModels、实际请求尝试数、eligible、skipped/noCallReason 和逐批状态/错误；不新增数据库表或备份 section。`AiObservation` 为每个 chat/chatJson 请求可选回调，不包含 Key/请求正文；usage.reportedModel 只取服务明确返回的 model，无此字段时不冒充实际模型。原 `LocalizedText.organized` 指纹盐升级，以区分新的主动措辞审阅策略。实体、学历、日期、课程成绩、sourceFacts/sourceRecord 等模式不变，整理只修改经用户选择的正文和既有追溯元数据。
+
+## 2026-11 撰写与导入调整（无 Dexie 升级，仍为 version 6）
+- `ResumeDoc.headline?: Bi`（可选）：按岗位定制的姓名下求职方向；缺省时显示 `profile.headline`。旧简历无此字段，行为不变。
+- `GenItem` 的 `sourceId: 'summary'` 现在默认是**按岗位定制**的简介（AI 撰写，事实检查不通过时回退固定简介）；`summaryBaseline` 仍记录生成时的版本，取消 / 重新勾选简介时恢复它。
+- `SkillEntry.level?: string`（已有字段，现由 V7 导入写入）：【】中的熟练度 / 证据性质（如「基础使用」「课程仿真」）。`category` 改为 V7 小标题派生的领域分组（如「工程/原型」）。
+- 选中条目缺另一语言的短字段（学校、学位、专业、单位、职位、项目名、技能名与分组、证书 / 奖项名、课程名）在生成或「同步翻译」时按需机翻，写回母库，状态 `machine`；同时更新本简历 `courseSelection.snapshots` 的课程名。这替代了 v1.13「课程另一语言原名留空、不批量机翻」的约定（只翻译选中的，不批量）。
+- V7 导入：标量字段去句末标点；本科课程第二列（课程性质）不再作为英文名；INTRO 去字段名；项目「性质」可从同行分句读取，不再用栏目标题顶替。

@@ -19,6 +19,7 @@ import { JD_PREFILL_KEY, TRACKER_RETURN_KEY, type TrackerReturn } from '../track
 import { linkResumeSnapshot } from '../tracker/repo';
 import { db } from '../storage/db';
 import { generateResume, localizeAi, runConsistency } from '../ai/generate';
+import { fillResumeLabels, resumeLabelTargets } from '../ai/labels';
 import { forEachText, needsTranslation, lt } from '../locale/text';
 import { normalizeProfile } from '../storage/profileIO';
 import { buildLayout } from '../render/layout';
@@ -335,7 +336,7 @@ function SingleStep2({ next, back }: { next: () => void; back: () => void }) {
 }
 
 function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
-  const { settings, profile, job, resume, setResume, template, templateId, setTemplateId, templates, canUndo, undo } = useApp();
+  const { settings, profile, setProfile, job, resume, setResume, template, templateId, setTemplateId, templates, canUndo, undo } = useApp();
   useEffect(() => {
     if (!FEATURES.undo) return;
     const k = (e: KeyboardEvent) => { const t = e.target as HTMLElement; if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey && !/INPUT|TEXTAREA/.test(t.tagName) && !t.isContentEditable) { e.preventDefault(); undo(); } };
@@ -352,10 +353,23 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
   const started = useRef(false);
   const primary: Lang = job?.jdLanguage ?? 'zh';
 
+  /** 补齐选中条目的单位 / 职位 / 学位 / 技能 / 课程名等短字段的另一语言（写回母库，以后复用）。失败不影响简历。 */
+  const withLabels = async (r: NonNullable<typeof resume>, base = profile) => {
+    try {
+      setBusy('正在补齐单位、职位、学位、技能等名称的中英文…');
+      const filled = await fillResumeLabels(settings, base, r);
+      if (filled.count) setProfile(filled.profile);
+      return filled.resume;
+    } catch (e) { return { ...r, notes: [...(r.notes ?? []), `名称补译未完成：${(e as Error).message}`] }; }
+  };
   const run = async () => {
     if (!job) return;
     setErr('');
-    try { const r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy, { template, measure: (r) => measurePages(profile, { ...template, page: { ...template.page, autoFit: false } }, r) }); setResume({ ...r, templateId }); }
+    try {
+      let r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy, { template, measure: (r) => measurePages(profile, { ...template, page: { ...template.page, autoFit: false } }, r) });
+      r = await withLabels(r);
+      setResume({ ...r, templateId });
+    }
     catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
   useEffect(() => { if (!started.current && job && !resume) { started.current = true; run(); } });
@@ -374,9 +388,12 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
     const ids = resume.items.filter((i) => i.syncStatus !== 'in-sync').map((i) => i.sourceId);
     if (settings.demoMode) { setResume(runConsistency({ ...resume, items: resume.items.map((i) => ({ ...i, syncStatus: 'in-sync' })) })); return; }
     setBusy('重新翻译修改过的条目…');
-    try { const translated = await localizeAi(settings, profile, job, resume, ids); if (latestResume.current === resume) setResume(translated); else setErr('同步期间简历已修改，保留当前编辑；可按需再次同步。'); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
+    try { const translated = await withLabels(ids.length ? await localizeAi(settings, profile, job, resume, ids) : resume); if (latestResume.current === resume) setResume(translated); else setErr('同步期间简历已修改，保留当前编辑；可按需再次同步。'); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
-  const pending = resume?.items.filter((i) => i.syncStatus !== 'in-sync').length ?? 0;
+  const pendingItems = resume?.items.filter((i) => i.syncStatus !== 'in-sync').length ?? 0;
+  // 新勾选的条目可能只有一种语言的单位 / 职位 / 技能名：同样提示「同步翻译」。
+  const pendingLabels = resume ? resumeLabelTargets(profile, resume).length : 0;
+  const pending = pendingItems + pendingLabels;
   const photoPos = template.locales.zh.photo.enabled ? template.locales.zh.photo.position : 'none';
   const baseOf = (id: string) => ALL_TEMPLATES.find((b) => id === b.id || id.startsWith(b.id + '-custom'))?.id;
   const pageText = (l: Lang) => pages === 'error' ? '—' : pages ? `${pages[l].pages} 页${pages[l].level ? '（已自动缩排）' : ''}${pages[l].overflow ? ' ⚠ 超出目标页数' : ''}` : '计算中…';
@@ -399,7 +416,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
         </div>
       )}
       {moved.length > 0 && <div className="notice warn" data-testid="side-warn">⚠ 侧栏放不下，已把「{[...new Set(moved.map((x) => template.locales.zh.sectionTitles?.[x.m] ?? x.m))].join('、')}」移到主栏末尾显示（{[...new Set(moved.map((x) => x.l === 'zh' ? '中文版' : '英文版'))].join('、')}），内容没有被截断。想放回侧栏可以在左侧清单减少条目，或换单栏样式。</div>}
-      {pending > 0 && <div className="notice warn">{pending} 条文字的另一语言可按需同步，也可直接编辑和下载。<button onClick={resync}>同步翻译</button></div>}
+      {pending > 0 && <div className="notice warn">{pendingItems ? `${pendingItems} 条文字` : ''}{pendingItems && pendingLabels ? '、' : ''}{pendingLabels ? `${pendingLabels} 个名称` : ''}的另一语言可按需同步，也可直接编辑和下载。<button onClick={resync}>同步翻译</button></div>}
 
       <div className="card quick-layout">
         <div className="row">
