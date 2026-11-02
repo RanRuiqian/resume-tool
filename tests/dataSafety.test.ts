@@ -5,6 +5,12 @@ import { ResumeDB, snapshotProfile } from '../src/storage/db';
 import { seedDemo } from '../src/storage/demo';
 import { DB_DEMO, DB_REAL, isDemoSearch } from '../src/storage/mode';
 import { normalizeProfile, exportProfileJson } from '../src/storage/profileIO';
+import { parseStructuredLibrary } from '../src/ai/structuredImport';
+import { buildImportPlan, applyImportPlan } from '../src/ai/importPlan';
+import { persistProfile, profileEpoch } from '../src/storage/clearProfile';
+import { exportLightJson, readArchive } from '../src/tracker/backup';
+import { profileForGeneration } from '../src/privacy/resume';
+import { mockNumberedLibrary } from './fixtures/numberedLibrary';
 
 /** 模拟的个人资料（非真实用户） */
 const mockUser = () => normalizeProfile({
@@ -239,4 +245,27 @@ it('v5 → v6 only adds empty joint tables; existing profile, credentials, histo
   old.close(); const current = new ResumeDB(name); await current.open(); expect(current.verno).toBe(6);
   for (const [name, rows] of Object.entries(before)) expect(await current.table(name).toArray()).toEqual(rows);
   expect(await current.jdGroups.count()).toBe(0); expect(await current.resumeVersions.count()).toBe(0); await current.delete();
+});
+
+it('numbered library survives isolated DB reopen and private backup with provenance, without touching settings or applications', async () => {
+  const name = 'mock-numbered-library-persistence', d = new ResumeDB(name), raw = mockNumberedLibrary(), r = parseStructuredLibrary(raw)!;
+  const settings = { id: 'settings', apiKey: 'FAKE-ISOLATED-ONLY', model: 'mock-model', uiLang: 'en', untouched: true };
+  const application = { id: 'mock-application', company: '模拟企业', payload: ['immutable', 1] };
+  await d.table('settings').put(settings); await d.table('applications').put(application);
+  const base = normalizeProfile({}), plan = buildImportPlan(base, r.profile);
+  const doc = applyImportPlan(base, r.profile, plan, { id: 'mock-raw', at: '2026-01-01', files: ['mock.txt'], text: raw, integrity: r.integrity });
+  await persistProfile(d, doc, await profileEpoch(d)); d.close();
+  const reloaded = new ResumeDB(name), saved = (await reloaded.profile.get('me'))!.doc;
+  expect(saved).toEqual(doc); expect(saved.courses).toHaveLength(82); expect(saved.sourceTexts![0].integrity!.complete).toBe(true);
+  expect(await reloaded.table('settings').get('settings')).toEqual(settings);
+  expect(await reloaded.table('applications').get('mock-application')).toEqual(application);
+  expect(normalizeProfile(JSON.parse(exportProfileJson(saved)))).toEqual(saved);
+  const json = await exportLightJson(reloaded), check = await readArchive(reloaded, json);
+  expect(check.errors).toEqual([]); expect(check.data?.profile).toEqual(saved); expect(json).not.toContain(settings.apiKey);
+  // Private raw records and import-history snapshots must not leak grades into generation/shared snapshots.
+  const repeat = applyImportPlan(saved, r.profile, buildImportPlan(saved, r.profile));
+  const copy = profileForGeneration(repeat), serialized = JSON.stringify(copy);
+  expect(serialized).not.toContain('sourceRecord'); expect(serialized).not.toContain('mergeHistory'); expect(serialized).not.toContain('sourceTexts'); expect(serialized).not.toContain('成绩遮挡');
+  expect(saved.courses!.find((c) => c.sourceRecord?.id === 'BSC-011')!.grade.raw).toBe('成绩遮挡 **');
+  await reloaded.delete();
 });

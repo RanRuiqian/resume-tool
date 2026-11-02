@@ -34,6 +34,8 @@ export interface PersonalInfo { birth?: string; gender?: string; hometown?: stri
 
 export interface BaseEntry {
   id: string; enabled: boolean;
+  /** 编号母库的原始事实身份；不以名称相似度替代此身份。raw 仅作内部追溯。 */
+  sourceRecord?: { format: 'numbered-library'; id: string; section: string; raw: string; reviewed: boolean };
   /** 智能导入时 AI 不确定的地方，需人工核对（v1.3） */
   uncertain?: string[];
   /** 相关但独立的条目（同公司其它职位 / 同项目其它阶段）（v1.4） */
@@ -191,7 +193,13 @@ export interface ProfileDoc {
   /** v1.6 智能导入的完整原始文本（母库原件），可检索；不参与简历生成 */
   sourceTexts?: SourceText[];
 }
-export interface SourceText { id: string; at: string; files: string[]; text: string }
+export interface ImportIntegrity {
+  format: 'numbered-library';
+  groups: { label: string; expected: string[]; recognized: string[]; missing: string[]; declared?: number }[];
+  issues: { id: string; reason: string }[];
+  complete: boolean;
+}
+export interface SourceText { id: string; at: string; files: string[]; text: string; integrity?: ImportIntegrity }
 
 /** campus（v1.7）：校园经历，由 work.kind = club / volunteer 派生；只有模板顺序里包含 campus 时才单列，否则仍归入 work（兼容旧模板） */
 export type ModuleKey = 'summary' | 'work' | 'projects' | 'education' | 'skills' | 'campus' | 'certificates' | 'awards';

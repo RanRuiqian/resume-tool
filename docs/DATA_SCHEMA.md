@@ -157,3 +157,17 @@
 清空提交后丢弃内存里的导入/整理/翻译草稿和撤销栈，向导回到第一步。清空代次在同一事务里校验：旧标签页、旧异步导入/翻译/生成/导出和快照写入不能跨代恢复旧资料；初始化也一致读取 profile 与代次。演示库清空后刷新不自动重新注入示例。新代次允许重新上传 TXT 识别并保存全新资料，API 调用方式不变。
 
 自动化只在虚构的独立测试库执行删除：`tests/clearPersonalData.test.ts` 与 `tests/e2e/clear_personal_data_e2e.py`。复现浏览器测试先运行 `CLEAR_OUT=/tmp/clear-profile npx vitest run tests/clearPersonalData.test.ts` 生成虚构 fixture，再启动 4173 预览并执行 `CLEAR_OUT=/tmp/clear-profile python3 tests/e2e/clear_personal_data_e2e.py`。不向真实库播种或执行删除测试。
+
+## 编号母库 TXT 智能导入（PR #15 后续）
+
+无数据库版本变更。`BaseEntry.sourceRecord? = {format:'numbered-library', id, section, raw, reviewed}` 保存母库来源编号、栏目、完整事实块及原文 `[x]` 标记；它的 `id` 不是数据库实体 ID，不能随导入时的内部 ID 重分配而改变。`SourceText.integrity?` 保存逐类 expected / recognized / missing 编号及 issues，`complete` 仅表示当前文本的编号与映射完整，不能证明外部文件完整或事实真实性。
+
+「智能识别并填入」检测到 BSC-/MSC-/EDU-/PRO-/LRN-/SKL- 等行首编号后，使用本地确定性路径，不自动调用 AI/翻译。支持 01–14 栏目、Markdown 标题/复选标记、带中文字段标签的记录及带表头的课程竖线表/TSV。缺少可确定列映射的表格、未知实体类型、重复编号内容冲突、未识别课程名、悬空引用均明确报告，完整性未通过时不写入。非编号旧资料继续走原有 AI 分段导入。
+
+课程直接进入 `profile.courses`，不再要求通过第二个课程导入流程搬移教育文本。来源 BSC/MSC 编号保存在 sourceRecord/sources；原文课程代码单独存入 code，学分为字符串，成绩 grade.raw 原样保留；遮挡/未知为 unverified，未公布为 not-released，绝不补数。`[x]` 只确认原文记录，不能把课程概述升级为官方大纲或实操（evidenceLevel 仍为 unverified），成绩仍默认隐藏。原文完整保存在 sourceRecord.raw 与 sourceTexts。
+
+EDU 只建立能确认学校名称的教育记录；项目学分单元不创建教育/工作/核心项目。课程↔项目、技能→经历按原文明示编号或明确工具字段精确名称关联；内部实体 ID 在应用计划后统一映射。相同来源编号再次导入不会新增条目，不同编号不按子串/相似度自动合并；同校、同学位专业、同开始日期且结束不矛盾的教育补充片段可以合并。真正的字段/原文矛盾仍要求决定，已确认字段的覆盖仍需二次确认。
+
+新增字段随私有 JSON / ZIP 的 profile section 完整备份（无须新 section）。生成副本和投递快照移除 sourceTexts、sourceRecord 与包含原文快照的 mergeHistory，避免旁路带出隐藏成绩；私有母库仍完整保留它们。PR #15 精准清空整份 profile/原文/快照的行为覆盖上述字段，API 设置与投递记录不受导入影响。
+
+**验收边界**：当前已提交样本为完全虚构的 14 栏编号结构，不能替代用户 V7 原件。V7 原件尚未出现在本轮可读附件中，具体字段布局与原先 15/80 项仍待原件核验，不能声明真实 V7 已完整通过。

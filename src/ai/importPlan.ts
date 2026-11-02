@@ -6,7 +6,7 @@ import { emptyProfile } from '../storage/profileIO';
 
 /** 智能导入的「导入计划」：先对照、再由用户逐条选择，最后纯函数应用（出错不改原资料） */
 
-export type PlanSection = 'education' | 'work' | 'projects' | 'skills' | 'certificates' | 'awards' | 'evidence';
+export type PlanSection = 'education' | 'work' | 'projects' | 'skills' | 'certificates' | 'awards' | 'evidence' | 'courses';
 /** internal：与本次识别结果中的另一条重复（如同一段经历的中文 / 英文写法各识别成一条） */
 export type PlanStatus = 'new' | 'duplicate' | 'maybe' | 'conflict' | 'internal';
 /** undecided：可能重复 / 有冲突时的默认值，必须由用户明确选择后才能导入（A1） */
@@ -36,7 +36,21 @@ const ltk = (t?: LocalizedText) => (t ? t.zh || t.en || '' : '');
 export { normName, similarity };
 
 type AnyEntry = Record<string, unknown> & { id: string };
-const SEC_LABEL: Record<PlanSection, string> = { education: '教育', work: '工作及社会经历', projects: '项目', skills: '技能', certificates: '证书', awards: '获奖', evidence: '证据' };
+/** 只重分配实体/要点 ID，绝不能改写母库来源编号（旧的 JSON 全局替换会破坏 provenance）。 */
+function freshEntry(e: AnyEntry, tag: string): AnyEntry {
+  const out = structuredClone(e);
+  const walk = (v: unknown) => {
+    if (!v || typeof v !== 'object') return;
+    if (Array.isArray(v)) { v.forEach(walk); return; }
+    for (const [k, x] of Object.entries(v)) {
+      if (['sourceRecord', 'sources', 'importedFrom', 'mergeHistory'].includes(k)) continue;
+      if (k === 'id' && typeof x === 'string') (v as Record<string, unknown>)[k] = `${tag}-${x}`;
+      else walk(x);
+    }
+  };
+  walk(out); return out;
+}
+const SEC_LABEL: Record<PlanSection, string> = { education: '教育', work: '工作及社会经历', projects: '项目', skills: '技能', certificates: '证书', awards: '获奖', evidence: '证据', courses: '课程' };
 export const sectionLabel = (s: PlanSection) => SEC_LABEL[s];
 
 function titleOf(sec: PlanSection, e: AnyEntry): string {
@@ -87,7 +101,7 @@ const SCALARS: Partial<Record<PlanSection, [string, string][]>> = {
   awards: [['issuer', '颁发机构'], ['date', '日期']],
   evidence: [['location', '位置'], ['proves', '证明事实']],
 };
-const val = (v: unknown) => (typeof v === 'string' ? v : ltk(v as LocalizedText)).trim();
+const val = (v: unknown) => (typeof v === 'string' ? v : v && typeof v === 'object' && ('zh' in v || 'en' in v || !Object.keys(v).length) ? ltk(v as LocalizedText) : v == null ? '' : JSON.stringify(v)).trim();
 const pointsOf = (e: AnyEntry): LocalizedText[] => ((e.bullets ?? e.highlights ?? []) as LocalizedText[]);
 
 const SEC_RE = /^(education|work|projects?|skills?|certificates?|awards?|evidence)\s*\[(\d+)\]/i;
@@ -125,8 +139,8 @@ export function buildImportPlan(base: ProfileDoc, inc: ProfileDoc, uncertain: Un
   const { map: um, other } = uncertainIndex(uncertain, inc);
   const items: PlanItem[] = [];
   const internal = new Map(findIncomingDuplicates(inc).map((d) => [`${d.section}:${d.id}`, d]));
-  for (const sec of ['education', 'work', 'projects', 'skills', 'certificates', 'awards', 'evidence'] as PlanSection[]) {
-    const olds = base[sec] as unknown as AnyEntry[]; const news = (inc[sec] ?? []) as unknown as AnyEntry[];
+  for (const sec of ['education', 'work', 'projects', 'skills', 'certificates', 'awards', 'courses', 'evidence'] as PlanSection[]) {
+    const olds = (base[sec] ?? []) as unknown as AnyEntry[]; const news = (inc[sec] ?? []) as unknown as AnyEntry[];
     news.forEach((e) => {
       const dup = internal.get(`${sec}:${e.id}`);
       if (dup) {
@@ -137,7 +151,7 @@ export function buildImportPlan(base: ProfileDoc, inc: ProfileDoc, uncertain: Un
         return;
       }
       let best: AnyEntry | undefined, bs = 0, bm: DupMatch | undefined;
-      for (const o of olds) { const m = dupMatch(sec, e, o); const s = Math.max(matchScore(sec, e, o), m.strong ? m.score : 0); if (s > bs) { bs = s; best = o; bm = m; } }
+      for (const o of olds) { const m = dupMatch(sec, e, o); const s = e.sourceRecord || o.sourceRecord || sec === 'courses' ? m.score : Math.max(matchScore(sec, e, o), m.strong ? m.score : 0); if (s > bs) { bs = s; best = o; bm = m; } }
       const it: PlanItem = { key: `${sec}:${e.id}`, section: sec, incomingId: e.id, title: titleOf(sec, e) || '（未命名）', status: 'new', similarity: Math.round(bs * 100) / 100,
         conflicts: [], newPoints: pointsOf(e).map(ltk).filter(Boolean), samePoints: 0, uncertain: um.get(e.id) ?? [], action: 'add' };
       const rel = best && bs >= MAYBE ? relatedButDistinct(sec, e, best) : '';
@@ -152,9 +166,18 @@ export function buildImportPlan(base: ProfileDoc, inc: ProfileDoc, uncertain: Un
           const a = val(best[f]), b = val(e[f]);
           if (a && b && normName(a) !== normName(b)) it.conflicts.push({ field: f, label, old: a, new: b, useNew: false, oldConfirmed: isConfirmed(best[f]) || best.confirmed === true });
         }
+        if (e.sourceRecord && best.sourceRecord && val((e.sourceRecord as { raw: string }).raw).replace(/\s/g, '') !== val((best.sourceRecord as { raw: string }).raw).replace(/\s/g, ''))
+          it.conflicts.push({ field: 'sourceRecord', label: '编号事实原文', old: val((best.sourceRecord as { raw: string }).raw), new: val((e.sourceRecord as { raw: string }).raw), useNew: false, oldConfirmed: !!best.userConfirmedAt });
+        if (sec === 'courses') for (const f of ['code', 'credits', 'grade', 'synopsis', 'educationId', 'school', 'level', 'term']) {
+          if (f === 'educationId') {
+            const a = base.education.find((x) => x.id === best!.educationId), b = inc.education.find((x) => x.id === e.educationId);
+            if (a?.sourceRecord && a.sourceRecord.id === b?.sourceRecord?.id) continue;
+          }
+          const a = val(best[f]), b = val(e[f]); if (a && b && a !== b) it.conflicts.push({ field: f, label: f, old: a, new: b, useNew: false, oldConfirmed: !!best.userConfirmedAt });
+        }
         // 同公司同职位但时间段不重叠：很可能是两段经历
         if (sec === 'work' && e.start && best.start && e.start !== best.start && !overlap(e, best)) it.uncertain = [...it.uncertain, '同公司同职位但时间段不重叠，可能是两段独立经历'];
-        const exact = bs >= DUP && !it.conflicts.length && !(sec === 'work' && e.start && best.start && !overlap(e, best));
+        const exact = bs >= DUP && (!(e.sourceRecord || best.sourceRecord) || bm?.strong) && !it.conflicts.length && !(sec === 'work' && e.start && best.start && !overlap(e, best));
         it.status = it.conflicts.length ? 'conflict' : exact ? 'duplicate' : 'maybe';
         // 只有完全重复才默认合并（且合并只补空白、追加新要点）；可能重复 / 有冲突必须由用户选择
         it.action = exact ? 'merge' : 'undecided';
@@ -180,12 +203,15 @@ export function buildImportPlan(base: ProfileDoc, inc: ProfileDoc, uncertain: Un
 
 /** 按计划合并。纯函数：不修改 base / inc，任何异常由调用方捕获，原资料保持不变 */
 export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportPlan, source?: SourceText): ProfileDoc {
+  if (source?.integrity?.complete === false) throw new Error('编号母库完整性检查未通过，请先处理遗漏或冲突');
   const pending = plan.items.filter((i) => i.action === 'undecided');
   if (pending.length) throw new Error(`还有 ${pending.length} 条可能重复 / 有冲突的条目未选择处理方式：${pending.map((i) => i.title).join('、')}`);
   for (const it of plan.items) if (it.action === 'replace' && it.matchConfirmed && !it.overrideConfirmed) throw new Error(`「${it.matchTitle ?? it.title}」已被你确认过，替换前需要再次确认`);
   for (const it of plan.items) for (const c of it.conflicts) if (c.useNew && c.oldConfirmed && !(c as FieldConflict & { overrideConfirmed?: boolean }).overrideConfirmed)
     throw new Error(`「${it.title}」的${c.label}已确认过，覆盖前需要再次确认`);
   const out = structuredClone(base); const src = structuredClone(inc);
+  out.courses ??= []; src.courses ??= [];
+  if (src.profile.notes?.length) out.profile.notes = [...new Set([...(out.profile.notes ?? []), ...src.profile.notes])];
   const tag = `i${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
   const idMap = new Map<string, string>();
   // 第一步：本次识别结果内部的重复，先并入同批主记录（不丢弃差异：别名、差异提示、合并记录都保留）
@@ -219,8 +245,9 @@ export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportP
       if (i >= 0) {
         const old = dst[i];
         const rec: MergeRecord = { at: new Date().toISOString(), importTag: tag, incomingId: e.id, incomingTitle: it.title, fieldsOverwritten: [{ field: '*', old: JSON.stringify(old), new: '' }], pointsAdded: [], incomingSnapshot: JSON.stringify(e) };
-        const fresh = JSON.parse(JSON.stringify(e).replace(/"id":"([^"]+)"/g, `"id":"${tag}-$1"`)) as AnyEntry;
+        const fresh = freshEntry(e, tag);
         dst[i] = { ...fresh, id: old.id, enabled: old.enabled, ...(it.uncertain.length ? { uncertain: it.uncertain } : {}), mergeHistory: [...((old.mergeHistory as MergeRecord[]) ?? []), rec] };
+        if ((e.sourceRecord as { reviewed?: boolean } | undefined)?.reviewed) dst[i].userConfirmedAt = rec.at;
         idMap.set(e.id, old.id); continue;
       }
     }
@@ -232,13 +259,15 @@ export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportP
       if (hit) { hit.projectIds = [...new Set([...(hit.projectIds as string[]), ...(e.projectIds as string[])])]; hit.skillIds = [...new Set([...(hit.skillIds as string[]), ...(e.skillIds as string[])])]; }
     }
     if (!hit) {
-      const fresh = JSON.parse(JSON.stringify(e).replace(/"id":"([^"]+)"/g, `"id":"${tag}-$1"`)) as AnyEntry;
+      const fresh = freshEntry(e, tag);
       if (it.uncertain.length) fresh.uncertain = it.uncertain;
       if (it.relatedId) { fresh.relatedIds = [...new Set([...((fresh.relatedIds as string[]) ?? []), it.relatedId])]; const r = dst.find((x) => x.id === it.relatedId); if (r) r.relatedIds = [...new Set([...((r.relatedIds as string[]) ?? []), fresh.id])]; }
       fresh.importedFrom = { importTag: tag, incomingId: e.id, at: new Date().toISOString() };
+      if ((e.sourceRecord as { reviewed?: boolean } | undefined)?.reviewed) fresh.userConfirmedAt = (fresh.importedFrom as { at: string }).at;
       idMap.set(e.id, fresh.id); dst.push(fresh); continue;
     }
     idMap.set(e.id, hit.id);
+    if (e.sourceRecord && sameSourceRecord(hit, e) && !it.conflicts.length) continue;
     const rec: MergeRecord = { at: new Date().toISOString(), importTag: tag, incomingId: e.id, incomingTitle: it.title, fieldsOverwritten: [], pointsAdded: [], incomingSnapshot: JSON.stringify(e) };
     const listKey = 'bullets' in hit ? 'bullets' : 'highlights' in hit ? 'highlights' : null;
     if (listKey) {
@@ -250,11 +279,33 @@ export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportP
     for (const f of ['degree', 'major', 'role', 'title', 'issuer', 'category']) if (f in e && !val(hit[f]) && val(e[f])) hit[f] = e[f];
     for (const f of ['aliases', 'notes']) if (Array.isArray(e[f])) hit[f] = [...new Set([...((hit[f] as string[]) ?? []), ...(e[f] as string[])])];
     if (e.kind && !hit.kind) hit.kind = e.kind;
+    for (const f of ['sourceRecord', 'factualContent', 'educationId', 'school', 'level', 'term', 'code', 'credits', 'grade', 'synopsis', 'evidenceLevel', 'confirmation', 'defaultGradeVisible', 'scenarios']) if (e[f] !== undefined && (hit[f] === undefined || hit[f] === '')) hit[f] = e[f];
+    for (const f of ['usedIn', 'courseIds', 'projectIds']) if (Array.isArray(e[f])) hit[f] = [...new Set([...((hit[f] as string[]) ?? []), ...(e[f] as string[])])];
     if (Array.isArray(e.courses)) hit.courses = [...new Set([...((hit.courses as string[]) ?? []), ...(e.courses as string[])])];
     if (Array.isArray(hit.tags) && Array.isArray(e.tags)) hit.tags = [...new Set([...(hit.tags as string[]), ...(e.tags as string[])])];
     if (Array.isArray(e.evidenceIds)) hit.evidenceIds = [...new Set([...((hit.evidenceIds as string[]) ?? []), ...(e.evidenceIds as string[]).map((x) => idMap.get(x) ?? x)])];
     if (it.uncertain.length) hit.uncertain = [...((hit.uncertain as string[]) ?? []), ...it.uncertain];
+    const unchangedReviewed = (e.sourceRecord as { reviewed?: boolean; raw?: string } | undefined)?.reviewed && !it.conflicts.length;
     hit.mergeHistory = [...((hit.mergeHistory as MergeRecord[]) ?? []), rec];
+    if (unchangedReviewed) hit.userConfirmedAt = rec.at;
+  }
+  // 所有实体写入后再统一重映射（课程→教育、实践↔课程、技能→经历）。跳过的来源不能误指向已有同 ID 记录。
+  for (const it of plan.items) {
+    if (it.section === 'evidence') continue; // 证据已在原有最后写入路径完成映射。
+    const target = idMap.get(it.incomingId); if (!target) continue;
+    const e = (out[it.section] as unknown as AnyEntry[]).find((e) => e.id === target); if (!e) continue;
+    const incoming = (src[it.section] as unknown as AnyEntry[]).find((e) => e.id === it.incomingId); if (!incoming) continue;
+    const resolve = (id: string) => idMap.get(internalTo.get(id) ?? id);
+    if (it.action === 'add' || it.action === 'replace') {
+      if (typeof incoming.educationId === 'string') e.educationId = resolve(incoming.educationId) ?? '';
+      for (const f of ['usedIn', 'courseIds', 'projectIds']) if (Array.isArray(incoming[f])) e[f] = (incoming[f] as string[]).map(resolve).filter(Boolean);
+    } else if (it.action === 'merge') {
+      if (typeof incoming.educationId === 'string' && (!e.educationId || e.educationId === incoming.educationId)) e.educationId = resolve(incoming.educationId) ?? '';
+      for (const f of ['usedIn', 'courseIds', 'projectIds']) if (Array.isArray(incoming[f])) {
+        const from = new Set(incoming[f] as string[]);
+        e[f] = [...new Set([...((e[f] as string[]) ?? []).filter((id) => !from.has(id)), ...(incoming[f] as string[]).map(resolve).filter((id): id is string => !!id)])];
+      }
+    }
   }
   // 证据关联：回写到项目 / 技能
   for (const it of plan.items) {
@@ -263,7 +314,7 @@ export function applyImportPlan(base: ProfileDoc, inc: ProfileDoc, plan: ImportP
     for (const pid of ev.projectIds) { const p = out.projects.find((x) => x.id === pid); if (p) p.evidenceIds = [...new Set([...(p.evidenceIds ?? []), ev.id])]; }
     for (const sid of ev.skillIds) { const k = out.skills.find((x) => x.id === sid); if (k) k.evidenceIds = [...new Set([...(k.evidenceIds ?? []), ev.id])]; }
   }
-  if (source?.text.trim()) out.sourceTexts = [...(out.sourceTexts ?? []), source];
+  if (source?.text.trim() && !out.sourceTexts?.some((s) => s.text === source.text)) out.sourceTexts = [...(out.sourceTexts ?? []), source];
   return out;
 }
 
@@ -301,7 +352,7 @@ export function planSummary(plan: ImportPlan, mode: ImportMode, base?: ProfileDo
     if (mode === 'merge' && it.action === 'merge') s.overwrite += it.conflicts.filter((c) => c.useNew).length;
   }
   if (mode === 'merge') s.overwrite += plan.basics.filter((b) => b.useNew && b.old.trim()).length;
-  if (mode === 'replace' && base) s.removed = (['education', 'work', 'projects', 'skills', 'certificates', 'awards', 'evidence'] as const).reduce((n, k) => n + (base[k]?.length ?? 0), 0);
+  if (mode === 'replace' && base) s.removed = (['education', 'work', 'projects', 'skills', 'certificates', 'awards', 'evidence', 'courses'] as const).reduce((n, k) => n + (base[k]?.length ?? 0), 0);
   return s;
 }
 
@@ -327,3 +378,8 @@ export function sampleResidue(base: ProfileDoc, sample: ProfileDoc): string[] {
   return hits;
 }
 export { titleOf };
+
+function sameSourceRecord(a: AnyEntry, b: AnyEntry): boolean {
+  const x = a.sourceRecord as { id: string; raw: string } | undefined, y = b.sourceRecord as { id: string; raw: string } | undefined;
+  return !!x && !!y && x.id === y.id && x.raw === y.raw;
+}

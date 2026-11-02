@@ -1,10 +1,11 @@
-import type { Lang, LocalizedText, ProfileDoc, ProjectKind, Settings, WorkKind } from '../types';
+import type { ImportIntegrity, Lang, LocalizedText, ProfileDoc, ProjectKind, Settings, WorkKind } from '../types';
 const WORK_KINDS: WorkKind[] = ['fulltime', 'internship', 'parttime', 'club', 'volunteer', 'other'];
 import { chatJson } from './provider';
 import { checkAgainstSource } from './sourceCheck';
 import { MASTER_WRITING_RULES } from './prompts';
 import { cleanProfile } from '../quality/contentQuality';
 import { emptyProfile, normalizeEvidence, normalizeProfile } from '../storage/profileIO';
+import { parseStructuredLibrary } from './structuredImport';
 
 const PROMPT = `把用户粘贴的简历 / 个人经历文字整理成结构化 JSON。规则：
 - 只整理原文中出现的信息，严禁补充、推测或美化；原文没有的字段留空字符串或空数组。
@@ -114,7 +115,9 @@ export function chunkText(text: string, size = CHUNK): string[] {
   return out.filter((x) => x.trim());
 }
 
-export async function importProfileDetailed(s: Settings, text: string, onProgress?: (i: number, n: number) => void): Promise<{ profile: ProfileDoc; uncertain: Uncertain[] }> {
+export async function importProfileDetailed(s: Settings, text: string, onProgress?: (i: number, n: number) => void): Promise<{ profile: ProfileDoc; uncertain: Uncertain[]; integrity?: ImportIntegrity }> {
+  const structured = parseStructuredLibrary(text);
+  if (structured) { onProgress?.(1, 1); return { ...structured, uncertain: [] }; }
   const chunks = chunkText(text);
   let acc: ProfileDoc | null = null; const uncertain: Uncertain[] = [];
   for (let i = 0; i < chunks.length; i++) {

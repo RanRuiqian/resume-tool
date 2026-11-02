@@ -1,5 +1,7 @@
 # AI 交接说明（AI_HANDOFF）
 
+编号母库导入后续：`feat/v7-structured-import` 基于 PR #15 `c3c27ee`，保留 #13/#14/#15 功能，继续以 Draft 叠加 PR 交付。实现与待验边界见 [V7_STRUCTURED_IMPORT.zh-CN.md](V7_STRUCTURED_IMPORT.zh-CN.md)。当前只有虚构编号回归样本；用户 V7 原件缺失，不能宣称真实 76/76 已验收。
+
 本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-11-02（v1.13 P2 已接入：同企业 1–3 JD 联合语义选材、逐岗证据报告与共同不可变版本；仍为 Draft PR #14，依赖未合并的 PR #13；未合并未部署）。
 
 当前实现与验收见 [V113_P2_JOINT_MATCH.zh-CN.md](V113_P2_JOINT_MATCH.zh-CN.md)。P0/P1 历史报告为 V113_COURSE_LIBRARY.zh-CN.md。分支 `feat/v1.13-course-library` 基于 PR #13 的 `f7d947c`，继续更新 #14，不能合并/改动 #13。
