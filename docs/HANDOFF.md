@@ -206,3 +206,4 @@ ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按�
 - 测试：tests/e2e/a4_guides_e2e.py。
 - 2026-11-03 追加：快捷版式栏新增「中英文同步调整」勾选（默认勾选，存 localStorage `fmtSync`）。取消 = 只改当前查看的语言：页边距 / 间距写入 `TemplateLocale.marginMm / spacing`（可选字段），由 `render/langOverrides.ts#withLangOverrides` 在 buildLayout / fitTemplate / pageBudget 折进 page.marginMm / spacing（PDF、Word、预览共用）。字号、行距本来就按语言分开存。中英对照视图强制同步。测试：tests/langOverrides.test.ts、tests/e2e/a4_guides_e2e.py。
 - 2026-11-03 修正：预览 A4 纸高度曾 = 内容高度 + 下边距，内容一多纸的下边界就被撑长。现改为：页数 = ceil(内容高 / 每页可打印区高)，纸张高度固定为 N×297mm（Preview.tsx），超出 1 页时红色虚线 + 提示「超出 1 页」。
+- 2026-11-03 真分页预览（Preview.tsx）：单栏模板里把「标题+首段 / 每个条目」当不可拆分单元（data-unit / data-keep），放不下当前页就用空白占位 div 推到下一张 A4 的上边距处；两张 A4 之间 16px 灰色间隙（data-testid=a4-gap），每页各有虚线页边距框和「第 N 页」。双栏模板仍连续排版（只给页数提示）。选「1 页内」时也照样画出第 2 页（只是预览；导出是否自动收紧由原有 autoFit 决定）。

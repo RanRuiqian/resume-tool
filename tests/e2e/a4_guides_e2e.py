@@ -38,7 +38,7 @@ with sync_playwright() as p:
         for _ in range(40): pg.click(f'[data-testid={t}-plus]')
     pg.wait_for_timeout(500)
     hh=pg.evaluate("()=>document.querySelector('.preview-page').offsetHeight")
-    chk(f'内容溢出后纸张高度是整数页 A4（{hh/H:.3f} 页，不随内容变长）', abs(hh/H-round(hh/H))<0.01 and hh/H>1.5)
+    n=round((hh+16)/(H+16)); chk(f'内容溢出后出现第 2 张 A4，且纸高固定为整数张（{n} 张，两张之间有间隙），不随内容变长', n>=2 and abs(hh-(n*H+(n-1)*16))<2 and pg.locator('[data-testid=a4-gap]').count()==n-1)
     chk('溢出时提示超出 1 页', '超出 1 页' in info())
     pg.click('text=中文版 >> nth=0')
     pg.locator('[data-testid=a4-bar] input').first.uncheck()
