@@ -80,9 +80,12 @@ export async function fitContent(p: ProfileDoc, pool: ResumeDoc, reserveIds: str
     const missingBackground = w && ((isProfessionalWork(w) && !p.work.some((x) => r.selection.work.includes(x.id) && isProfessionalWork(x)))
       || (isCampusWork(w) && !p.work.some((x) => r.selection.work.includes(x.id) && isCampusWork(x))));
     // 2026-11：负责人希望一页基本填满（相关写细、其它简短带上），候补补到约 95% 再停。
-    if (estimateUsage(p, template, r) >= 0.95 && !missingBackground) continue;
+    // 2026-11（负责人实测：一页只选了 2 个项目，估算说「已满」，实际 PDF 还剩约 10% 空间）：
+    // 估算偏保守。有 PDF 实测时放宽估算门槛，多补候补，再由下面按实际页数二分撤回；没有实测时仍按原估算。
+    const fillCap = options.measure ? 1.25 : 0.95, hardCap = options.measure ? 1.3 : 1;
+    if (estimateUsage(p, template, r) >= fillCap && !missingBackground) continue;
     shown.add(id); const next = make();
-    if (estimateUsage(p, template, next) > 1) { shown.delete(id); continue; }
+    if (estimateUsage(p, template, next) > hardCap) { shown.delete(id); continue; }
     r = next; order.push(id);
   }
   const notes: string[] = [];
