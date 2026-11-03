@@ -153,7 +153,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   onStep?.('2/3 正在撰写：AI 按岗位同时撰写中英文简历、简介与求职方向…');
   const write = (b: typeof brief) => chatJson<WriteOut>(s, [{ role: 'system', content: SYS_FACTS },
     { role: 'user', content: `${AI_WRITE_PROMPT}\n\n${JSON.stringify(b)}` }],
-  { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 24_000 });
+  { model: decisionModel(s), thinking: 'enabled', timeoutMs: job.joint ? 600_000 : 360_000, maxTokens: 24_000 });
   // 输出被截断（finish_reason=length）时，只带前一半（优先级高的）事实重试一次；其余事实按资料库原文精简后进入简历。
   const out = await write(brief).catch((e: Error) => {
     if (!/finish_reason=length/.test(e.message)) throw e;
@@ -375,17 +375,12 @@ async function generateResumeInner(s: Settings, p: ProfileDoc, job: JobParse, pr
     fillSecondaryFromProfile(p, r, true);
     return runConsistency(r);
   }
-  let r: ResumeDoc;
-  let decision: AiSelectionResult;
-  try {
-    onStep?.(`准备生成${NAME[primary]}岗位定制主版本…`);
-    const generated = await generatePrimaryAi(s, p, job, primary, targetPages, onStep, options);
-    r = generated.resume; decision = generated.decision;
-  } catch (e) {
-    // 用户明确要求 AI 主导选材：不能在真实模式下悄悄退回关键词规则，生成看似成功但实际选材失败的简历。
-    onStep?.('AI 深度选材或写作失败：未保存低质量规则简历，请检查提示后重试');
-    throw e;
-  }
+  // 用户明确要求 AI 主导选材：失败时直接报错，不在真实模式下悄悄退回关键词规则。
+  // 不用通用提示覆盖进度文字：界面用最后一条进度显示「出错步骤」。
+  onStep?.(`准备生成${NAME[primary]}岗位定制主版本…`);
+  const generated = await generatePrimaryAi(s, p, job, primary, targetPages, onStep, options);
+  let r: ResumeDoc = generated.resume;
+  const decision: AiSelectionResult = generated.decision;
   try {
     // 撰写阶段已同时给出另一语言；只补齐缺失或未通过检查的条目（教育要点等）。
     const sec = other(primary);

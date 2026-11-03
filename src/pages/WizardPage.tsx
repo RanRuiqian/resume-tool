@@ -216,6 +216,12 @@ function Step2({ next, back }: { next: () => void; back: () => void }) {
  * 岗位文字另存 uiStorage（刷新也不丢）；识别 / 分析 / 生成任务在后台继续，回来时显示进度与结果。
  */
 const GEN_REQUEST = 'genRequest';
+/** 生成耗时提示：联合岗位深度思考可能要好几分钟，让用户知道仍在运行。 */
+function Elapsed() {
+  const [sec, setSec] = useState(0);
+  useEffect(() => { const t0 = Date.now(); const h = setInterval(() => setSec(Math.floor((Date.now() - t0) / 1000)), 1000); return () => clearInterval(h); }, []);
+  return <span className="muted small">（已用时 {Math.floor(sec / 60)} 分 {sec % 60} 秒；联合岗位可能需要 5–15 分钟，请勿关闭页面）</span>;
+}
 type JdDraft = { init: boolean; jobId?: string; shots: { url: string; raw: string }[]; text: string; edited: boolean; busy: string; pct?: number; err: string; info: string };
 const JD_DRAFT_TEXT = 'jdDraftText';
 let jdDraft: JdDraft = { init: false, shots: [], text: '', edited: false, busy: '', err: '', info: '' };
@@ -451,7 +457,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
       <h2>③ 编辑与下载</h2>
       {resume && job && resume.jobId !== job.id && <div className="notice warn" data-testid="previous-resume-retained">岗位已重新解析；下方保留的是上一岗位版本的简历及手动选择。点击「重新生成」才会为当前岗位创建新简历，旧版继续保留在本机历史记录中。</div>}
       <AiDisclosure />
-      {busy && <div className="notice"><span className="spinner" /> {busy}</div>}
+      {busy && <div className="notice"><span className="spinner" /> {busy} <Elapsed /></div>}
       {err && <div className="notice error">{err}</div>}
       {resume && (
         <div className="card result-bar">
