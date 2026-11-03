@@ -174,8 +174,8 @@ describe('E. fuller resumes: org entries, task titles, AI skill groups', () => {
 });
 
 describe('F. tailored summary gets one rewrite before falling back', () => {
-  it('accepts the rewritten summary when the first one used a term missing from the library', async () => {
-    const p = personalFixture();
+  it('accepts the rewritten summary when the first one used a term missing from the library (only when the library has no fixed summary)', async () => {
+    const p = personalFixture(); p.profile.summary = { zh: '', en: '' } as never;
     let call = 0;
     api.mockImplementation(async (_s, msgs) => {
       call++;
@@ -188,13 +188,13 @@ describe('F. tailored summary gets one rewrite before falling back', () => {
       }
       if (content.includes('在候选人资料里找不到')) {
         expect(content).toContain('CATIA');
-        return { summary: { zh: `面向结构岗位：${p.profile.summary.zh}`, en: `Targeting structural roles. ${p.profile.summary.en}` } };
+        return { summary: { zh: '面向结构岗位的工程学生，做过结构设计与装配验证。', en: 'Engineering student targeting structural roles.' } };
       }
       const payload = JSON.parse(content.split('\n\n').at(-1)!);
       return { items: (payload.items ?? []).map((x: { sourceId: string; sourceIds?: string[] }) => ({ sourceId: x.sourceId, text: sourceText(p, x).en })) };
     });
     const r = await generateResume(settings, p, jobs().A, 'zh', 1);
-    expect(r.items.find((i) => i.sourceId === 'summary')!.zh).toBe(`面向结构岗位：${p.profile.summary.zh}`);
+    expect(r.items.find((i) => i.sourceId === 'summary')!.zh).toBe('面向结构岗位的工程学生，做过结构设计与装配验证。');
     expect(JSON.stringify(r.items)).not.toContain('CATIA');
   });
 });
@@ -315,3 +315,16 @@ describe('L 候补逐段撤回 / 简介兜底（2026-11 联合岗位实测回归
     expect(salvageSummary({ value: { zh: '熟悉 ANSYS。', en: '' }, bad: ['ANSYS'] })).toBeNull();
   });
 });
+
+describe('M 课程悬空关联自动修复', () => {
+  it('educationId 指向不存在的教育时按学校名、再按学位层次重新关联；已有效关联不动', async () => {
+    const { relinkCourses } = await import('../src/storage/profileIO');
+    const p = personalFixture();
+    const edu = p.education[0];
+    const c = (id: string, educationId: string, school: string, level: 'master' | 'bachelor') => ({ id, enabled: true, kind: 'taught', educationId, school, level, name: { zh: id, en: id } }) as never;
+    p.courses = [c('a', 'ghost', lt0(edu.school), 'master'), c('b', edu.id, '', 'bachelor')];
+    const n = relinkCourses(p);
+    expect(n).toBe(1); expect(p.courses![0].educationId).toBe(edu.id); expect(p.courses![1].educationId).toBe(edu.id);
+  });
+});
+function lt0(t: { zh?: string; en?: string }) { return t.zh || t.en || ''; }

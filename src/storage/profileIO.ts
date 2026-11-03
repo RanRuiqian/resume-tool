@@ -49,6 +49,7 @@ export function normalizeProfile(raw: unknown): ProfileDoc {
   }
   p.evidence = (Array.isArray(r.evidence) ? r.evidence : []).map((e, i) => normalizeEvidence(e, i));
   p.courses = normalizeCourses(r.courses ?? []);
+  relinkCourses(p);
   // 清理指向已不存在条目的关联（不删除任何用户写的内容）
   const ids = new Set([...p.work, ...p.projects].map((x) => x.id));
   const evIds = new Set(p.evidence.map((x) => x.id));
@@ -94,4 +95,28 @@ function normalizeDossier(d: ProjectDossier): ProjectDossier {
   o.failedAttempts = (Array.isArray(o.failedAttempts) ? o.failedAttempts : []).map((f, i) => ({ id: str(f?.id) || `fa-${i + 1}`, approach: str(f?.approach), reason: str(f?.reason) }));
   o.phases = (Array.isArray(o.phases) ? o.phases : []).map((f, i) => ({ ...f, id: str(f?.id) || `ph-${i + 1}`, name: str(f?.name) }));
   return o;
+}
+
+/**
+ * 2026-11：课程的 educationId 指向已不存在的教育条目时（如合并导入后教育条目换了 ID），按学校名、再按学位层次重新关联。
+ * 负责人实测：正式网址导入后「本份简历：课程」显示 0 门。只修复悬空 / 空关联，已有效的关联不动；匹配不唯一时保持未关联。
+ */
+export function relinkCourses(p: ProfileDoc): number {
+  const norm = (s: string) => s.toLowerCase().replace(/[\s·.,，。()（）]/g, '');
+  const schoolOf = (e: ProfileDoc['education'][number]) => [e.school.zh ?? '', e.school.en ?? ''].map(norm).filter(Boolean);
+  const isMaster = (e: ProfileDoc['education'][number]) => /硕士|master|msc|meng/i.test(`${e.degree.zh ?? ''} ${e.degree.en ?? ''}`);
+  const isBachelor = (e: ProfileDoc['education'][number]) => /学士|本科|bachelor|beng|bsc/i.test(`${e.degree.zh ?? ''} ${e.degree.en ?? ''}`);
+  const valid = new Set(p.education.map((e) => e.id));
+  let fixed = 0;
+  for (const c of p.courses ?? []) {
+    if (c.educationId && valid.has(c.educationId)) continue;
+    const sc = norm(c.school ?? '');
+    let hits = sc ? p.education.filter((e) => schoolOf(e).some((x) => x.length >= 4 && (x.includes(sc) || sc.includes(x)))) : [];
+    if (hits.length !== 1) {
+      const byLevel = p.education.filter((e) => (c.level === 'master' ? isMaster(e) : c.level === 'bachelor' ? isBachelor(e) : false));
+      hits = hits.length > 1 ? hits.filter((e) => byLevel.includes(e)) : byLevel;
+    }
+    if (hits.length === 1) { c.educationId = hits[0].id; fixed++; }
+  }
+  return fixed;
 }

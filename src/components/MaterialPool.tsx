@@ -87,12 +87,13 @@ export function MaterialPool() {
         <b>📚 我的素材库</b>
         <span className="muted small">勾选 = 放进简历，右侧实时更新。AI 已综合岗位与个人背景选材，你可继续调整。勾选不调用 AI，不改母库，重新勾选保留编辑。</span>
       </div>
-      {hasSummary && (
+      {/* 2026-11：个人简介固定放在素材库最上面；资料库没有简介时直接在这里写，保存后以后每份简历都用 */}
+      {!hasSummary && !itemIds.has('summary') && <SummarySetup />}
+      {(hasSummary || itemIds.has('summary')) && (
         <div className="pool-sec">
           <div className="pool-sec-title">个人简介</div>
           <label className={`pool-entry pool-head ${itemIds.has('summary') ? 'on' : 'off'}`}>
             <input type="checkbox" checked={itemIds.has('summary')} onChange={(ev) => apply(toggleSummary(profile, resume, ev.target.checked))} />
-            {/* 2026-11：显示本简历实际使用的（按岗位定制的）简介，而不是资料库固定简介 */}
             <span className="grow small" data-testid="pool-summary">{((resume.items.find((i) => i.sourceId === 'summary') ?? resume.deselectedItems?.find((i) => i.sourceId === 'summary') ?? resume.summaryBaseline)?.zh || lt(profile.profile.summary, 'zh')).slice(0, 60)}…</span>
           </label>
           {resume.items.find((i) => i.sourceId === 'summary') && edit(resume.items.find((i) => i.sourceId === 'summary')!)}
@@ -114,4 +115,24 @@ export function MaterialPool() {
       })}
     </div>
   );
+}
+
+/** 资料库还没有个人简介：在素材库顶部直接填写，保存到资料库并放进本份简历。 */
+function SummarySetup() {
+  const { profile, setProfile, resume, setResume } = useApp();
+  const [zh, setZh] = useState(''), [en, setEn] = useState('');
+  if (!resume) return null;
+  const save = () => {
+    const summary = { ...profile.profile.summary, zh: zh.trim(), en: en.trim(), status: { ...(profile.profile.summary.status ?? {}), ...(zh.trim() ? { zh: 'confirmed' as const } : {}), ...(en.trim() ? { en: 'confirmed' as const } : {}) } };
+    const p = { ...profile, profile: { ...profile.profile, summary } };
+    setProfile(p);
+    setResume(toggleSummary(p, { ...resume, summaryBaseline: undefined }, true));
+  };
+  return <div className="pool-sec" data-testid="summary-setup">
+    <div className="pool-sec-title">个人简介</div>
+    <p className="muted small">资料库里还没有个人简介。在这里写一次（中英文可只写一种），会保存到「我的资料」，以后每份简历都固定使用，可随时在这里修改。</p>
+    <label>中文<textarea rows={3} aria-label="个人简介中文" value={zh} onChange={(e) => setZh(e.target.value)} /></label>
+    <label>English<textarea rows={3} aria-label="summary en" value={en} onChange={(e) => setEn(e.target.value)} /></label>
+    <button className="primary" disabled={!zh.trim() && !en.trim()} onClick={save}>保存并放进简历</button>
+  </div>;
 }

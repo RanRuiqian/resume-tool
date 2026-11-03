@@ -234,7 +234,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   };
   // 简介 / 求职方向：一次检查不过，先请 AI 去掉问题词重写一次；仍不过才回退资料库原文。
   let checkedSummary = tailoredIssues(out.summary), checkedHeadline = tailoredIssues(out.headline);
-  if (checkedSummary.bad.length || checkedHeadline.bad.length) {
+  if ((!fixedSummaryItem(p) && checkedSummary.bad.length) || checkedHeadline.bad.length) {
     try {
       onStep?.('2/3 简介中有资料里没有的词，正在让 AI 改写一次…');
       const fix = await chatJson<WriteOut>(s, [{ role: 'system', content: SYS_FACTS },
@@ -248,13 +248,12 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
     if (c.value && c.bad.length) notes.push(`AI 定制${label}出现资料中没有的内容（${c.bad.slice(0, 4).join('、')}），已改用资料库原文`);
     return c.value && !c.bad.length ? c.value : null;
   };
-  const summary = accept(checkedSummary, '简介');
   const fixed = fixedSummaryItem(p);
-  if (summary) items.push({ sourceId: 'summary', zh: summary.zh || fixed?.zh || '', en: summary.en || fixed?.en || '', syncStatus: summary.zh && summary.en ? 'in-sync' : 'needs-review' });
-  else if (fixed) {
-    items.push(fixed);
-    if (!out.summary) notes.push('AI 没有返回定制简介，已使用资料库固定简介');
-  } else {
+  // 2026-11 负责人决定：个人简介固定使用资料库原文，不再按岗位改写；资料库没有简介时才用 AI 写的（并做同样的检查）。
+  const summary = fixed ? null : accept(checkedSummary, '简介');
+  if (fixed) items.push(fixed);
+  else if (summary) items.push({ sourceId: 'summary', zh: summary.zh, en: summary.en, syncStatus: summary.zh && summary.en ? 'in-sync' : 'needs-review' });
+  else {
     // 2026-11：资料库没有固定简介时不能整段不放（负责人实测简历没有个人简介）。去掉含问题词的句子后仍有内容就用。
     const salvaged = salvageSummary(checkedSummary);
     if (salvaged) { items.push({ sourceId: 'summary', zh: salvaged.zh, en: salvaged.en, syncStatus: salvaged.zh && salvaged.en ? 'in-sync' : 'needs-review' }); notes.push('个人简介去掉了含资料外内容的句子；建议在「我的资料」保存一段固定简介作为兜底'); }

@@ -18,7 +18,13 @@ export function ResumeFactsOptions() {
   return <details className="card" data-testid="resume-facts-options"><summary>本份简历：课程、成绩、链接与简介变体</summary>
     <p className="muted small">课程只列正式名称和「课程知识」标签，不复制概述，不当作项目或职业经验。显示已关联教育的授课课程；Project A/B 仅作为项目关联保存在母库。</p>
     <div className="row">{(['github', 'linkedin', 'website', 'portfolio'] as const).map((key) => <label className="check" key={key}><input type="checkbox" checked={(resume.contactVisibility ?? profile.profile.contacts.visibility)?.[key] === true} onChange={(e) => setResume({ ...resume, contactVisibility: { ...(resume.contactVisibility ?? profile.profile.contacts.visibility), [key]: e.target.checked } })} />显示 {key}</label>)}</div>
-    {candidates.length === 0 && <p className="muted">暂无已关联教育的课程。可在「我的资料 → 课程」编辑关联。</p>}
+    {candidates.length === 0 && <p className="muted">{(() => {
+      const all = profile.courses ?? [];
+      if (!all.length) return '资料库里没有课程。导入包含课程清单的资料（如 V7 文件），或在「我的资料 → 课程」添加。';
+      const off = all.filter((c) => !c.enabled).length, notTaught = all.filter((c) => c.enabled && c.kind !== 'taught').length;
+      const unlinked = all.filter((c) => c.enabled && c.kind === 'taught' && !profile.education.some((e) => e.id === c.educationId && e.enabled)).length;
+      return `资料库有 ${all.length} 门课程，但都不能打印：未关联学校 ${unlinked} 门、已停用 ${off} 门、非授课类 ${notTaught} 门。请在「我的资料 → 课程」把课程关联到对应学校。`;
+    })()}</p>}
     {candidates.map((c) => <div className="row" key={c.id} data-testid="resume-course-choice">
       <label className="check"><input type="checkbox" checked={selected.includes(c.id)} onChange={(e) => change(e.target.checked ? [...selected, c.id] : selected.filter((id) => id !== c.id), selection.gradeIds.filter((id) => e.target.checked || id !== c.id))} />{c.name.zh || c.name.en} · {c.code} · 课程知识</label>
       {selected.includes(c.id) && <><label className="check"><input type="checkbox" disabled={c.grade.status !== 'recorded' || !c.grade.raw.trim()} checked={selection.gradeIds.includes(c.id)} onChange={(e) => {

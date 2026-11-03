@@ -39,7 +39,7 @@ const summaryOf = (items: GenItem[]) => items.find((i) => i.sourceId === 'summar
 
 describe('A: fixed bilingual personal introduction', () => {
   // 2026-11：用户要求简介按岗位定制。AI 只能用资料里已有的事实改写；出现资料外的数字 / 工具时回退到固定简介。
-  it('uses a JD-tailored summary and headline from the writer, sends the fixed summary only as reference, never edits the profile', async () => {
+  it('keeps the fixed library summary (2026-11 owner decision), uses the JD-tailored headline, never edits the profile', async () => {
     const p = personalFixture(), before = structuredClone(p);
     const tailoredA = { zh: `面向岗位 A：${p.profile.summary.zh}`, en: `Targeting role A. ${p.profile.summary.en}` };
     const plan = personalPlan();
@@ -52,7 +52,8 @@ describe('A: fixed bilingual personal introduction', () => {
       return { items: payload.items.map((x: { sourceId: string; sourceIds?: string[] }) => ({ sourceId: x.sourceId, text: sourceText(p, x)[String(msgs.at(-1)!.content).includes('为中文副版本') ? 'zh' : 'en'] })) };
     });
     const a = await generateResume(settings, p, jobs().A, 'zh', 1);
-    expect(summaryOf(a.items)).toMatchObject(tailoredA);
+    expect(summaryOf(a.items)).toMatchObject({ zh: p.profile.summary.zh, en: p.profile.summary.en });
+    void tailoredA;
     expect(a.headline).toEqual({ zh: '结构设计方向', en: 'Mechanical Design' });
     expect(buildLayout(p, template(), 'en', a).header.headline).toBe('Mechanical Design');
     const writingPayload = JSON.parse(String(api.mock.calls[1][1][1].content).split('\n\n').at(-1)!);
@@ -71,7 +72,7 @@ describe('A: fixed bilingual personal introduction', () => {
     const b = await generateResume(settings, p, jobs().B, 'en', 1);
     expect(summaryOf(b.items)).toMatchObject({ zh: p.profile.summary.zh, en: p.profile.summary.en });
     expect(b.headline).toBeUndefined();
-    expect(b.notes!.join()).toContain('已改用资料库原文');
+    expect(JSON.stringify(b.items)).not.toContain('8 years');
   });
 
   it('does not modify stored summaries when the profile changes or planning fails', async () => {
