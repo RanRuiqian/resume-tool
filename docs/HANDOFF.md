@@ -121,6 +121,13 @@
 
 **2.9f（同日，终于定位）**：诊断行显示「候补共 9 段，补入 0 段；估算 180%；PDF 实测 2 页」+「为保持 1 页已暂时取消 21 项」。即：AI 主选内容本身约 1.8 页，`fitContent` 无法补候补；后面的 `trimToPages` 先删 21 项再「回填」，但回填只测 10 次、且先试奖项/技能/课程，项目回填不上，最终只剩 2 个项目、约 70% 满。修复：`trimToPages` 回填预算 10→24，并优先回填项目/要点（label 含「整段/要点」），再回填奖项/技能/课程。后续可考虑：让 AI 主选在一页版就别给 180%（提示词/capPlanFacts 对 1 页收紧主选），减少「先多选再删」。
 
+### 2.10 岗位要求解读（2026-11-03，负责人提出并确认）
+- 需求：负责人读不懂「澄清订单技术相关事宜」这类职责，想知道它到底要什么能力 / 什么经历算对口。第 2 步（右侧分析结果下方）和第 3 步（预览页，证据报告上方）各一栏，共用同一份解读。
+- 实现：`src/ai/jobExplain.ts`（`explainJob` / `unexplained`）、`src/components/JobExplainPanel.tsx`、`JobParse.explain`（`src/types`，DATA_SCHEMA 已记）。点按钮才调用一次 AI（`thinking: disabled`，当前配置模型，8000 tokens），只发岗位要求文字，不发个人资料；按 `jobRequirements` id 对应，丢弃无效 / 重复 id，文字截断 260；联合岗位按岗位分组；已有解读时只补缺失条目，全部解读后按钮禁用。
+- 边界：DeepSeek 不联网，只按行业常识解读，界面已标注「仅供参考、不是公司内部信息、不会写进简历」；不参与选材。
+- 测试：`tests/jobExplain.test.ts`（3 项）、`tests/e2e/job_explain_e2e.py`（6 项，需 `npm run build && npx vite preview --port 4173`）。
+- 未验证：真实 DeepSeek 的解读质量；第 3 步联合岗位的显示（逻辑与第 2 步同一组件，未做联合 e2e）。
+
 ## 3. 验证（本轮实际运行结果）
 
 | 检查 | 结果 |

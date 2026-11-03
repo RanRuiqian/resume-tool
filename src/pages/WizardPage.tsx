@@ -26,6 +26,7 @@ import { normalizeProfile } from '../storage/profileIO';
 import { buildLayout } from '../render/layout';
 import { Preview } from '../render/Preview';
 import { useEditTemplate } from '../render/useEditTemplate';
+import { JobExplainPanel } from '../components/JobExplainPanel';
 import { measurePages, type PageInfo } from '../export/client';
 import { fileToDataUrl } from '../utils/download';
 import sample from '../sample/sample-profile.json';
@@ -350,6 +351,7 @@ function SingleStep2({ next, back }: { next: () => void; back: () => void }) {
           {busy && <ProgressNote msg={busy} pct={pct} />}
           {err && <div className="notice error">{err}</div>}
         </div>
+        <div className="stack">
         <div className="card" data-testid="single-jd-analysis">
           {!job ? <div className="empty">分析结果会显示在这里：公司、岗位、关键要求。</div> : (
             <>
@@ -368,6 +370,8 @@ function SingleStep2({ next, back }: { next: () => void; back: () => void }) {
               <div className="chips">{job.keywords.map((k, i) => <span key={i} className="chip kw">{k.zh}{k.en && k.en !== k.zh ? ` / ${k.en}` : ''}</span>)}</div>
             </>
           )}
+        </div>
+        {job && !job.joint && <JobExplainPanel />}
         </div>
       </div>
       <div className="row nav-row"><button onClick={back}>← 上一步</button><span className="spacer" /><button className="primary big" disabled={!job || stale} title={stale ? '岗位文字已修改，请先重新分析' : ''} onClick={next}>生成简历 →</button></div>
@@ -508,6 +512,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
           <ul className="small">{resume.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
         </details>
       )}
+      <JobExplainPanel />
       <EvidenceReport go={go} />
       {resume && (
         <div className="card">

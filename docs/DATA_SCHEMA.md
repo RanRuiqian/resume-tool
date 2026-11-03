@@ -72,6 +72,7 @@
 - `JobParse.responsibilities?: Bi[]`：岗位职责（与 mustHave / niceToHave 分开）。
 - `JobParse.textHash?: string`：规范化 JD 文字的哈希，用于复用分析结果、判断分析是否过期。
 - `JobParse.ocrRawText?: string`：截图识别原文（去噪声前），只存本机。
+- `JobParse.explain?: { createdAt; items: { id; text; meaning; abilities; experience }[] }`：岗位要求解读（2026-11）。`id` = `jobRequirements(job)` 的 id；`text` 为解读时的原文，不一致视为过期。只读说明，不参与选材和简历；可选字段，无需迁移。
 - 旧记录没有这些字段时按旧行为处理（哈希按 `rawText` 现算）。
 
 ## 求职信人工核对（v1.10.1，可选，不升级 Dexie，仍为 version 4）

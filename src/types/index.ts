@@ -266,7 +266,20 @@ export interface JobParse {
   textHash?: string;
   /** v1.10 截图识别的完整原文（可追溯依据；rawText 是用户确认后的岗位正文） */
   ocrRawText?: string;
+  /** 2026-11：岗位要求解读（AI 按行业常识解释每条职责 / 要求的含义与所需能力；只读说明，不参与选材与简历内容） */
+  explain?: JobExplain;
 }
+
+export interface RequirementExplanation {
+  /** 与 jobRequirements(job) 的 id 一致 */
+  id: string;
+  /** 解读时的要求原文，用于判断岗位文字变化后是否过期 */
+  text: string;
+  meaning: string;
+  abilities: string;
+  experience: string;
+}
+export interface JobExplain { createdAt: string; items: RequirementExplanation[] }
 
 /** needs-review：副版本未通过数字 / 事实一致性校验，需要人工核对（A2） */
 export type SyncStatus = 'in-sync' | 'pending' | 'needs-review';

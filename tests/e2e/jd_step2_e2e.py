@@ -28,7 +28,7 @@ OVERLAP="""()=>{const bad=[];document.querySelectorAll('.chips').forEach(c=>{con
 tmp=tempfile.mkdtemp(prefix='p18-'); img1=os.path.join(tmp,'jd_a.png'); img2=os.path.join(tmp,'jd_b.png')
 shutil.copy(os.path.join(FX,'jd_screenshot_mock.png'),img1); shutil.copy(os.path.join(FX,'jd_screenshot_mock.png'),img2)
 with sync_playwright() as p:
-    c=p.chromium.launch_persistent_context(tempfile.mkdtemp(prefix='chrome-p18-'), executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], viewport={'width':1366,'height':900})
+    c=p.chromium.launch_persistent_context(tempfile.mkdtemp(prefix='chrome-p18-'), executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/google-chrome'), args=['--no-sandbox'], viewport={'width':1366,'height':900})
     pg=c.pages[0]; errs=[]; dialogs=[]; pg.on('pageerror', lambda e: errs.append(str(e)))
     pg.on('dialog', lambda d: (dialogs.append(d.message), d.accept())); c.route('https://api.deepseek.com/**', ai)
     pg.goto(B); pg.wait_for_timeout(800); pg.evaluate(SEED,[KEY,DOC]); pg.evaluate("localStorage.setItem('wizardStep','2')"); pg.goto(B+'#wizard'); pg.reload(); pg.wait_for_selector('[data-testid=jd-text]')
