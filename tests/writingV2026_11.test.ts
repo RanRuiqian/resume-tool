@@ -275,3 +275,21 @@ describe('J. trimming keeps publications', () => {
     expect(left).not.toContain('虚构要点 1');
   });
 });
+
+describe('K 选材条数上限（输出被截断的回归）', () => {
+  const entry = (id: string, n: number, core: boolean) => ({ kind: 'projects' as const, id, score: 1, core, bulletIds: Array.from({ length: n }, (_, i) => `${id}-b${i}`) });
+  it('主选每段最多 8 条、候补最多 4 条，总数超过软参考 1.5 倍时先删候补再删要点最多的主选末尾', async () => {
+    const { capPlanFacts } = await import('../src/ai/generate');
+    const out = capPlanFacts([entry('a', 27, true), entry('b', 12, true), entry('c', 12, true), entry('r', 9, false)], 12);
+    const n = (id: string) => out.find((e) => e.id === id)!.bulletIds.length;
+    expect(n('a')).toBeLessThanOrEqual(8); expect(n('r')).toBeLessThanOrEqual(4);
+    expect(out.reduce((s, e) => s + e.bulletIds.length, 0)).toBeLessThanOrEqual(24);
+    expect(out.find((e) => e.id === 'a')!.bulletIds[0]).toBe('a-b0');      // 保留最前（最重要）的
+    expect(n('r')).toBeGreaterThanOrEqual(1);
+  });
+  it('教育条目不受影响', async () => {
+    const { capPlanFacts } = await import('../src/ai/generate');
+    const edu = { kind: 'education' as const, id: 'e', score: 1, core: true, bulletIds: Array.from({ length: 12 }, (_, i) => `e${i}`) };
+    expect(capPlanFacts([edu], 10)[0].bulletIds).toHaveLength(12);
+  });
+});

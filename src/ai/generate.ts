@@ -110,13 +110,29 @@ export function runConsistency(r: ResumeDoc): ResumeDoc {
  */
 type WriteOut = { headline?: Partial<Bi>; summary?: Partial<Bi>; items?: { sourceId: string; sourceIds?: string[]; zh?: string; en?: string; text?: string }[]; reasons?: string };
 
+/** 选材要点数上限：AI 有时把一个项目的 20+ 条事实全选进来，撰写步骤输出会被截断。
+ *  主选每段最多 8 条、候补每段最多 4 条；总数超过版面软参考约 1.5 倍时，先从候补、再从要点最多的主选末尾（最不重要）开始删。教育条目不动。 */
+export function capPlanFacts(entries: PlanEntry[], softFactTarget: number): PlanEntry[] {
+  const out = entries.map((e) => e.kind === 'education' ? e : { ...e, bulletIds: e.bulletIds.slice(0, e.core ? 8 : 4) });
+  const maxTotal = Math.max(24, Math.round(softFactTarget * 1.5));
+  const count = () => out.filter((e) => e.kind !== 'education').reduce((n, e) => n + e.bulletIds.length, 0);
+  for (let guard = 0; count() > maxTotal && guard < 500; guard++) {
+    const pool = (core: boolean) => out.filter((e) => e.kind !== 'education' && !!e.core === core && e.bulletIds.length > (core ? 2 : 1));
+    const cand = pool(false).length ? pool(false) : pool(true);
+    if (!cand.length) break;
+    const e = cand.reduce((a, b) => (b.bulletIds.length >= a.bulletIds.length ? b : a));
+    e.bulletIds = e.bulletIds.slice(0, -1);
+  }
+  return out;
+}
+
 async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void, options: ContentOptions = {}): Promise<{ resume: ResumeDoc; decision: AiSelectionResult }> {
   const sec = other(primary);
   // v1.9.1：主语言译文已过期（另一语言改过）时，改用最新的另一语言原文交给 AI 重写，不静默使用过期译文
   const T = (t: LocalizedText) => (t?.status?.[primary] === 'stale' ? lt(t, other(primary)) : lt(t, primary));
   const A = (t: LocalizedText) => (t?.status?.[sec] === 'stale' ? '' : (t?.[sec] ?? '').trim());
   const decision = await planWithAi(s, p, job, primary, targetPages, onStep, options.template);
-  const plan = { ...decision.plan, entries: [...decision.plan.entries, ...decision.reserves] };
+  const plan = { ...decision.plan, entries: capPlanFacts([...decision.plan.entries, ...decision.reserves], pageBudget(targetPages, primary, options.template, p).softFactTarget) };
   const idx = textIndex(p);
   const terms = jobTerms(job);
   const rankOf = new Map((plan.ranked ?? []).map((r, i) => [r.id, { r, i }]));
@@ -134,9 +150,15 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
     targets: job.joint?.targets.map((t) => ({ name: t.name, title: t.job.title })), layout: pageBudget(targetPages, primary, options.template, p), facts,
   };
   onStep?.('2/3 正在撰写：AI 按岗位同时撰写中英文简历、简介与求职方向…');
-  const out = await chatJson<WriteOut>(s, [{ role: 'system', content: SYS_FACTS },
-    { role: 'user', content: `${AI_WRITE_PROMPT}\n\n${JSON.stringify(brief)}` }],
+  const write = (b: typeof brief) => chatJson<WriteOut>(s, [{ role: 'system', content: SYS_FACTS },
+    { role: 'user', content: `${AI_WRITE_PROMPT}\n\n${JSON.stringify(b)}` }],
   { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 16_000 });
+  // 输出被截断（finish_reason=length）时，只带前一半（优先级高的）事实重试一次；其余事实按资料库原文精简后进入简历。
+  const out = await write(brief).catch((e: Error) => {
+    if (!/finish_reason=length/.test(e.message)) throw e;
+    onStep?.('2/3 内容较多，AI 输出被截断，正在减少一次处理的条数后重试…');
+    return write({ ...brief, facts: brief.facts.slice(0, Math.max(8, Math.ceil(brief.facts.length / 2))) });
+  });
 
   const notes: string[] = [];
   const kctx = buildKitContext(p, null);
