@@ -89,9 +89,11 @@ export async function fitContent(p: ProfileDoc, pool: ResumeDoc, reserveIds: str
     r = next; order.push(id);
   }
   const notes: string[] = [];
+  let pagesDiag = 'PDF 未实测';
   if (options.measure) {
     try {
       const measured = await options.measure(r);
+      if (measured) pagesDiag = `PDF 实测 中文 ${measured.zh.pages} 页 / 英文 ${measured.en.pages} 页`;
       if (!measured) notes.push('PDF 页数测量暂不可用，当前仅为排版估算；请在导出预览中核对。');
       if (measured && Math.max(measured.zh.pages, measured.en.pages) > (template.page.targetPages || 1)) {
         if (shown.size) {
@@ -115,6 +117,7 @@ export async function fitContent(p: ProfileDoc, pool: ResumeDoc, reserveIds: str
     } catch { notes.push('PDF 页数测量暂不可用，当前仅为排版估算；请在导出预览中核对。'); }
   } else notes.push('内容空间为本地排版估算；实际 PDF / Word 仍需检查。');
   if (estimateUsage(p, template, r) < 0.75) notes.push('内容较少：已考虑 AI 提供的候补；可在素材池补选真实经历，留白不以废话或重复内容填充。');
+  notes.push(`版面诊断：候补共 ${reserveIds.length} 段，补入 ${shown.size} 段；估算占用 ${Math.round(estimateUsage(p, template, r) * 100)}%；${pagesDiag}`);
   const finalOmissions = { ...omissions };
   for (const id of reserveIds.filter((x) => !shown.has(x))) {
     const work = p.work.find((x) => x.id === id);
