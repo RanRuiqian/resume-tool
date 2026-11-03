@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../store';
 import { useL } from '../i18n';
 import { FEATURES } from '../features';
@@ -22,25 +22,37 @@ function TraceTable({ trace, lang }: { trace: SentenceTrace[]; lang: Lang }) {
 export function CareerKit() {
   const { settings, profile, job, resume, setResume } = useApp();
   const L = useL();
-  const [busy, setBusy] = useState('');
-  const [err, setErr] = useState('');
+  // 2026-11-03：求职信与备考方向可同时生成（两次独立的 AI 调用），各自显示进度与错误
+  type Kind = 'cover' | 'interview';
+  const [busy, setBusyAll] = useState<Partial<Record<Kind, string>>>({});
+  const [errs, setErrs] = useState<Partial<Record<Kind, string>>>({});
+  const setBusy = (k: Kind, v: string) => setBusyAll((b) => ({ ...b, [k]: v }));
+  const setErr = (k: Kind, v: string) => setErrs((e) => ({ ...e, [k]: v }));
+  // 保存时总是基于最新的简历（另一项可能刚刚写入），避免后完成的一项覆盖先完成的结果
+  const latest = useRef(resume);
+  useEffect(() => { latest.current = resume; }, [resume]);
   const [lang, setLang] = useState<Lang>('zh');
   const [quality, setQuality] = useState<KitQuality | null>(null);
   const [pending, setPending] = useState<{ coverLetter: Bi; selfIntro: Bi; quality: KitQuality } | null>(null);
   const ex = resume?.extras ?? {};
   const state = useMemo(() => kitExportState(profile, job, resume?.extras, resume), [profile, job, resume]);
   if (!resume || !job || (!FEATURES.coverLetter && !FEATURES.prepDirections)) return null;
-  const save = (fn: (e: NonNullable<ResumeDoc['extras']>) => void) => { const n = structuredClone(resume); n.extras = n.extras ?? {}; fn(n.extras); setResume(n); };
-  const adopt = (k: { coverLetter: Bi; selfIntro: Bi }) => save((e) => { e.coverLetter = k.coverLetter; e.selfIntro = k.selfIntro; delete e.kitReview; });
-  const go = async (kind: 'cover' | 'interview') => {
-    if (settings.demoMode) { setErr(L('演示模式不调用 AI，请先在「设置」连接 AI 服务。', 'Demo mode does not call AI. Connect an AI provider in Settings first.')); return; }
-    setErr(''); setPending(null); setBusy(kind === 'cover' ? L('AI 正在写求职信和自我介绍，并逐句核对…', 'Writing cover letter & self-intro, checking each sentence…') : L('AI 正在根据岗位要求整理备考方向…', 'Deriving preparation areas from the job post…'));
+  const save = (fn: (e: NonNullable<ResumeDoc['extras']>) => void, onlyFor?: string) => {
+    const base = latest.current; if (!base || (onlyFor && base.id !== onlyFor)) return false; // 生成期间换了简历：不写到别的简历上
+    const n = structuredClone(base); n.extras = n.extras ?? {}; fn(n.extras); latest.current = n; setResume(n); return true;
+  };
+  const adopt = (k: { coverLetter: Bi; selfIntro: Bi }, onlyFor?: string) => save((e) => { e.coverLetter = k.coverLetter; e.selfIntro = k.selfIntro; delete e.kitReview; }, onlyFor);
+  const go = async (kind: Kind) => {
+    if (settings.demoMode) { setErr(kind, L('演示模式不调用 AI，请先在「设置」连接 AI 服务。', 'Demo mode does not call AI. Connect an AI provider in Settings first.')); return; }
+    const rid = resume.id;
+    setErr(kind, ''); if (kind === 'cover') setPending(null);
+    setBusy(kind, kind === 'cover' ? L('AI 正在写求职信和自我介绍，并逐句核对…', 'Writing cover letter & self-intro, checking each sentence…') : L('AI 正在根据岗位要求整理备考方向…', 'Deriving preparation areas from the job post…'));
     try {
       if (kind === 'cover') {
         const k = await generateCoverKit(settings, profile, job, resume); setQuality(k.quality);
-        if (k.quality.status === 'blocked') setPending(k); else adopt(k);
-      } else { const q = await generatePrep(settings, job); if (!q.length) throw new Error(L('AI 没有返回能对应到岗位要求的方向。请确认第 2 步已解析出岗位要求（职责 / 必备 / 加分），再试一次。', 'The AI returned no directions tied to the job requirements. Check that step 2 parsed the requirements, then retry.')); save((e) => { e.prep = q; }); }
-    } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
+        if (k.quality.status === 'blocked') setPending(k); else adopt(k, rid);
+      } else { const q = await generatePrep(settings, job); if (!q.length) throw new Error(L('AI 没有返回能对应到岗位要求的方向。请确认第 2 步已解析出岗位要求（职责 / 必备 / 加分），再试一次。', 'The AI returned no directions tied to the job requirements. Check that step 2 parsed the requirements, then retry.')); save((e) => { e.prep = q; }, rid); }
+    } catch (e) { setErr(kind, (e as Error).message); } finally { setBusy(kind, ''); }
   };
   const area = (title: string, v: Bi | undefined, set: (t: string) => void, rows = 8) => v && (
     <label className="kit-field">{title}<textarea rows={rows} value={v[lang]} onChange={(e) => set(e.target.value)} /></label>
@@ -53,11 +65,12 @@ export function CareerKit() {
       </div>
       <p className="muted small">{L('「我做过 / 会 / 有」只取自你的资料；岗位要求只用于动机和学习方向。AI 生成时检查事实，生成后可自由编辑并导出。', 'Self-claims come only from your profile; the job post is used only for motivation and learning goals. Each sentence is checked against your profile before saving. This is a rule-based check, not a guarantee — read it yourself before sending.')}</p>
       <div className="row">
-        {FEATURES.coverLetter && <button disabled={!!busy} onClick={() => go('cover')}>{ex.coverLetter ? '🔄 ' : '✨ '}{L('求职信 + 1 分钟自我介绍', 'Cover letter + 1-min intro')}</button>}
-        {FEATURES.prepDirections && <button disabled={!!busy} onClick={() => go('interview')}>{ex.prep ? '🔄 ' : '✨ '}{L('备考大方向', 'What to prepare')}</button>}
+        {FEATURES.coverLetter && FEATURES.prepDirections && <button className="primary" data-testid="kit-both" disabled={!!busy.cover || !!busy.interview} onClick={() => { go('cover'); go('interview'); }}>{L('✨ 两项一起生成', '✨ Generate both')}</button>}
+        {FEATURES.coverLetter && <button disabled={!!busy.cover} onClick={() => go('cover')}>{ex.coverLetter ? '🔄 ' : '✨ '}{L('求职信 + 1 分钟自我介绍', 'Cover letter + 1-min intro')}</button>}
+        {FEATURES.prepDirections && <button disabled={!!busy.interview} onClick={() => go('interview')}>{ex.prep ? '🔄 ' : '✨ '}{L('备考大方向', 'What to prepare')}</button>}
       </div>
-      {busy && <div className="notice"><span className="spinner" /> {busy}</div>}
-      {err && <div className="notice error">{err}</div>}
+      {(['cover', 'interview'] as Kind[]).map((k) => busy[k] && <div key={k} className="notice" data-testid={`kit-busy-${k}`}><span className="spinner" /> {busy[k]}</div>)}
+      {(['cover', 'interview'] as Kind[]).map((k) => errs[k] && <div key={k} className="notice error" data-testid={`kit-err-${k}`}>{k === 'cover' ? L('求职信：', 'Cover letter: ') : L('备考方向：', 'Prep: ')}{errs[k]}</div>)}
       {pending && (
         <div className="notice error" data-testid="kit-blocked">
           <b>{L('事实检查未通过，需人工核对', 'Fact check failed — needs manual review')}</b>

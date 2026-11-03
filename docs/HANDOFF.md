@@ -223,6 +223,7 @@ ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按�
 - **备考方向重做**（`generatePrep`）：把 `jobRequirements(job)` 编号（R1…，联合岗位带岗位名）发给 AI，AI 用 `refs` 引用；source 填对应要求原文。无编号时摘录用 `quotedFrom`（NFKC、去空白标点后子串，或 ≥80% 二字组覆盖）对照原文与要求，解决 OCR 断行 / 全半角导致全部被丢的问题。每条新增 `points`（2–4 个要复习的知识点，`PrepDirection.points?` 可选字段，无迁移），界面与 Word 导出都显示。`prepClaims` 仍过滤「你已具备」类。
 - 测试：新增 `tests/careerKit2026_11.test.ts`（8 项，复现截图误判 + 仍拦下的反例 + 备考方向）；`tests/kitVerifyV1101.test.ts` 4 项按新行为改写（硬问题句被删并列出，而非整份 blocked）。全量 680/680；新 e2e `tests/e2e/career_kit_e2e.py` 6/6（需先 `npx tsx scripts/prepare-workspace-e2e.ts`）；resume_workspace 25/25。
 - `tests/e2e/kit_verify_e2e.py` **改动前就已失败**（还在等旧的「导出拦截 / 人工放行」界面，与 resume_workspace「人工修改可直接导出」冲突，且写死 `/usr/bin/google-chrome`），属过时测试，未修，可删除或按新行为重写。
+- **并行生成**（负责人 22:40 提出）：`CareerKit` 的忙碌 / 错误状态按项分开（`kit-busy-cover / kit-busy-interview`、`kit-err-*`），两项可同时点，并新增「两项一起生成」（`data-testid=kit-both`）。两次 AI 调用彼此独立，总用时约等于较慢那项。关键修复：`save` 以前基于点击时的 `resume` 副本，并行时后完成的会覆盖先完成的结果；现改为基于 `latest` ref 的最新简历，并在生成期间换了简历时不写入。e2e 扣住两个请求确认同时在途，再先回备考、后回求职信，断言两者都保存（9/9）。
 - 未验证：真实 DeepSeek 下的求职信质量与误判率、备考方向内容质量——需负责人实测。
 
 ### 下一阶段（负责人 2026-11-03 22:09 指示）
