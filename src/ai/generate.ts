@@ -127,6 +127,24 @@ export function capPlanFacts(entries: PlanEntry[], softFactTarget: number): Plan
   return out;
 }
 
+/**
+ * 2026-11：AI 给的候补有时很少（负责人实测一页版只放 1 个项目，页面空三分之一）。
+ * 这里按程序对岗位的相关度排序，再多备最多 4 段（项目优先，每段最多 2 条要点）作为最低优先级候补；
+ * 它们同样交给 AI 撰写并通过事实护栏，是否展示仍由版面（实际 PDF 页数）决定。
+ */
+export function extraReserves(d: { plan: { entries: PlanEntry[]; ranked?: { id: string; entryId: string; section: string; value: number }[] }; reserves: PlanEntry[] }, maxEntries = 4): PlanEntry[] {
+  const used = new Set([...d.plan.entries, ...d.reserves].map((e) => e.id));
+  const byEntry = new Map<string, { kind: 'work' | 'projects'; ids: string[]; best: number }>();
+  for (const r of d.plan.ranked ?? []) {
+    if ((r.section !== 'projects' && r.section !== 'work') || used.has(r.entryId) || r.value <= 0.15) continue;
+    const g = byEntry.get(r.entryId) ?? { kind: r.section, ids: [], best: r.value };
+    if (g.ids.length < 2) g.ids.push(r.id);
+    byEntry.set(r.entryId, g);
+  }
+  return [...byEntry.entries()].sort((a, b) => b[1].best - a[1].best).slice(0, maxEntries)
+    .map(([id, g], i) => ({ kind: g.kind, id, score: 0 - i, core: false, bulletIds: g.ids }));
+}
+
 /** 去掉含问题词的句子，保留其余句子；中英文任一语言保留下来即可用（另一语言稍后本地化补齐）。 */
 export function salvageSummary(c: { value: Bi | null; bad: string[] }): Bi | null {
   if (!c.value) return null;
@@ -141,7 +159,8 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   // v1.9.1：主语言译文已过期（另一语言改过）时，改用最新的另一语言原文交给 AI 重写，不静默使用过期译文
   const T = (t: LocalizedText) => (t?.status?.[primary] === 'stale' ? lt(t, other(primary)) : lt(t, primary));
   const A = (t: LocalizedText) => (t?.status?.[sec] === 'stale' ? '' : (t?.[sec] ?? '').trim());
-  const decision = await planWithAi(s, p, job, primary, targetPages, onStep, options.template);
+  const planned = await planWithAi(s, p, job, primary, targetPages, onStep, options.template);
+  const decision = { ...planned, reserves: [...planned.reserves, ...extraReserves(planned)] };
   const plan = { ...decision.plan, entries: capPlanFacts([...decision.plan.entries, ...decision.reserves], pageBudget(targetPages, primary, options.template, p).softFactTarget) };
   const idx = textIndex(p);
   const terms = jobTerms(job);

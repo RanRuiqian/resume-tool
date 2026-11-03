@@ -328,3 +328,16 @@ describe('M 课程悬空关联自动修复', () => {
   });
 });
 function lt0(t: { zh?: string; en?: string }) { return t.zh || t.en || ''; }
+
+describe('N. extraReserves 兜底候补', () => {
+  const r = (id: string, entryId: string, section: string, value: number) => ({ id, entryId, section, value });
+  it('补未用过的项目/工作，按相关度排序，每段最多 2 条、最多 4 段，不重复已选', async () => {
+    const { extraReserves } = await import('../src/ai/generate');
+    const ranked = [r('a1', 'A', 'projects', 2), r('a2', 'A', 'projects', 1.9), r('a3', 'A', 'projects', 1.8), r('u1', 'USED', 'projects', 1.7), r('b1', 'B', 'projects', 1.5),
+      r('e1', 'E', 'education', 3), r('c1', 'C', 'work', 1.2), r('d1', 'D', 'projects', 0.1), r('f1', 'F', 'projects', 1.0), r('g1', 'G', 'projects', 0.9), r('h1', 'H', 'projects', 0.8)];
+    const out = extraReserves({ plan: { entries: [{ kind: 'projects', id: 'USED', score: 1, core: true, bulletIds: ['u1'] }], ranked }, reserves: [] });
+    expect(out.map((x) => x.id)).toEqual(['A', 'B', 'C', 'F']);
+    expect(out[0].bulletIds).toEqual(['a1', 'a2']);
+    expect(out.every((x) => !x.core)).toBe(true);
+  });
+});
