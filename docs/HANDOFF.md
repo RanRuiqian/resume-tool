@@ -195,3 +195,6 @@
 git pull origin feat/v7-structured-import && npm ci && npm run dev -- --host 0.0.0.0 --port 5173
 ```
 然后在网页「我的资料」重新导入 V7 → 上传 JD → 生成。
+
+### 2.12b 导出：单个 PDF 分享（iPhone）
+ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按钮：`navigator.share({files})`，不支持则直接下载 PDF。

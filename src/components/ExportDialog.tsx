@@ -10,6 +10,15 @@ import { FEATURES } from '../features';
 import type { Lang } from '../types';
 import { kitExportState } from '../quality/kitVerify';
 
+/** iPhone：zip 不便打开，单独的 PDF 走系统分享面板（存到「文件」或发微信 / 邮件）；不支持时直接下载。 */
+async function sharePdf(name: string, bytes: Uint8Array) {
+  try {
+    const file = new File([bytes as BlobPart], name, { type: 'application/pdf' });
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+  } catch (e) { if ((e as Error).name === 'AbortError') return; }
+  downloadBytes(bytes, name, 'application/pdf');
+}
+
 /** 导出前确认公司名 / 岗位缩写，预览 zip 与 4 个文件名（F6.6–F6.9） */
 export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?: boolean }) {
   const { profile, profileEpoch, template, resume, job } = useApp();
@@ -19,6 +28,7 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [done, setDone] = useState('');
+  const [pdfs, setPdfs] = useState<{ name: string; bytes: Uint8Array }[]>([]);
   const [date] = useState(() => formatDateStamp(new Date()));
   const names = buildExportNames(company, abbr, date, count);
   const [withKit, setWithKit] = useState(() => localStorage.getItem('zipKit') !== '0');
@@ -57,6 +67,7 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
       const r = await exportZip(profile, template, resume, names, (f) => setBusy(`生成 ${f} …`), await buildKit());
       await db.transaction('r', db.state, () => assertProfileEpoch(db, profileEpoch));
       downloadBytes(r.zip, names.zipName, 'application/zip');
+      setPdfs([names.files.cnPdf, names.files.enPdf].filter((n) => r.files[n]).map((n) => ({ name: n, bytes: r.files[n] })));
       await db.transaction('rw', db.exports, db.state, async () => { await assertProfileEpoch(db, profileEpoch); await db.exports.put({ id: uid('export'), resumeId: resume?.id ?? '', company: names.company, roleAbbr: names.roleAbbr, date, seq: names.seq, zipName: names.zipName, files: Object.keys(r.files), exportedAt: new Date().toISOString(), jobId: job?.id, zip: r.zip, blobs: r.files }); });
       setCount((c) => c + 1);
       setDone(`已下载 ${names.zipName}（中文 ${r.pages.zh} 页 / 英文 ${r.pages.en} 页${r.fitLevel.zh || r.fitLevel.en ? '，已自动缩排以控制页数' : ''}）`);
@@ -84,6 +95,7 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
         {warnings.map((w) => <div key={w} className="notice warn">⚠ {w}</div>)}
         {busy && <div className="notice">{busy}</div>}
         {done && <div className="notice ok">✓ {done}</div>}
+        {pdfs.length > 0 && <div className="row" data-testid="export-pdf-share">{pdfs.map((f) => <button key={f.name} onClick={() => sharePdf(f.name, f.bytes)}>📤 {/CN/.test(f.name) ? '中文' : '英文'} PDF（保存 / 分享）</button>)}</div>}
         {err && <pre className="notice error">{err}</pre>}
         <div className="row end">{!inline && <button onClick={onClose}>取消</button>}<button className="primary big" disabled={!!busy} onClick={run}>⬇ 下载 zip（{4 + kitNames.length} 个文件）</button></div>
     </div>
