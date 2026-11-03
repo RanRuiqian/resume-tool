@@ -11,6 +11,7 @@ import { coverage, stripAuthorList } from './evidence';
 import { fixedSummaryItem, fixedSummaryNotes, fixedSummaryText } from './fixedSummary';
 import { fitContent, pageBudget, type ContentOptions } from './contentStrategy';
 import { sourceText } from './provenance';
+import { isUnjudged } from '../joint/normalize';
 import { decisionModel, planWithAi, type AiSelectionResult } from './aiPlanner';
 import { createEvidenceReport, refreshReportSelection } from '../joint/report';
 import { academicHighlight, courseSelectionSnapshot, profileForGeneration } from '../privacy/resume';
@@ -146,7 +147,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
     job: { title: job.title, company: job.company?.full || job.company?.short || '', responsibilities: job.responsibilities ?? [], mustHave: job.mustHave, niceToHave: job.niceToHave, keywords: job.keywords },
     candidate: { education, fixedSummary },
     requirements: decision.requirements.filter((r) => r.assessment === 'direct' || r.assessment === 'transferable').map(({ text, tier, assessment, evidenceIds }) => ({ text, tier, assessment, evidenceIds })),
-    gaps: decision.requirements.filter((r) => r.assessment === 'gap' || r.assessment === 'learning').map((r) => r.text),
+    gaps: decision.requirements.filter((r) => (r.assessment === 'gap' || r.assessment === 'learning') && !isUnjudged(r)).map((r) => r.text),
     targets: job.joint?.targets.map((t) => ({ name: t.name, title: t.job.title })), layout: pageBudget(targetPages, primary, options.template, p), facts,
   };
   onStep?.('2/3 正在撰写：AI 按岗位同时撰写中英文简历、简介与求职方向…');

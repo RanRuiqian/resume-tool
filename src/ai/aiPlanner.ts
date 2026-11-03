@@ -9,6 +9,7 @@ import { inferWorkKind } from '../render/classify';
 import { isProfessionalWork, isCampusWork, pageBudget, type ContentCategory } from './contentStrategy';
 import { jobRequirements } from '../joint/jobs';
 import { validateJointReasoning } from '../joint/validation';
+import { isUnjudged, normalizeJointOutput, UNJUDGED } from '../joint/normalize';
 import type { JointSynthesis, RequirementAssessment } from '../types/joint';
 import { printableCourse, profileForGeneration } from '../privacy/resume';
 
@@ -291,7 +292,7 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     zh: String(g?.zh ?? '').trim(), en: String(g?.en ?? '').trim(),
     ids: (Array.isArray(g?.skillIds) ? g.skillIds : []).filter((id): id is string => typeof id === 'string' && skills.includes(id) && !grouped.has(id) && !!grouped.add(id)),
   })).filter((g) => (g.zh || g.en) && g.ids.length);
-  return { skillGroups, courses, jointSummary: job.joint ? raw.jointSummary : undefined, plan, reserves, omissions, requirements, gaps: requirements.filter((r) => r.assessment === 'gap' || r.assessment === 'learning').map((r) => r.text).slice(0, 8),
+  return { skillGroups, courses, jointSummary: job.joint ? raw.jointSummary : undefined, plan, reserves, omissions, requirements, gaps: requirements.filter((r) => (r.assessment === 'gap' || r.assessment === 'learning') && !isUnjudged(r)).map((r) => r.text).slice(0, 8),
     matchScore: total ? Math.round(100 * supported / total) : 0,
     summaryFocus: String(raw.summaryFocus ?? '').trim(), tradeoffs: String(raw.tradeoffs ?? '').trim(), chosenReasons };
 }
@@ -335,7 +336,7 @@ export async function planWithAi(s: Settings, p: ProfileDoc, job: JobParse, lang
     { role: 'user', content: `${AI_PLAN_PROMPT}\n\n${JSON.stringify(brief)}` }];
   const options = { model: decisionModel(s), thinking: 'enabled' as const, timeoutMs: job.joint ? 360_000 : 240_000, maxTokens: job.joint ? 32_000 : 16_000 };
   onStep?.('1/3 正在选材：AI 阅读岗位与全部有效经历，规划简历重点；深度思考可能需要数分钟…');
-  const original = await chatJson<AiSelectionOutput>(s, messages, options);
+  const original = normalizeJointOutput(await chatJson<AiSelectionOutput>(s, messages, options), job);
   try { return validateSelection(original, p, job, lang, targetPages, brief); }
   catch (error) {
     if (!(error instanceof AiSelectionValidationError)) throw error;
@@ -349,17 +350,20 @@ export async function planWithAi(s: Settings, p: ProfileDoc, job: JobParse, lang
       })}` }];
     try {
       const repair = await chatJson<unknown>(s, repairMessages, options);
-      const fixed = applyRepairs(original, repair, allowedPaths, brief.requirementRefs?.map((r) => r.id));
+      const fixed = normalizeJointOutput(applyRepairs(original, repair, allowedPaths, brief.requirementRefs?.map((r) => r.id)), job);
       const result = validateSelection(fixed, p, job, lang, targetPages, brief);
       onStep?.('1/3 选材局部修复完成，整个方案已重新通过事实来源与篇幅校验');
       return result;
     } catch (repairError) {
       // 2026-11：问题只在「岗位要求匹配说明」（不进入简历正文）时，去掉这几条说明继续生成，而不是让整份简历失败。
       // 编造 / 不存在的证据 ID（invalid_id）仍然报错；这里只放过「类别不一致 / 缺少说明」这类不影响正文的问题。
-      const onlyRequirements = !job.joint && error.issues.every((x) => /^\/requirements\/\d+$/.test(x.path) && x.code !== 'invalid_id');
+      // 联合岗位：不能删掉要求（会变成“遗漏”），改为把有问题的几条标成【未判断】，同样不影响简历正文。invalid_id 也一样处理——这里只是匹配说明。
+      const onlyRequirements = error.issues.every((x) => /^\/requirements\/\d+$/.test(x.path) && (job.joint || x.code !== 'invalid_id'));
       if (onlyRequirements) {
         const bad = new Set(error.issues.map((x) => Number(x.path.split('/')[2])));
-        const kept = (original.requirements ?? []).filter((_, i) => !bad.has(i));
+        const kept = job.joint
+          ? (original.requirements ?? []).map((r, i) => bad.has(i) ? { ...r, assessment: 'gap' as const, evidenceIds: [], reason: `${UNJUDGED}AI 对这条要求的证据引用无法核实，已不作判断，请自行核对` } : r)
+          : (original.requirements ?? []).filter((_, i) => !bad.has(i));
         try {
           const result = validateSelection({ ...original, requirements: kept }, p, job, lang, targetPages, brief);
           onStep?.(`1/3 有 ${bad.size} 条岗位要求的匹配说明无法核实，已从说明中省略；简历选材不受影响`);
