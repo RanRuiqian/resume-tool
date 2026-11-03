@@ -89,7 +89,7 @@ describe('v1.12 AI-owned semantic selection and provenance', () => {
     api.mockRejectedValueOnce(new Error('translation temporarily offline'));
     const r = await generateResume(S, library(), J, 'zh', 1);
     expect(r.generatedBy).toBe('ai');
-    expect(r.selection.projects).toEqual(['proj-hyd']);
+    expect(r.selection.projects[0]).toBe('proj-hyd'); // 2026-11：版面有空位时会按相关度补入程序备选项目
     expect(r.selection.work).toEqual(['work-1']);
     expect(r.items.some((it) => it.sourceId === 'proj-hyd-b1' && it.zh.includes('AMESim'))).toBe(true);
     expect(r.selection.work).not.toContain('work-empty');
