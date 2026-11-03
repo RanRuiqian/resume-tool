@@ -98,3 +98,16 @@ describe('公版简历的求职信用占位符', () => {
     expect(mock.mock.calls[0][1][1].content as string).toContain('【公司名称】');
   });
 });
+
+describe('2026-11-03 第三轮（ABB 实测）', () => {
+  it('「这训练了我用仿真支持设计验证的方法」是概括前文，不算无法追溯', () => {
+    expect(v('这训练了我用仿真支持设计验证的方法。', 'zh').ok).toBe(true);
+  });
+  it('备考方向的岗位原文最多 2 条、无「。；」、过长截断', async () => {
+    const j = structuredClone(J.A);
+    j.mustHave = [{ zh: '机械工程或相关专业本科及以上学历；根据客户需求设计发电机外形尺寸、电机接线图以及客户所需技术文件，并保证及时性和高质量，同时负责与生产、采购及供应商沟通相关技术问题。', en: '' }, { zh: '熟练使用工程设计软件（如 CAD、NX 等）。', en: '' }, { zh: '英语流利。', en: '' }];
+    mock.mockResolvedValue({ items: [{ area: { zh: '设计', en: 'Design' }, why: { zh: '核心。', en: 'Core.' }, refs: ['R1', 'R2', 'R3'] }] });
+    const q = await generatePrep(S, j);
+    expect(q[0].source).not.toMatch(/。；/); expect(q[0].source).toMatch(/…/); expect(q[0].source).toContain('等 3 条');
+  });
+});

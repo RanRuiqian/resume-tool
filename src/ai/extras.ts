@@ -227,7 +227,8 @@ ${lines ? '' : `\n岗位原文：\n${job.rawText}`}` }], { model: decisionModel(
   for (const x of out.items ?? []) {
     if (!x?.area || !(x.area.zh || x.area.en)) continue;
     const hit = (x.refs ?? []).map((r) => byRef.get(String(r).trim().toLowerCase())).filter((r): r is NonNullable<typeof r> => !!r);
-    const src = hit.length ? hit.map((r) => r.text.zh.trim() || r.text.en.trim()).join('；') : (x.source && quotedFrom(x.source, sources) ? x.source.trim() : '');
+    // 岗位原文：最多显示 2 条要求，每条去掉句末标点、过长截断，避免「。；」和整段 JD 堆在一起
+    const src = hit.length ? [...new Set(hit.map((r) => (r.text.zh.trim() || r.text.en.trim()).replace(/[。；;，,.\s]+$/u, '')))].slice(0, 2).map((t) => (t.length > 60 ? `${t.slice(0, 60)}…` : t)).join('；') + (hit.length > 2 ? ` 等 ${hit.length} 条` : '') : (x.source && quotedFrom(x.source, sources) ? x.source.trim() : '');
     if (!src) continue;
     const item: PrepDirection = { area: { zh: x.area.zh ?? '', en: x.area.en ?? '' }, why: { zh: x.why?.zh ?? '', en: x.why?.en ?? '' }, source: src, points: (x.points ?? []).filter((p) => p && (p.zh || p.en)).slice(0, 4).map((p) => ({ zh: p.zh ?? '', en: p.en ?? '' })) };
     if (prepClaims(item)) continue;
