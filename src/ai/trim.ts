@@ -90,7 +90,7 @@ export interface PageMeasure { zh: { pages: number }; en: { pages: number } }
  * 按目标页数删减：先把逐步删减的各个状态都算出来（纯本地、很快），再用实际 PDF 页数二分查找
  * 「刚好放得下」所需的最少步数，避免删过头。measure 不可用时退回本地排版估算。
  */
-export async function trimToPages(p: ProfileDoc, template: TemplateConfig, r: ResumeDoc, measure?: (r: ResumeDoc) => Promise<PageMeasure | null>, refillMeasures = 10): Promise<ResumeDoc> {
+export async function trimToPages(p: ProfileDoc, template: TemplateConfig, r: ResumeDoc, measure?: (r: ResumeDoc) => Promise<PageMeasure | null>, refillMeasures = 24): Promise<ResumeDoc> {
   const target = template.page.targetPages || 1;
   const states: TrimStep[] = [{ resume: r, label: '' }];
   for (let i = 0; i < 80; i++) { const s = nextTrim(p, states[states.length - 1].resume); if (!s) break; states.push(s); }
@@ -115,7 +115,11 @@ export async function trimToPages(p: ProfileDoc, template: TemplateConfig, r: Re
   let cur = states[hi].resume;
   const restored = new Set<number>();
   let budget = refillMeasures;
-  for (let j = hi - 1; j >= 1 && budget > 0; j--) {
+  // 2026-11（负责人实测：删了 21 项后只剩 2 个项目、页面只有七成满）：先试着加回项目 / 要点（价值高），再试奖项、技能、课程。
+  const content = (j: number) => /整段|要点/.test(states[j].label);
+  const order = Array.from({ length: Math.max(0, hi - 1) }, (_, i) => hi - 1 - i).sort((a, b) => Number(!content(a)) - Number(!content(b)) || b - a);
+  for (const j of order) {
+    if (budget <= 0) break;
     const undo = states[j].undo; if (!undo) continue;
     const cand = undo(cur); if (cand === cur) continue;
     budget--;
