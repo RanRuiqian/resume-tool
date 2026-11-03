@@ -3,12 +3,13 @@ import { other } from '../locale/text';
 import { isOfficialDeepSeek } from '../storage/defaults';
 import { analyzeJd, extractEvidence, rankEvidence } from './evidence';
 import { chatJson, type ChatMsg } from './provider';
-import { AI_PLAN_PROMPT, AI_PLAN_REPAIR_PROMPT, SYS_FACTS } from './prompts';
+import { AI_PLAN_PROMPT, AI_PLAN_REPAIR_PROMPT, GENERIC_PLAN_NOTE, SYS_FACTS } from './prompts';
 import type { PlanEntry, ResumePlan } from './relevance';
 import { inferWorkKind } from '../render/classify';
 import { isProfessionalWork, isCampusWork, pageBudget, type ContentCategory } from './contentStrategy';
 import { jobRequirements } from '../joint/jobs';
 import { validateJointReasoning } from '../joint/validation';
+import { isUnjudged, normalizeJointOutput, UNJUDGED } from '../joint/normalize';
 import type { JointSynthesis, RequirementAssessment } from '../types/joint';
 import { printableCourse, profileForGeneration } from '../privacy/resume';
 
@@ -28,6 +29,7 @@ export interface AiSelectionOutput {
   awards?: string[];
   summaryFocus?: string;
   tradeoffs?: string;
+  skillGroups?: { zh?: string; en?: string; skillIds?: string[] }[];
 }
 
 export interface AiSelectionResult {
@@ -42,6 +44,7 @@ export interface AiSelectionResult {
   summaryFocus: string;
   tradeoffs: string;
   chosenReasons: string[];
+  skillGroups: { zh: string; en: string; ids: string[] }[];
 }
 
 const textOf = (p: { zh?: string; en?: string }, lang: Lang) => (p[lang] || p[other(lang)] || '').trim();
@@ -87,7 +90,7 @@ export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetP
     facts: byEntry(x.id, 'education').filter((f) => !unverifiedGpa(`${f.text} ${f.alternateText}`)),
   }));
   const skills = p.skills.filter((x) => x.enabled).map((x) => ({ id: x.id, name: textOf(x.name, lang),
-    category: textOf(x.category ?? {}, lang), proficiency: x.proficiency ?? '', usedIn: x.usedIn ?? [], scenarios: x.scenarios ?? '' })).filter((x) => x.name);
+    category: textOf(x.category ?? {}, lang), proficiency: x.proficiency ?? '', level: x.level ?? '', usedIn: x.usedIn ?? [], scenarios: x.scenarios ?? '' })).filter((x) => x.name);
   const named = (a: ProfileDoc['certificates']) => a.filter((x) => x.enabled).map((x) => ({ id: x.id, name: textOf(x.name, lang), issuer: textOf(x.issuer, lang), date: x.date })).filter((x) => x.name);
   const certificates = named(p.certificates), awards = named(p.awards);
   const courses = (p.courses ?? []).filter((c) => printableCourse(p, c)).map((c) => ({ id: c.id, educationId: c.educationId, name: c.name, code: c.code, term: c.term, aliases: c.aliases ?? [],
@@ -107,7 +110,7 @@ export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetP
   return {
     targets: job.joint?.targets.map((t) => ({ roleId: t.roleId, revision: t.revision, name: t.name, job: { id: t.job.id, title: t.job.title, rawText: t.job.rawText, company: t.job.company, mustHave: t.job.mustHave, responsibilities: t.job.responsibilities ?? [], niceToHave: t.job.niceToHave, keywords: t.job.keywords } })),
     requirementRefs: job.joint ? jobRequirements(job) : undefined,
-    job: { title: job.title, rawText: job.rawText, responsibilities: job.responsibilities ?? [], mustHave: job.mustHave,
+    job: { title: job.title, rawText: job.rawText, generic: job.generic ?? false, responsibilities: job.responsibilities ?? [], mustHave: job.mustHave,
       niceToHave: job.niceToHave, keywords: job.keywords },
     candidate: { work, projects, education, courses,
       skills, certificates, awards },
@@ -230,19 +233,31 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
       || !['direct', 'transferable', 'learning', 'gap'].includes(r.assessment)) {
       issue(path, 'format', `${label}：岗位匹配判断格式不正确`, undefined, text); continue;
     }
-    const ids = idArray(r.evidenceIds, path, `${label}的证据`);
+    let ids = idArray(r.evidenceIds, path, `${label}的证据`);
     const invalid = ids.filter((id) => !proof.has(id));
+    // 2026-11：岗位要求的「匹配类型」与证据类别不一致时自动纠正，不再让整份简历生成失败。
+    // 这些判断只用于匹配说明，不进入简历正文；编造 / 不存在的 ID 仍按原规则报错并局部修复。
+    let assessment = r.assessment as RequirementDecision['assessment'];
+    let reason = typeof r.reason === 'string' ? r.reason : undefined;
+    if (!invalid.length) {
+      const courseIds = ids.filter((id) => allowed.courses.includes(id)), practical = ids.filter((id) => !allowed.courses.includes(id));
+      if (assessment === 'learning' && practical.length) { assessment = 'transferable'; ids = practical; }
+      else if ((assessment === 'direct' || assessment === 'transferable') && courseIds.length) { if (practical.length) ids = practical; else assessment = 'learning'; }
+      else if (assessment === 'gap' && ids.length) { assessment = practical.length ? 'transferable' : 'learning'; ids = practical.length ? practical : courseIds; }
+      else if (assessment !== 'gap' && !ids.length) assessment = 'gap';
+      if (assessment === 'learning' && !reason?.trim()) reason = '课程知识支持；实际操作经验仍需补充';
+    }
     if (invalid.length) {
       const details = invalid.map((id) => `${id}${allEntryIds.has(id) ? '（这是经历分组 ID，请引用其具体事实 sourceId）' : '（不存在或未提供的证据 ID）'}`);
       issue(path, 'invalid_id', `${label} 引用了无效资料证据：${details.join('、')}`, invalid, text);
     }
-    if ((r.assessment === 'gap' && ids.length) || (r.assessment !== 'gap' && !ids.length))
-      issue(path, 'inconsistent', `${label}：匹配结论 ${r.assessment} 与证据不一致`, ids, text);
+    if ((assessment === 'gap' && ids.length) || (assessment !== 'gap' && !ids.length))
+      issue(path, 'inconsistent', `${label}：匹配结论 ${assessment} 与证据不一致`, ids, text);
     const courseProof = ids.filter((id) => allowed.courses.includes(id));
-    if (courseProof.length && r.assessment !== 'learning') issue(path, 'inconsistent', `${label}：课程不能当作直接/可迁移实操证据，请以 learning 判断知识支持，实践要求仍需独立证据`, courseProof, text);
-    if (r.assessment === 'learning' && (!courseProof.length || ids.some((id) => !allowed.courses.includes(id)))) issue(path, 'inconsistent', `${label}：learning 只允许引用实际课程 ID；项目/工作事实应独立判断`, ids, text);
-    if (r.assessment === 'learning' && (typeof r.reason !== 'string' || !r.reason.trim())) issue(path, 'format', `${label}：请解释课程内容与能力的语义关联及不能证明的实践边界`, ids, text);
-    requirements.push({ text, tier: r.tier, assessment: r.assessment, evidenceIds: ids, ...(r.requirementId ? { requirementId: r.requirementId } : {}), ...(typeof r.reason === 'string' ? { reason: r.reason } : {}) });
+    if (courseProof.length && assessment !== 'learning') issue(path, 'inconsistent', `${label}：课程不能当作直接/可迁移实操证据，请以 learning 判断知识支持，实践要求仍需独立证据`, courseProof, text);
+    if (assessment === 'learning' && (!courseProof.length || ids.some((id) => !allowed.courses.includes(id)))) issue(path, 'inconsistent', `${label}：learning 只允许引用实际课程 ID；项目/工作事实应独立判断`, ids, text);
+    if (assessment === 'learning' && (!reason?.trim())) issue(path, 'format', `${label}：请解释课程内容与能力的语义关联及不能证明的实践边界`, ids, text);
+    requirements.push({ text, tier: r.tier, assessment: assessment, evidenceIds: ids, ...(r.requirementId ? { requirementId: r.requirementId } : {}), ...(reason !== undefined ? { reason } : {}) });
   }
   if (Array.isArray(raw.requirements) && !raw.requirements.length) issue('/requirements', 'format', 'AI 未分析任何岗位要求');
   issues.push(...validateJointReasoning(job, requirements, raw.jointSummary));
@@ -271,7 +286,13 @@ function validateSelection(raw: AiSelectionOutput, p: ProfileDoc, job: JobParse,
     .map((e) => ({ id: e.id, reason: 'AI 比较完整资料和岗位要求后认为优先级较低（母库保留）' }));
   const plan: ResumePlan = { entries, skills, certificates, awards, caps: { core: targetPages > 1 ? 4 : 3, minor: targetPages > 1 ? 2 : 1 },
     budgets, dropped, model, ranked };
-  return { courses, jointSummary: job.joint ? raw.jointSummary : undefined, plan, reserves, omissions, requirements, gaps: requirements.filter((r) => r.assessment === 'gap' || r.assessment === 'learning').map((r) => r.text).slice(0, 8),
+  // 技能分组只影响显示，不作为校验失败条件：无效 ID、重复或空组直接丢弃。
+  const grouped = new Set<string>();
+  const skillGroups = (Array.isArray(raw.skillGroups) ? raw.skillGroups : []).map((g) => ({
+    zh: String(g?.zh ?? '').trim(), en: String(g?.en ?? '').trim(),
+    ids: (Array.isArray(g?.skillIds) ? g.skillIds : []).filter((id): id is string => typeof id === 'string' && skills.includes(id) && !grouped.has(id) && !!grouped.add(id)),
+  })).filter((g) => (g.zh || g.en) && g.ids.length);
+  return { skillGroups, courses, jointSummary: job.joint ? raw.jointSummary : undefined, plan, reserves, omissions, requirements, gaps: requirements.filter((r) => (r.assessment === 'gap' || r.assessment === 'learning') && !isUnjudged(r)).map((r) => r.text).slice(0, 8),
     matchScore: total ? Math.round(100 * supported / total) : 0,
     summaryFocus: String(raw.summaryFocus ?? '').trim(), tradeoffs: String(raw.tradeoffs ?? '').trim(), chosenReasons };
 }
@@ -312,10 +333,10 @@ function applyRepairs(original: AiSelectionOutput, response: unknown, allowedPat
 export async function planWithAi(s: Settings, p: ProfileDoc, job: JobParse, lang: Lang, targetPages: number, onStep?: (m: string) => void, template?: TemplateConfig): Promise<AiSelectionResult> {
   const brief = selectionBrief(p, job, lang, targetPages, template);
   const messages: ChatMsg[] = [{ role: 'system', content: SYS_FACTS },
-    { role: 'user', content: `${AI_PLAN_PROMPT}\n\n${JSON.stringify(brief)}` }];
-  const options = { model: decisionModel(s), thinking: 'enabled' as const, timeoutMs: 240_000, maxTokens: 16_000 };
+    { role: 'user', content: `${AI_PLAN_PROMPT}${job.generic ? `\n\n${GENERIC_PLAN_NOTE}` : ''}\n\n${JSON.stringify(brief)}` }];
+  const options = { model: decisionModel(s), thinking: 'enabled' as const, timeoutMs: job.joint ? 900_000 : 360_000, maxTokens: job.joint ? 32_000 : 16_000 };
   onStep?.('1/3 正在选材：AI 阅读岗位与全部有效经历，规划简历重点；深度思考可能需要数分钟…');
-  const original = await chatJson<AiSelectionOutput>(s, messages, options);
+  const original = normalizeJointOutput(await chatJson<AiSelectionOutput>(s, messages, options), job);
   try { return validateSelection(original, p, job, lang, targetPages, brief); }
   catch (error) {
     if (!(error instanceof AiSelectionValidationError)) throw error;
@@ -329,11 +350,26 @@ export async function planWithAi(s: Settings, p: ProfileDoc, job: JobParse, lang
       })}` }];
     try {
       const repair = await chatJson<unknown>(s, repairMessages, options);
-      const fixed = applyRepairs(original, repair, allowedPaths, brief.requirementRefs?.map((r) => r.id));
+      const fixed = normalizeJointOutput(applyRepairs(original, repair, allowedPaths, brief.requirementRefs?.map((r) => r.id)), job);
       const result = validateSelection(fixed, p, job, lang, targetPages, brief);
       onStep?.('1/3 选材局部修复完成，整个方案已重新通过事实来源与篇幅校验');
       return result;
     } catch (repairError) {
+      // 2026-11：问题只在「岗位要求匹配说明」（不进入简历正文）时，去掉这几条说明继续生成，而不是让整份简历失败。
+      // 编造 / 不存在的证据 ID（invalid_id）仍然报错；这里只放过「类别不一致 / 缺少说明」这类不影响正文的问题。
+      // 联合岗位：不能删掉要求（会变成“遗漏”），改为把有问题的几条标成【未判断】，同样不影响简历正文。invalid_id 也一样处理——这里只是匹配说明。
+      const onlyRequirements = error.issues.every((x) => /^\/requirements\/\d+$/.test(x.path) && (job.joint || x.code !== 'invalid_id'));
+      if (onlyRequirements) {
+        const bad = new Set(error.issues.map((x) => Number(x.path.split('/')[2])));
+        const kept = job.joint
+          ? (original.requirements ?? []).map((r, i) => bad.has(i) ? { ...r, assessment: 'gap' as const, evidenceIds: [], reason: `${UNJUDGED}AI 对这条要求的证据引用无法核实，已不作判断，请自行核对` } : r)
+          : (original.requirements ?? []).filter((_, i) => !bad.has(i));
+        try {
+          const result = validateSelection({ ...original, requirements: kept }, p, job, lang, targetPages, brief);
+          onStep?.(`1/3 有 ${bad.size} 条岗位要求的匹配说明无法核实，已从说明中省略；简历选材不受影响`);
+          return { ...result, tradeoffs: [result.tradeoffs, `${bad.size} 条岗位要求的匹配说明引用不一致，已省略（不影响简历正文）`].filter(Boolean).join('；') };
+        } catch { /* 仍不通过则按原逻辑报错 */ }
+      }
       throw new Error(`AI 选材局部修复失败，未采用该方案。首次问题：${error.message}。修复结果：${(repairError as Error).message}`);
     }
   }

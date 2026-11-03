@@ -1,10 +1,12 @@
 import type { Lang, TemplateConfig } from '../types';
+import { withLangOverrides } from '../render/langOverrides';
 
 export const MAX_FIT_LEVEL = 6;
 /** 自动适配页数：逐级收紧字号、行高、间距与页边距（每级约 4–6%） */
 export function fitTemplate(tpl: TemplateConfig, lang: Lang, level: number, preserveType = false): TemplateConfig {
   if (level <= 0) return tpl;
-  const t = structuredClone(tpl);
+  const t = structuredClone(withLangOverrides(tpl, lang));      // 先折进本语言自己的页边距 / 间距，再在其基础上收紧
+  delete t.locales[lang].marginMm; delete t.locales[lang].spacing;   // 已折进去，避免 buildLayout 再次用覆盖值盖掉收紧结果
   const ty = t.locales[lang].typography;
   const minBody = t.page.minBodyPt ?? 9; // v1.10：正文字号下限 9pt，放不下时提示删减低相关内容，而不是继续缩小
   ty.bodySizePt = preserveType ? ty.bodySizePt : Math.max(Math.min(minBody, ty.bodySizePt), ty.bodySizePt - 0.25 * level);

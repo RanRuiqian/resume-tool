@@ -1,10 +1,17 @@
 import 'fake-indexeddb/auto';
 import Dexie from 'dexie';
+import { jobs } from './helpers/v110Fixture';
 import { describe, expect, it } from 'vitest';
 import { ResumeDB, snapshotProfile } from '../src/storage/db';
 import { seedDemo } from '../src/storage/demo';
 import { DB_DEMO, DB_REAL, isDemoSearch } from '../src/storage/mode';
 import { normalizeProfile, exportProfileJson } from '../src/storage/profileIO';
+import { parseStructuredLibrary } from '../src/ai/structuredImport';
+import { buildImportPlan, applyImportPlan } from '../src/ai/importPlan';
+import { persistProfile, profileEpoch } from '../src/storage/clearProfile';
+import { exportLightJson, readArchive } from '../src/tracker/backup';
+import { profileForGeneration } from '../src/privacy/resume';
+import { mockNumberedLibrary } from './fixtures/numberedLibrary';
 
 /** 模拟的个人资料（非真实用户） */
 const mockUser = () => normalizeProfile({
@@ -239,4 +246,64 @@ it('v5 → v6 only adds empty joint tables; existing profile, credentials, histo
   old.close(); const current = new ResumeDB(name); await current.open(); expect(current.verno).toBe(6);
   for (const [name, rows] of Object.entries(before)) expect(await current.table(name).toArray()).toEqual(rows);
   expect(await current.jdGroups.count()).toBe(0); expect(await current.resumeVersions.count()).toBe(0); await current.delete();
+});
+
+it('numbered library survives isolated DB reopen and private backup with provenance, without touching unrelated state', async () => {
+  const name = 'mock-numbered-library-persistence', d = new ResumeDB(name), raw = mockNumberedLibrary(), r = parseStructuredLibrary(raw)!;
+  const settings = { id: 'settings', apiKey: 'FAKE-ISOLATED-ONLY', model: 'mock-model', uiLang: 'en', untouched: true };
+  const application = { id: 'mock-application', company: '模拟企业', payload: ['immutable', 1] };
+  await d.table('settings').put(settings); await d.table('applications').put(application);
+  const base = normalizeProfile({}), plan = buildImportPlan(base, r.profile);
+  const doc = applyImportPlan(base, r.profile, plan, { id: 'mock-raw', at: '2026-01-01', files: ['mock.txt'], text: raw, integrity: r.integrity });
+  await persistProfile(d, doc, await profileEpoch(d)); d.close();
+  const reloaded = new ResumeDB(name), saved = (await reloaded.profile.get('me'))!.doc;
+  expect(saved).toEqual(doc); expect(saved.courses).toHaveLength(82); expect(saved.sourceTexts![0].integrity!.complete).toBe(true);
+  expect(await reloaded.table('settings').get('settings')).toEqual(settings);
+  expect(await reloaded.table('applications').get('mock-application')).toEqual(application);
+  expect(normalizeProfile(JSON.parse(exportProfileJson(saved)))).toEqual(saved);
+  const json = await exportLightJson(reloaded), check = await readArchive(reloaded, json);
+  expect(check.errors).toEqual([]); expect(check.data?.profile).toEqual(saved); expect(json).not.toContain(settings.apiKey);
+  // Private raw records and import-history snapshots must not leak grades into generation/shared snapshots.
+  const repeat = applyImportPlan(saved, r.profile, buildImportPlan(saved, r.profile));
+  const copy = profileForGeneration(repeat), serialized = JSON.stringify(copy);
+  expect(serialized).not.toContain('sourceRecord'); expect(serialized).not.toContain('mergeHistory'); expect(serialized).not.toContain('sourceTexts'); expect(serialized).not.toContain('成绩遮挡');
+  expect(saved.courses!.find((c) => c.sourceRecord?.id === 'BSC-011')!.grade.raw).toBe('成绩遮挡 **');
+  await reloaded.delete();
+});
+
+it('fact ledger and grouped mappings survive private backup/reopen, remain private in snapshots and clear only with the profile', async () => {
+  const { mockFactLibrary } = await import('./fixtures/factLibrary');
+  const { clearPersonalData } = await import('../src/storage/clearProfile');
+  const r = parseStructuredLibrary(mockFactLibrary())!, base = normalizeProfile({});
+  const profile = normalizeProfile(applyImportPlan(base, r.profile, buildImportPlan(base, r.profile), { id: 'mock-facts', at: '', files: ['mock.txt'], text: mockFactLibrary(), integrity: r.integrity }));
+  const d = new ResumeDB('mock-fact-ledger-safety'); await persistProfile(d, profile, await profileEpoch(d));
+  await d.table('settings').put({ id: 'settings', apiKey: 'FAKE-LEDGER-ONLY' }); await d.table('applications').put({ id: 'mock-application', note: 'preserve' });
+  const json = await exportLightJson(d), result = await readArchive(d, json);
+  expect(result.errors).toEqual([]); expect(result.data!.profile).toEqual(profile); expect(json).not.toContain('FAKE-LEDGER-ONLY');
+  d.close(); const reload = new ResumeDB('mock-fact-ledger-safety');
+  expect((await reload.profile.get('me'))!.doc.sourceFacts).toEqual(profile.sourceFacts);
+  expect(JSON.stringify(profileForGeneration(profile))).not.toContain('sourceFacts');
+  await clearPersonalData(reload); expect((await reload.profile.get('me'))!.doc.sourceFacts).toBeUndefined();
+  expect((await reload.table('settings').get('settings')).apiKey).toBe('FAKE-LEDGER-ONLY'); expect(await reload.table('applications').count()).toBe(1); await reload.delete();
+});
+
+// 简历局部缓存随简历保存；兼容旧库，不迁移或改写个人母库。
+it('persists deselected resume edits and ordering across reload without changing unrelated state', async () => {
+  const a = new ResumeDB('resume-workspace-reload');
+  const original = mockUser();
+  await a.profile.put({ id: 'me', doc: original });
+  const job = jobs().A; await a.jobs.put(job);
+  const resume = { ...generateRules(original, job, 'zh'), id: 'local-draft', items: [], deselectedItems: [{ sourceId: 'b1', zh: '测试用户X人工编辑', en: 'Fictional edited text', syncStatus: 'pending' as const }], itemOrder: ['b1'], entrySelectionMemory: { 'projects:p1': { sourceIds: ['b1'], index: 0 } }, entryEdits: { w1: { texts: { title: { zh: '模拟人工职位', en: 'Fictional edited title' } } } } };
+  await a.resumes.put(resume);
+  await a.state.put({ id: 'unrelated-test-setting', value: 'keep' });
+  a.close();
+  const b = new ResumeDB('resume-workspace-reload');
+  try {
+    expect(await b.resumes.get('local-draft')).toEqual(resume);
+    expect((await b.profile.get('me'))?.doc).toEqual(original);
+    expect((await b.state.get('unrelated-test-setting'))?.value).toBe('keep');
+    expect(b.verno).toBe(6);
+    const archive = await readArchive(b, await exportLightJson(b));
+    expect(archive.errors).toEqual([]); expect(archive.data?.resumes).toEqual([resume]);
+  } finally { await b.delete(); }
 });

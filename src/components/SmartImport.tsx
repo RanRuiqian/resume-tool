@@ -6,7 +6,8 @@ import { importProfileDetailed, type Uncertain } from '../ai/importProfile';
 import { translateProfile } from '../ai/translate';
 import { fileToText } from '../ai/fileText';
 import { ProgressNote } from './ProgressNote';
-import { WORK_KIND_LABEL, type LocalizedText, type ProfileDoc, type SourceText, type WorkKind } from '../types';
+import { WORK_KIND_LABEL, type ImportIntegrity, type LocalizedText, type ProfileDoc, type SourceText, type WorkKind } from '../types';
+import { isStructuredLibrary } from '../ai/structuredImport';
 import { applyImportPlan, applyReplace, buildImportPlan, mergePreview, planSummary, sampleResidue, type ImportMode, type ImportPlan, type PlanAction, type PlanItem, type PlanSection } from '../ai/importPlan';
 import { normalizeProfile } from '../storage/profileIO';
 import { CRITICAL } from '../ai/sourceCheck';
@@ -30,6 +31,7 @@ const SAMPLE = normalizeProfile(structuredClone(sample));
 
 const GROUPS: { key: string; label: string; secs: PlanSection[] }[] = [
   { key: 'education', label: '教育', secs: ['education'] },
+  { key: 'courses', label: '独立课程（本科 / 硕士）', secs: ['courses'] },
   { key: 'work', label: '工作及社会经历', secs: ['work'] },
   { key: 'projects', label: '项目', secs: ['projects'] },
   { key: 'skills', label: '技能', secs: ['skills'] },
@@ -80,6 +82,7 @@ export function SmartImport() {
   const [done, setDone] = useState('');
 
   const aiText = useMemo(() => [text.trim(), ...files.filter((f) => f.status !== 'error' && f.text.trim()).map((f) => `【文件：${f.name}】\n${f.text}`)].filter(Boolean).join('\n\n'), [text, files]);
+  const structuredInput = useMemo(() => isStructuredLibrary(aiText), [aiText]);
   const upd = (id: string, f: (c: FileCard) => FileCard) => setFiles((l) => l.map((c) => (c.id === id ? f(c) : c)));
 
   const loadFile = async (f: File) => {
@@ -98,15 +101,17 @@ export function SmartImport() {
   };
 
   const run = async () => {
-    if (settings.demoMode) { setErr(L('演示模式不调用 AI。请先在「设置」连接 AI 服务。', 'Demo mode does not call AI. Connect an AI provider in Settings first.')); return; }
+    if (settings.demoMode && !structuredInput) { setErr(L('演示模式不调用 AI。请先在「设置」连接 AI 服务。', 'Demo mode does not call AI. Connect an AI provider in Settings first.')); return; }
     setErr(''); setDone(''); setRes(null); setPlan(null);
     try {
-      const r = await importProfileDetailed(settings, aiText, (i, n) => setProg({ m: n > 1 ? L(`AI 识别中（第 ${i}/${n} 段）…`, `Recognizing (part ${i}/${n})…`) : L('AI 识别中（约 10–60 秒）…', 'Recognizing…'), p: n > 1 ? (i - 1) / (n + 1) : undefined }));
-      setProg({ m: L('生成另一种语言（机翻待校对）…', 'Translating (marked machine-translated)…') });
+      const r = await importProfileDetailed(settings, aiText, (i, n) => setProg({ m: structuredInput ? L('正在本地逐条识别编号并核对完整性…', 'Checking numbered records locally…') : n > 1 ? L(`AI 识别中（第 ${i}/${n} 段）…`, `Recognizing (part ${i}/${n})…`) : L('AI 识别中（约 10–60 秒）…', 'Recognizing…'), p: n > 1 ? (i - 1) / (n + 1) : undefined }));
       let p = r.profile;
-      try { p = (await translateProfile(settings, p, p.primaryLanguage === 'zh' ? 'en' : 'zh')).profile; } catch { /* 翻译失败不影响识别结果 */ }
-      p = cleanProfile(p).profile; // 机翻后的另一语言也过一遍元信息检测
-      const src: SourceText = { id: `src-${Date.now().toString(36)}`, at: new Date().toISOString(), files: files.filter((f) => f.status !== 'error').map((f) => f.name), text: aiText };
+      if (!r.integrity) {
+        setProg({ m: L('生成另一种语言（机翻待校对）…', 'Translating (marked machine-translated)…') });
+        try { p = (await translateProfile(settings, p, p.primaryLanguage === 'zh' ? 'en' : 'zh')).profile; } catch { /* 翻译失败不影响识别结果 */ }
+        p = cleanProfile(p).profile;
+      }
+      const src: SourceText = { id: `src-${Date.now().toString(36)}`, at: new Date().toISOString(), files: files.filter((f) => f.status !== 'error').map((f) => f.name), text: aiText, ...(r.integrity ? { integrity: r.integrity } : {}) };
       setRes({ p, u: r.uncertain, src }); setPlan(buildImportPlan(profile, p, r.uncertain)); setUndo(null); setOpen({});
       setMode(hasExisting && sampleResidue(profile, SAMPLE).length ? 'replace' : 'merge');
     } catch (e) { setErr(L('识别失败：', 'Failed: ') + (e as Error).message); } finally { setProg(null); }
@@ -148,16 +153,16 @@ export function SmartImport() {
       if (it.action === 'undecided') critical.push(`${it.title}：${it.status === 'internal' ? `可能与本次识别的「${it.intoTitle}」是同一条` : it.status === 'conflict' ? '与已有条目字段冲突' : `可能与已有「${it.matchTitle}」重复`}，请选择处理方式`);
       const e = entryOf(it);
       for (const u of [...new Set([...it.uncertain, ...(((e?.uncertain as string[] | undefined) ?? []))])]) (u.startsWith(CRITICAL) ? critical : missing).push(`${it.title}：${u.startsWith(CRITICAL) ? u.slice(CRITICAL.length) : u}`);
-      if (e && ['education', 'work', 'projects'].includes(it.section) && !e.start) missing.push(`${it.title}：没有识别到开始时间`);
+      if (e && !e.sourceRecord && ['education', 'work', 'projects'].includes(it.section) && !e.start) missing.push(`${it.title}：没有识别到开始时间`);
       if (e && it.section === 'education' && typeof e.coursesInText === 'number' && e.coursesInText > ((e.courses as string[]) ?? []).length) critical.push(`${it.title}：原文约 ${e.coursesInText} 门课程，只识别到 ${((e.courses as string[]) ?? []).length} 门，可能有遗漏。完整原文会随导入一起保存，可在「原始资料记录」中检索。`);
       if (it.relatedNote) info.push(`${it.title}：${it.relatedNote}`);
       for (const n of (e?.notes as string[] | undefined) ?? []) info.push(`${it.title}（备注，不进简历）：${n}`);
     }
     for (const x of plan.otherUncertain) missing.push(`${x.field ? x.field + '：' : ''}${x.note}`);
-    info.push(L('另一种语言为机翻，已标记「机翻待校对」。', 'The other language is machine-translated.'));
+    info.push(res?.src.integrity ? L('编号母库在本地解析，不调用 AI 或自动翻译；[x] 为已审核事实。未知日期与成绩保留原文，不要求补交证明。需要译文时可另行翻译。', 'Numbered records parsed locally; unknown values preserved. Translation remains available separately.') : L('另一种语言为机翻，已标记「机翻待校对」。', 'The other language is machine-translated.'));
     return { critical, missing, info };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [p, plan]);
+  }, [p, plan, res]);
   const sum = plan ? planSummary(plan, effMode, profile) : null;
   const pending = sum?.pending ?? 0;
 
@@ -185,6 +190,7 @@ export function SmartImport() {
         </div>
         {isOpen && (
           <div className="imp-detail small" data-testid="imp-detail">
+            {e?.sourceRecord ? <div className="muted">{L('来源编号：', 'Source ID: ')}{(e.sourceRecord as { id: string }).id}<pre className="src-pre">{(e.sourceRecord as { raw: string }).raw}</pre></div> : null}
             {it.status === 'internal' && <div className="muted">🔁 {L(`与本次识别的「${it.intoTitle}」可能是同一条记录`, 'Possibly same as')}（{it.reasons?.join('、')}）</div>}
             {it.matchTitle && it.status !== 'internal' && <div className="muted">{L('对应已有：', 'Matches: ')}{it.matchTitle}{it.reasons?.length ? `（${it.reasons.join('、')}）` : ''}{it.samePoints ? L(`；${it.samePoints} 条要点已存在`, '') : ''}</div>}
             {pv ? (
@@ -197,8 +203,6 @@ export function SmartImport() {
             {it.matchId && it.newPoints.length > 0 && <div>{it.newPoints.map((x, i) => <div key={i} className="new">＋ {x}</div>)}</div>}
             {it.conflicts.map((c) => <div key={c.field} className="conflict-line">{c.label}：<span className={c.useNew ? 'old' : ''}>{c.old}</span> → <span className={c.useNew ? 'new' : 'muted'}>{c.new}</span>
               <label className="check"><input type="checkbox" checked={c.useNew} onChange={(ev) => setConflict(it.key, c.field, ev.target.checked)} /> {L('用新值覆盖', 'use new')}</label></div>)}
-            {it.conflicts.some((c) => c.oldConfirmed && c.useNew) && <label className="check uncertain"><input type="checkbox" checked={it.conflicts.every((c) => !c.oldConfirmed || !c.useNew || (c as { overrideConfirmed?: boolean }).overrideConfirmed)} onChange={(ev) => setItem(it.key, (x) => ({ ...x, conflicts: x.conflicts.map((c) => (c.oldConfirmed ? { ...c, overrideConfirmed: ev.target.checked } : c)) }))} /> {L('该字段你已确认过，仍要用新值覆盖', 'Override confirmed field')}</label>}
-            {it.action === 'replace' && it.matchConfirmed && <label className="check uncertain"><input type="checkbox" checked={!!it.overrideConfirmed} onChange={(ev) => setItem(it.key, (x) => ({ ...x, overrideConfirmed: ev.target.checked }))} /> {L('这条已有记录你确认过，仍要整条替换', 'Replace a confirmed entry anyway')}</label>}
             {it.uncertain.map((x, i) => <div key={i} className="hint-missing">• {x}</div>)}
           </div>
         )}
@@ -237,9 +241,9 @@ export function SmartImport() {
       <div className="row">
         <span className="muted small" data-testid="ai-chars">{aiText.length ? L(`共 ${aiText.length} 字将用于识别`, `${aiText.length} chars`) : ''}</span>
         <span className="spacer" />
-        <button className="primary big" data-testid="smart-run" disabled={!aiText.trim() || !!prog || notOk} onClick={run} title={L('会把上面的文字发送给外部 AI 模型', 'Sends the text to the external AI model')}>✨ {L('智能识别并填入', 'Recognize & fill')}</button>
+        <button className="primary big" data-testid="smart-run" disabled={!aiText.trim() || !!prog || notOk} onClick={run} title={structuredInput ? L('按稳定编号在本地识别，不调用外部模型', 'Parse locally by stable ID') : L('会把上面的文字发送给外部 AI 模型', 'Sends the text to the external AI model')}>✨ {L('智能识别并填入', 'Recognize & fill')}</button>
       </div>
-      {!settings.demoMode && <div className="muted small" data-testid="ai-disclosure">🔒 {L(`点击后，上面的文字（含文件提取出的文字，以及其中的姓名、联系方式、本地路径等）会发送给外部 AI 模型（${settings.baseUrl || 'DeepSeek'}）用于识别；照片、证据文件本身不会发送。`, `Clicking sends the text above to the external AI model; photos and evidence files are never sent.`)}</div>}
+      {structuredInput ? <div className="muted small" data-testid="ai-disclosure">🔒 {L('已识别编号母库：将在本地按完整编号解析，不向 AI 发送原文，不自动翻译。', 'Numbered library detected: parsed locally, with no AI request or automatic translation.')}</div> : !settings.demoMode && <div className="muted small" data-testid="ai-disclosure">🔒 {L(`点击后，上面的文字（含文件提取出的文字，以及其中的姓名、联系方式、本地路径等）会发送给外部 AI 模型（${settings.baseUrl || 'DeepSeek'}）用于识别；照片、证据文件本身不会发送。`, `Clicking sends the text above to the external AI model; photos and evidence files are never sent.`)}</div>}
       {prog && <ProgressNote msg={prog.m} pct={prog.p} />}
       {err && <div className="notice error">{err}</div>}
       {done && <div className="notice ok" data-testid="import-done">✓ {done}{undo && <button className="link" data-testid="import-rollback" onClick={rollback}>{L('回滚本次导入', 'Roll back')}</button>}</div>}
@@ -247,9 +251,12 @@ export function SmartImport() {
         <details className="small source-texts" data-testid="source-texts"><summary>{L(`原始资料记录（${profile.sourceTexts!.length} 份，完整保存，不进简历）`, `Saved source texts (${profile.sourceTexts!.length})`)}</summary>
           {profile.sourceTexts!.map((s) => <details key={s.id}><summary>{s.at.slice(0, 16).replace('T', ' ')} · {s.files.join('、') || L('粘贴文字', 'pasted')} · {s.text.length} 字</summary><pre className="src-pre">{s.text}</pre></details>)}
         </details>)}
+      {!res && profile.sourceFacts?.length ? <FactLedger profile={profile} /> : null}
       {res && plan && p && sum && (
         <div className="review" data-testid="import-review">
           <h4>{L('识别结果预览（尚未写入资料）', 'Preview — nothing saved yet')}</h4>
+          {res.src.integrity && <IntegrityPreview report={res.src.integrity} />}
+          {p.sourceFacts?.length ? <FactLedger profile={p} /> : null}
           <div className="notice-levels">
             {notices.critical.length > 0 && <details open className="lv lv-critical" data-testid="lv-critical"><summary>❗ {L(`需要你决定 / 重要问题（${notices.critical.length}）`, `Needs decision (${notices.critical.length})`)}</summary><ul>{notices.critical.map((x, i) => <li key={i}>{x}</li>)}</ul></details>}
             {notices.missing.length > 0 && <details className="lv lv-missing" data-testid="lv-missing"><summary>⚠ {L(`缺失信息 / 待核对（${notices.missing.length}）`, `Missing / to check (${notices.missing.length})`)}</summary><ul>{notices.missing.map((x, i) => <li key={i}>{x}</li>)}</ul></details>}
@@ -282,7 +289,7 @@ export function SmartImport() {
               <span className="small" data-testid="import-summary">{L('将', 'Will')} {L('新增', 'add')} <b>{sum.add}</b> · {L('合并', 'merge')} <b>{sum.merge}</b> · {L('跳过', 'skip')} <b>{sum.skip}</b> · {effMode === 'replace' ? <>{L('移除现有', 'remove')} <b>{sum.removed}</b></> : <>{L('覆盖', 'overwrite')} <b>{sum.overwrite}</b></>}{pending > 0 && <span className="pending"> · {L('待决定', 'pending')} <b>{pending}</b></span>}</span>
               <span className="spacer" />
               <button onClick={() => { setRes(null); setPlan(null); }}>{L('取消', 'Cancel')}</button>
-              <button className={effMode === 'replace' ? 'danger' : 'primary'} data-testid="import-confirm" disabled={pending > 0} title={pending > 0 ? L('还有条目未选择处理方式', 'Some items need a decision') : ''} onClick={apply}>
+              <button className={effMode === 'replace' ? 'danger' : 'primary'} data-testid="import-confirm" disabled={pending > 0 || res.src.integrity?.complete === false} title={res.src.integrity?.complete === false ? L('编号或栏目尚未完整识别，请先处理完整性报告', 'Resolve the integrity report first') : pending > 0 ? L('还有条目未选择处理方式', 'Some items need a decision') : ''} onClick={apply}>
                 {effMode === 'replace' ? L('确认替换现有资料', 'Confirm replace') : hasExisting ? L('确认合并导入', 'Confirm merge') : L('确认填入资料', 'Fill profile')}</button>
             </div>
             {pending > 0 && <div className="pending small">{L(`还有 ${pending} 条可能重复 / 有冲突，请先在上方为每条选择处理方式`, `${pending} items need a decision`)}</div>}
@@ -291,4 +298,21 @@ export function SmartImport() {
       )}
     </div>
   );
+}
+
+function IntegrityPreview({ report }: { report: ImportIntegrity }) {
+  const L = useL();
+  return <div className={`notice ${report.complete ? 'ok' : 'error'}`} data-testid="import-integrity">
+    <b>{report.complete ? L('编号与关联完整性检查通过', 'Numbered records and references checked') : L('尚未完整识别，未写入资料', 'Incomplete — nothing saved')}</b>
+    <p className="small">{L('仅核对当前文本的编号与映射，不代表外部原件完整或事实已经由软件验证。', 'Checks IDs and mapping in this text; does not certify the original document or its facts.')}</p>
+    {report.groups.map((g) => <div key={g.label} data-testid="integrity-group">{g.label}：{L('原文', 'Source')} {g.declared ?? g.expected.length} / {L('已识别', 'Recognized')} {g.recognized.length} / {L('遗漏', 'Missing')} {Math.max(g.missing.length, (g.declared ?? 0) - g.recognized.length)}{g.missing.length > 0 && `（${g.missing.join('、')}）`}</div>)}
+    {report.issues.length > 0 && <ul>{report.issues.map((x, i) => <li key={i}>{x.id}：{x.reason}</li>)}</ul>}
+  </div>;
+}
+
+function FactLedger({ profile }: { profile: ProfileDoc }) {
+  const L = useL();
+  return <details className="small source-texts" data-testid="source-fact-ledger"><summary>{L('逐条事实来源', 'Fact provenance')}（{profile.sourceFacts?.length ?? 0}）</summary>
+    {profile.sourceFacts?.map((f) => <details key={f.id} data-testid="source-fact"><summary>{f.id} · {f.section} · {f.entityIds.length ? L('已映射', 'Mapped') : L('未映射', 'Unmapped')}</summary><pre className="src-pre">{f.raw}</pre></details>)}
+  </details>;
 }

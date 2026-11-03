@@ -92,7 +92,7 @@ export function LayoutPage() {
             <label>页眉样式<select value={tpl.layout.headerStyle} onChange={(e) => upd((x) => { x.layout.headerStyle = e.target.value as 'band' | 'plain'; })}><option value="plain">细线</option><option value="band">强调色粗线</option></select></label>
             <label>纸张<select value={tpl.page.size} onChange={(e) => upd((x) => { x.page.size = e.target.value as 'A4' | 'LETTER'; })}><option>A4</option><option value="LETTER">Letter</option></select></label>
             <label>目标页数<input type="number" min={1} max={2} value={tpl.page.targetPages} onChange={(e) => upd((x) => { x.page.targetPages = Number(e.target.value); })} /></label>
-            <label>页边距 mm<input type="number" value={tpl.page.marginMm.left} onChange={(e) => upd((x) => { const v = Number(e.target.value); x.page.marginMm = { top: v, right: v, bottom: v, left: v }; })} /></label>
+            <label>页边距 mm<input type="number" value={tpl.page.marginMm.left} onChange={(e) => upd((x) => { const v = Number(e.target.value); x.page.marginMm = { top: v, right: v, bottom: v, left: v }; delete x.locales.zh.marginMm; delete x.locales.en.marginMm; })} /></label>
             {(['primary', 'accent', 'text', 'muted'] as const).map((c) => <label key={c}>颜色·{c}<input type="color" value={tpl.colors[c]} onChange={(e) => upd((x) => { x.colors[c] = e.target.value; })} /></label>)}
             <label>模块间距 mm<input type="number" step={0.5} value={tpl.spacing.sectionGapMm} onChange={(e) => upd((x) => { x.spacing.sectionGapMm = Number(e.target.value); })} /></label>
             <label>条目间距 mm<input type="number" step={0.5} value={tpl.spacing.itemGapMm} onChange={(e) => upd((x) => { x.spacing.itemGapMm = Number(e.target.value); })} /></label>

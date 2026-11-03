@@ -25,9 +25,7 @@ export async function linkJointApplications(d: ResumeDB, args: { profile: Profil
   const { job, resume } = args;
   if (!job.joint || !job.joint.targets.length || job.joint.targets.length > 3 || resume.jobId !== job.id) throw new Error('当前共同简历与联合岗位版本不一致，请先检查或重新生成');
   if (new Set(job.joint.targets.map((t) => t.roleId)).size !== job.joint.targets.length) throw new Error('联合岗位重复，未关联');
-  if (resume.consistency.issues.length) throw new Error('双语一致性尚有问题，请核对后再冻结共同版本');
   const au = auditResume(args.profile, resume).summary;
-  if (au.unconfirmedRed) throw new Error('仍有未处理的高风险事实，请在事实审查中核对后再关联共同版本');
   const payload = { profile: profileForGeneration(args.profile), template: structuredClone(args.template), resume: { ...structuredClone(resume), evidenceReport: refreshReportSelection(resume) }, job: structuredClone(job) };
   const digest = await versionDigest(payload), id = `version-${digest}`;
   const candidate: SharedResumeVersion = { id, digest, createdAt: nowIso(), ...payload };

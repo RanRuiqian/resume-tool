@@ -20,7 +20,7 @@ export interface KitFact { id: string; zh: string; en: string; type: 'bullet' | 
  */
 export type SentenceKind = 'closing' | 'self' | 'reflection' | 'motivation' | 'jd' | 'learning' | 'future' | 'other';
 export interface SentenceTrace { field: 'coverLetter' | 'selfIntro'; lang: Lang; text: string; kind: SentenceKind; ok: boolean; factIds: string[]; reasons: string[] }
-export interface KitContext { facts: KitFact[]; corpus: string; majors: string[]; jobNames: string[]; gapTerms: string[]; degreePending: string | null; name: string[]; jdText?: string; dateNums?: string[] }
+export interface KitContext { finishedEdu?: string[]; facts: KitFact[]; corpus: string; majors: string[]; jobNames: string[]; gapTerms: string[]; degreePending: string | null; name: string[]; jdText?: string; dateNums?: string[] }
 export interface KitVerdict { passed: boolean; trace: SentenceTrace[]; issues: string[] }
 
 const L = (t?: LocalizedText) => ({ zh: t?.zh ?? t?.en ?? '', en: t?.en ?? t?.zh ?? '' });
@@ -32,7 +32,7 @@ export function profileFacts(p: ProfileDoc): KitFact[] {
   const add = (id: string, zh: string[], en: string[], type: KitFact['type'] = 'bullet', core?: LocalizedText) => f.push({ id, zh: zh.filter(Boolean).join(' | '), en: en.filter(Boolean).join(' | '), type, core: core ? L(core) : undefined });
   const h = p.profile; add('profile', [L(h.name).zh, L(h.headline).zh, L(h.summary).zh], [L(h.name).en, L(h.headline).en, L(h.summary).en], 'meta');
   for (const e of p.education.filter((x) => x.enabled)) {
-    const c = (l: Lang) => [L(e.school)[l], L(e.degree)[l], L(e.major)[l], `${e.start}–${e.end}`, e.expectedConferralDate ? (l === 'zh' ? `预计 ${e.expectedConferralDate} 授予学位` : `degree expected ${e.expectedConferralDate}`) : ''];
+    const c = (l: Lang) => [L(e.school)[l], e.ranking?.[l] ?? '', L(e.degree)[l], L(e.major)[l], `${e.start}–${e.end}`, e.expectedConferralDate ? (l === 'zh' ? `预计 ${e.expectedConferralDate} 授予学位` : `degree expected ${e.expectedConferralDate}`) : ''];
     add(e.id, [...c('zh'), ...(e.courses ?? []), e.abilities ?? ''], [...c('en'), ...(e.courses ?? [])], 'entry');
     e.highlights.forEach((b, i) => add(b.id ?? `${e.id}-h${i}`, [...c('zh'), L(b).zh], [...c('en'), L(b).en], 'bullet', b));
   }
@@ -67,6 +67,12 @@ const MAJOR_ZH = /([\u4e00-\u9fa5与和及]{2,12})专业/g;
 const MAJOR_EN = /\b(?:study|studied|studying|majored in|majoring in|major in|degree in|graduate in|student in|B\.?Eng\.? in|B\.?S\.? in|bachelor'?s? (?:degree )?in|studying)\s+((?:[A-Z][a-z]+\s(?:and\s|&\s)?){0,4}(?:Engineering|Science|Technology|Studies|Management|Design|Automation|Mechanics|Physics|Mathematics|Chemistry|Architecture))\b/g;
 const ORG_EN = /\b((?:[A-Z][A-Za-z]+\s){1,5}(?:Co\.|Inc\.?|Ltd\.?|Company|University|Institute|Laboratory|Lab|Group))/g;
 const inCorpus = (corpus: string, s: string) => corpus.toLowerCase().includes(s.toLowerCase().trim());
+/** 2026-11-03：常见缩写 ↔ 中文原文（资料写「局域网」，英文求职信写 LAN 不算新增名词） */
+const ACRONYM_ZH: Record<string, RegExp> = {
+  lan: /局域网|内网/, wlan: /无线局域网|无线网/, wifi: /无线|wi-?fi/i, 'wi-fi': /无线|wi-?fi/i, ai: /人工智能|AI/i, gui: /界面|图形界面/, ui: /界面/, fea: /有限元/, cfd: /流体|计算流体/, cae: /仿真|有限元|CAE/i,
+  cad: /制图|建模|绘图|CAD/i, pcb: /电路板|PCB/i, iot: /物联网/, cnn: /卷积/, ml: /机器学习/, dl: /深度学习/, cv: /视觉|计算机视觉/, '3d': /三维|3D/i, fdm: /熔融沉积|FDM|3D ?打印/i, cnc: /数控/, spc: /统计过程|SPC/i, bom: /物料清单|BOM/i, plc: /可编程|PLC/i, hmi: /人机界面/, api: /接口/, ocr: /文字识别|OCR/i, llm: /大模型|大语言模型/, pid: /PID|比例积分/i,
+};
+const aliasIn = (corpus: string, t: string) => { const r = ACRONYM_ZH[t.toLowerCase()]; return !!r && r.test(corpus); };
 /** 任一长度 ≥ min 的尾部片段出现在资料里即视为同一机构 / 专业（兼容「我在 X 公司」这类前缀） */
 const suffixIn = (corpus: string, s: string, min: number) => { for (let k = s.length; k >= Math.min(min, s.length); k--) if (corpus.includes(s.slice(s.length - k))) return true; return false; };
 
@@ -76,10 +82,10 @@ const orgStemIn = (corpus: string, core: string) => { const stem = core.replace(
 export function unsupportedEntities(s: string, lang: Lang, corpus: string, allow: string[] = [], majors?: string[]): string[] {
   const majorText = majors ? majors.join('\n') : corpus;
   const bad: string[] = [];
-  for (const t of entityTokens(s, lang)) if (!hasTerm(corpus, t) && !allow.some((a) => hasTerm(a, t))) bad.push(t);
+  for (const t of entityTokens(s, lang)) if (!hasTerm(corpus, t) && !aliasIn(corpus, t) && !allow.some((a) => hasTerm(a, t))) bad.push(t);
   if (lang === 'zh') {
     for (const m of s.match(ORG_ZH) ?? []) { const core = m.replace(/^.*?(?:在|于|到|是|为|和|与|的)/, ''); if (core.length > 3 && !/^(?:贵|该|本|这家|一家|大型)/.test(core) && !/(?:贵|该|本|这家|一家|贵司)(?:公司|集团|大学|学院|研究院|研究所|实验室|医院|工厂)$/.test(core) && !suffixIn(corpus, core, 5) && !orgStemIn(corpus, core)) bad.push(core); }
-    for (const m of s.matchAll(MAJOR_ZH)) { const core = m[1].replace(/^.*?(?:是|读|学|的|在|于)/, ''); if (core.length >= 2 && !/^(?:相关|对口|本|该|这个|所学)$/.test(core) && !suffixIn(majorText, core, 4)) bad.push(`${core}专业`); }
+    for (const m of s.matchAll(MAJOR_ZH)) { const next = s.slice((m.index ?? 0) + m[0].length, (m.index ?? 0) + m[0].length + 2); if (/^(?:工具|知识|技能|能力|背景|素养|领域|方面|术语|软件|设备|水平|性|化|人士|课)/.test(next)) continue; const core = m[1].replace(/^.*?(?:是|读|学|的|在|于)/, ''); if (core.length >= 2 && !/^(?:相关|对口|本|该|这个|所学)$/.test(core) && !/岗位|要求|符合|需要|实践|项目/.test(core) && !suffixIn(majorText, core, 4)) bad.push(`${core}专业`); }
     if (/主修|就读|在读|攻读|读的是|学的是/.test(s)) for (const m of s.match(/[\u4e00-\u9fa5]{2,6}工程/g) ?? []) if (!suffixIn(majorText, m, 4)) bad.push(m);
   } else {
     for (const m of s.matchAll(MAJOR_EN)) { const core = m[1].trim(); if (core && !inCorpus(majorText, core)) bad.push(core); }
@@ -99,12 +105,13 @@ export function buildKitContext(p: ProfileDoc, job: JobParse | null, now = new D
   const gapTerms = [...new Set([...jdTerms, ...jdTools].filter((t): t is string => !!t && t.trim().length >= 2 && t.length <= 24).map((t) => t.trim()))].filter((t) => !hasTerm(corpus, t) && !jobNames.some((n) => hasTerm(n, t)) && !fuzzyIn(t, cw, cb));
   const pend = p.education.filter((e) => e.enabled && !e.actualConferralDate && ((e.expectedConferralDate && e.expectedConferralDate.slice(0, 7) > ym(now)) || (e.end && e.end.slice(0, 7) > ym(now))));
   const degreePending = pend.length ? (pend[0].expectedConferralDate || pend[0].end) : null;
-  const majors = p.education.filter((e) => e.enabled).flatMap((e) => [e.major.zh ?? '', e.major.en ?? '']).filter(Boolean);
+  const majors = p.education.filter((e) => e.enabled).flatMap((e) => [e.major.zh ?? '', e.major.en ?? '', e.degree?.zh ?? '', e.degree?.en ?? '']).filter(Boolean);
   const jdText = job ? [job.rawText ?? '', ...jdTerms, ...jobNames].filter(Boolean).join('\n') : '';
   // 资料里出现过的年份 / 月份（入学、毕业、预计授予、证书日期）：「预计 2026 年 6 月获得学位」这类句子里的日期不算新数字
   const dates = [...p.education.filter((e) => e.enabled).flatMap((e) => [e.start, e.end, e.expectedConferralDate, e.actualConferralDate]), ...p.work.filter((e) => e.enabled).flatMap((e) => [e.start, e.end]), ...p.projects.filter((e) => e.enabled).flatMap((e) => [e.start, e.end]), ...[...p.certificates, ...p.awards].filter((e) => e.enabled).map((e) => e.date)];
   const dateNums = [...new Set(dates.filter((d): d is string => !!d && /^\d{4}/.test(d)).flatMap((d) => { const [y, m] = d.split('-'); return [y, ...(m ? [String(parseInt(m, 10))] : [])]; }))];
-  return { facts, corpus, majors, jobNames, gapTerms, degreePending, name: [p.profile.name.zh ?? '', p.profile.name.en ?? ''].filter(Boolean), jdText, dateNums };
+  const finishedEdu = p.education.filter((e) => e.enabled && (e.actualConferralDate || (e.end && /^\d{4}/.test(e.end) && e.end.slice(0, 7) <= ym(now) && !(e.expectedConferralDate && e.expectedConferralDate.slice(0, 7) > ym(now))))).flatMap((e) => [e.id, ...e.highlights.map((b, i) => b.id ?? `${e.id}-h${i}`)]);
+  return { finishedEdu, facts, corpus, majors, jobNames, gapTerms, degreePending, name: [p.profile.name.zh ?? '', p.profile.name.en ?? ''].filter(Boolean), jdText, dateNums };
 }
 
 export const splitSentences = (s: string, l: Lang) => s.split(l === 'zh' ? /(?<=[。！？!?；;\n])/ : /(?<=[.!?;])\s+|\n+/).map((x) => x.trim()).filter((x) => x.replace(/[\s\p{P}]/gu, '').length > 0);
@@ -114,7 +121,7 @@ const SELF = {
   zh: /我(?!希望|期待|想|愿意|计划|打算|将|会尽快|非常期待|很期待|很希望|非常希望|也希望|也期待|们)|(?:^|[，,])(?:曾|在[^，。]{0,20}(?:实习|项目|课程))|我(?:曾|在|做|参与|协助|负责|用|使用|设计|完成|掌握|熟悉|具备|有|会|能|了解|接触|学习过|修读|主修|是|的(?:实习|项目|经历|课程|专业)|还|也|主要|目前|通过|对|将|已|独立|主导|带领)|实习(?:期间|中|时)|项目中|课程中|课设中|在校期间/,
   en: /\bI(?:'ve| have| had| am| was| did| took| assisted| designed| led| worked| built| wrote| ran| used| completed| developed| know| can| gained| learned| studied| helped| participated| contributed| prepared| compiled| iterated| validated| measured| tested| modeled| analyzed| created| managed| also| then| mainly| currently| recently)\b|\bmy (?:internship|project|experience|coursework|course|studies|degree|background|skills|role|work|major|team)\b|\bduring (?:my|the|a)\b|\bas an? (?:intern|student|participant|team member|member)\b|\bI(?:'m|'ve)?\s+(?!would\b|'d\b|hope|wish|want|plan|look|am (?:eager|keen|excited|interested|applying|writing|ready|willing)|apply|believe)[a-z]+/i,
 };
-const REFLECT = { zh: /^(?:这段|这些|这次|这个|通过这|这让我|由此|从中)/, en: /^(?:This|These|That|Through (?:this|these|that))\b/i };
+const REFLECT = { zh: /^(?:这段|这些|这次|这个|通过这|这让我|由此|从中|这(?:也)?(?:训练|锻炼|培养|帮助|使|让)了?我)/, en: /^(?:This|These|That|Through (?:this|these|that))\b/i };
 const MOTIVE = { zh: /希望|期待|愿意|想要|渴望|期望|计划|打算|入职后|未来|接下来|将来|求职方向|应聘|申请|贵公司|贵岗位|贵团队|该岗位|这个岗位|此岗位|岗位(?:要求|职责|关注|需要|看重)|学习/, en: /\b(?:eager|hope|hoping|look(?:ing)? forward|would like|wish|plan to|aim to|apply|applying|the role|this role|this position|the position|your team|keen to|want to|excited|interested)\b/i };
 const LEARN_FRAME = { zh: /(?:希望|愿意|计划|打算|想要|想|准备|正在|继续|进一步|系统地?|尽快|入职后)[^。！？]{0,14}(?:学习|学会|补齐|补上|掌握|提升|积累)|(?:在工作中|在实践中|在项目中|工作中)(?:继续)?学习|(?:想|要|去|多|再)学(?![校位历生院科])|学习[^。！？]{0,8}(?:并|再)/, en: /\b(?:eager|keen|hope|hoping|want|plan|would like|look(?:ing)? forward|ready|willing|intend)\b[^.!?]{0,40}\b(?:to learn|to pick up|to build|to develop|to gain|learning|to study)\b|\bto learn\b/i };
 const PSEUDO = { zh: /基础|熟悉|了解|接触过|接触|掌握|具备|会用|能够使用|能用|有.{0,4}经验|入门|懂/, en: /\bfoundation|\bfamiliar|\bexposure|\bexposed\b|\bbasic\b|\bknowledge of|\bunderstanding of|\bexperience (?:with|in)\b|\bproficien|\bknow how\b|\bbackground in\b|\bskilled\b|\bcomfortable with\b/i };
@@ -137,6 +144,10 @@ const FP_RE = /我|\bI\b|\bmy\b|\bme\b|\bI'm\b|\bI've\b/i;
 const KEEP_CORE = new Set(['否定 / 未完成', '进行中', '仅 / 限定', '仿真 / 模拟', '预计 / 尚未授予', '讨论 / 设想']);
 const NO_GAIN = new Set(['已完成', '已获得 / 已授予', '实现', '全职 / 正式', '商业', '独立 / 个人', '公司', '医院', '实验室', '工厂 / 车间 / 现场', '导师']);
 const PART_NAME = ['', '参与', '协助', '负责', '主导', '独立完成'];
+const UNFINISHED = { zh: /未完成|尚未|未能|计划|拟|设想|进行中|正在|在研|待/, en: /\bnot (?:yet )?(?:complete|finish)|\bincomplete\b|\bunfinished\b|\bplann|\bongoing\b|\bin progress\b|\bpending\b/i };
+const CONTEXT_NOUN = new Set(['导师', '实验室', '医院', '公司']);
+/** 句子对应的是已结束（不是预计授予）的学历 */
+const pastDegree = (id: string, ctx: KitContext) => !!ctx.finishedEdu?.includes(id);
 
 const bigrams = (s: string) => { const t = s.replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase(); const b = new Set<string>(); for (let i = 0; i < t.length - 1; i++) b.add(t.slice(i, i + 2)); return b; };
 const EN_STOP = new Set(['the', 'and', 'for', 'with', 'from', 'into', 'that', 'this', 'was', 'were', 'have', 'has', 'had', 'are', 'which', 'when', 'what', 'where', 'while', 'then', 'than', 'also', 'about', 'there', 'their', 'they', 'them', 'your', 'you', 'our', 'role', 'position', 'team', 'during', 'using', 'used']);
@@ -249,6 +260,10 @@ export function verifySentence(s: string, l: Lang, field: SentenceTrace['field']
     const content = l === 'zh' ? s.replace(/[\s\p{P}]/gu, '').length >= 10 : s.split(/\s+/).length >= 6;
     if (!top || top.score < thr) {
       if (kind === 'self' || (content && (entityTokens(s, l).length || numberTokens(s).length || PSEUDO[l].test(noNeg)))) reasons.push('自述内容在资料中找不到对应条目（无法追溯）');
+      // 2026-11-03：找不到对应条目时，仍拦下「部署 / 产线」与高参与程度（带领 / 主导 / 负责）——这类句子不是换说法，而是新增事实
+      if (DEPLOY[l].test(noNeg)) reasons.push('把仿真 / 课程工作写成了实机部署、产线或现场调试');
+      { const lo = [...levels(s, l)]; const mx = lo.length ? Math.max(...lo) : 0; if (mx >= 3) reasons.push(`参与程度被抬高：资料中找不到对应经历，这里写成「${PART_NAME[mx]}」`); }
+      { const nn = numberTokens(s).filter((n) => !numberTokens(ctx.corpus).includes(n) && !(ctx.dateNums ?? []).includes(n)); if (nn.length) reasons.push(`使用了资料中没有的数字：${[...new Set(nn)].join(', ')}`); }
     } else {
       const sup = scored.filter((x) => x.score >= Math.max(thr, top.score * 0.6)).slice(0, 3);
       factIds = sup.map((x) => x.f.id);
@@ -267,7 +282,15 @@ export function verifySentence(s: string, l: Lang, field: SentenceTrace['field']
           if ((name === '仅 / 限定' || name === '否定 / 未完成') && simKept && !DEPLOY[l].test(noNeg) && (!/完成|completed|finished/i.test(s) || /完成|completed|finished/i.test(topText))) continue;
           reasons.push(`删去了资料里的限定「${name}」（${top.f.id}）`);
         }
-        if (NO_GAIN.has(name) && rx.test(sOrg) && !sup.some((x) => rz.test(x.f.zh) || re.test(x.f.en))) reasons.push(`新增了资料没有的事实「${name}」`);
+        if (NO_GAIN.has(name) && rx.test(sOrg) && !sup.some((x) => rz.test(x.f.zh) || re.test(x.f.en))) {
+          // 2026-11-03：导师 / 实验室 / 医院 / 公司是背景名词，资料任一处写过即可（不必在最匹配的那一条里）
+          if (CONTEXT_NOUN.has(name) && (rz.test(ctx.corpus) || re.test(ctx.corpus))) continue;
+          // 已经结束的学历写「完成 / completed」不是新增事实（尚未授予的学位仍由「学位状态」检查拦截）
+          if ((name === '已完成' || name === '已获得 / 已授予') && degreeTalk && pastDegree(top.f.id, ctx) ) continue;
+          // 负责人规则（HANDOFF §1.1）：只拦「把未完成 / 计划 / 进行中写成完成 / 实现」；原文没有这些限定时，「completed / 实现」只是换说法
+          if ((name === '已完成' || name === '实现') && !sup.some((x) => UNFINISHED.zh.test(x.f.zh) || UNFINISHED.en.test(x.f.en))) continue;
+          reasons.push(`新增了资料没有的事实「${name}」`);
+        }
       }
       if (DEPLOY[l].test(noNeg) && !sup.some((x) => DEPLOY.zh.test(stripNeg(x.f.zh, 'zh')) || DEPLOY.en.test(stripNeg(x.f.en, 'en')))) reasons.push('把仿真 / 课程工作写成了实机部署、产线或现场调试');
       // 资料的中英文是同一事实：任一语言写明的参与程度都算（如中文角色「负责结构设计」、英文只写「Team member」）
@@ -335,9 +358,10 @@ export function overrideValid(p: ProfileDoc, job: JobParse | null, resume: { id?
   return r.textHash === kitHash(ex ?? {}) && r.profileHash === f.profileHash && r.jobHash === f.jobHash && r.resumeHash === f.resumeHash;
 }
 
+/** 人工文字始终可导出；verdict 仅作提示。AI 生成仍直接使用 verifyKit 校验，不能用 exportable 判断事实通过。 */
 export function kitExportState(p: ProfileDoc, job: JobParse | null, ex?: { coverLetter?: Bi; selfIntro?: Bi; kitReview?: KitReview }, resume?: { id?: string; createdAt?: string; generatedBy?: string } | null): { hasText: boolean; verdict: KitVerdict; overridden: boolean; exportable: boolean } {
   const hasText = !!(ex?.coverLetter?.zh || ex?.coverLetter?.en || ex?.selfIntro?.zh || ex?.selfIntro?.en);
   const verdict = hasText ? verifyKit(ex ?? {}, buildKitContext(p, job)) : { passed: true, trace: [], issues: [] };
   const overridden = overrideValid(p, job, resume, ex);
-  return { hasText, verdict, overridden, exportable: verdict.passed || overridden };
+  return { hasText, verdict, overridden, exportable: true };
 }

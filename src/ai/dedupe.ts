@@ -1,10 +1,12 @@
 import type { LocalizedText, ProfileDoc, WorkKind } from '../types';
+import { courseIdentity } from '../storage/courses';
+import type { CourseEntry, BaseEntry } from '../types';
 
 /**
  * 通用去重（v1.6）：只依据结构化信号（日期区间、名称在中 / 英文各自的相似度、别名、类型），
  * 不包含任何特定用户、学校或单位的规则。仅凭共同关键词不会判为重复。
  */
-export type DedupeSection = 'education' | 'work' | 'projects' | 'skills' | 'certificates' | 'awards' | 'evidence';
+export type DedupeSection = 'education' | 'work' | 'projects' | 'skills' | 'certificates' | 'awards' | 'evidence' | 'courses';
 type AnyEntry = Record<string, unknown> & { id: string };
 
 const STRIP = /(股份有限公司|有限责任公司|有限公司|集团|公司|科技|技术|\(中国\)|（中国）|co\.?,?\s*ltd\.?|inc\.?|ltd\.?|corp\.?|corporation|limited|company)/gi;
@@ -24,7 +26,7 @@ export function similarity(a: string, b: string): number {
   return (2 * inter) / tot;
 }
 
-const NAME_FIELD: Record<DedupeSection, string[]> = { education: ['school'], work: ['company'], projects: ['name'], skills: ['name'], certificates: ['name'], awards: ['name'], evidence: [] };
+const NAME_FIELD: Record<DedupeSection, string[]> = { education: ['school'], work: ['company'], projects: ['name'], skills: ['name'], certificates: ['name'], awards: ['name'], evidence: [], courses: ['name'] };
 const isZh = (s: string) => /[\u4e00-\u9fff]/.test(s);
 /** 一条记录所有称呼：主字段中英文 + 别名 */
 export function namesOf(sec: DedupeSection, e: AnyEntry): string[] {
@@ -60,6 +62,34 @@ export interface DupMatch { score: number; strong: boolean; reasons: string[] }
  * strong：可直接预设为合并（仍可改）；否则 score ≥ 0.55 时只提示「可能重复」，必须由用户决定。
  */
 export function dupMatch(sec: DedupeSection, a: AnyEntry, b: AnyEntry): DupMatch {
+  const sa = a.sourceRecord as BaseEntry['sourceRecord'], sb = b.sourceRecord as BaseEntry['sourceRecord'];
+  if (sa && sb && sa.id === sb.id) return { score: 1, strong: true, reasons: ['实体类型与稳定来源编号一致'] };
+  if (sa || sb) {
+    const exact = (f: string) => {
+      const x = a[f] as LocalizedText | undefined, y = b[f] as LocalizedText | undefined;
+      return !!x && !!y && ['zh', 'en'].some((l) => { const k = l as 'zh' | 'en'; return !!x[k]?.trim() && x[k]!.normalize('NFKC').trim().toLowerCase() === y[k]?.normalize('NFKC').trim().toLowerCase(); });
+    };
+    // 编号不同的独立事实不因共享软件/近似名称合并。教育只允许明确相同学校、学位、专业和起止的实体。
+    if (sec === 'education' && exact('school') && exact('degree') && exact('major') && a.start && a.start === b.start && (!a.end || !b.end || a.end === b.end))
+      return { score: 1, strong: true, reasons: ['学校、学位、专业与开始日期一致，结束日期无矛盾'] };
+    if (sa && sb) return { score: 0, strong: false, reasons: ['稳定来源编号不同，保留独立事实'] };
+    // 与旧无编号资料比对时，名称完全一致仍不足以自动合并项目/任职：还需同一日期区间与实体属性。
+    const nameKey = sec === 'education' ? 'school' : sec === 'work' ? 'company' : 'name';
+    const eq = exact(nameKey);
+    if (sec === 'courses') {
+      const same = courseIdentity(a as unknown as CourseEntry) === courseIdentity(b as unknown as CourseEntry);
+      return { score: same ? 1 : 0, strong: same, reasons: same ? ['课程身份一致'] : [] };
+    }
+    const simple = ['skills', 'certificates', 'awards'].includes(sec);
+    const sameDates = dateRelation(a, b) === 'same';
+    const identity = sec === 'work' ? exact('title') && a.kind === b.kind : sec === 'projects' ? a.kind === b.kind : false;
+    const strong = eq && (simple || (sameDates && identity));
+    return { score: strong ? 1 : eq ? 0.6 : 0, strong, reasons: [strong ? '实体名称与必要属性完全一致' : '缺少可靠的同一实体依据；不按字符串相似度合并'] };
+  }
+  if (sec === 'courses') {
+    const same = courseIdentity(a as unknown as CourseEntry) === courseIdentity(b as unknown as CourseEntry);
+    return { score: same ? 1 : 0, strong: same, reasons: same ? ['课程身份一致'] : [] };
+  }
   const na = namesOf(sec, a), nb = namesOf(sec, b);
   const { sim, comparable } = bestNameSim(na, nb);
   const rel = dateRelation(a, b);
@@ -121,7 +151,7 @@ export interface InternalDup { section: DedupeSection; id: string; intoId: strin
 /** 本次识别结果内部的重复（如中文、英文各识别成一条）。每组保留最早出现的一条为主记录 */
 export function findIncomingDuplicates(inc: ProfileDoc): InternalDup[] {
   const out: InternalDup[] = [];
-  for (const sec of ['education', 'work', 'projects', 'skills', 'certificates', 'awards', 'evidence'] as DedupeSection[]) {
+  for (const sec of ['education', 'work', 'projects', 'skills', 'certificates', 'awards', 'evidence', 'courses'] as DedupeSection[]) {
     const list = ((inc as unknown as Record<string, AnyEntry[]>)[sec] ?? []);
     const roots: AnyEntry[] = [];
     for (const e of list) {
@@ -148,6 +178,11 @@ export function kindFromTitle(e: AnyEntry): WorkKind { const t = e.title as Loca
  */
 export function mergeEntries(sec: DedupeSection, primary: AnyEntry, dup: AnyEntry, importTag = 'dedupe'): AnyEntry {
   const out = structuredClone(primary); const d = structuredClone(dup);
+  if (out.sourceRecord && d.sourceRecord) {
+    const a = out.sourceRecord as NonNullable<BaseEntry['sourceRecord']>, b = d.sourceRecord as NonNullable<BaseEntry['sourceRecord']>;
+    a.reviewed = a.reviewed && b.reviewed;
+    if (!a.reviewed) delete out.userConfirmedAt;
+  }
   const aliases = new Set<string>((out.aliases as string[]) ?? []);
   const diffs: string[] = [];
   for (const [k, v] of Object.entries(d)) {

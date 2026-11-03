@@ -17,7 +17,7 @@ import { resolve } from 'node:path';
 import JSZip from 'jszip';
 import type { Settings } from '../src/types';
 registerPdfFonts(resolve('public/fonts'));
-it('exports one bilingual company resume and its per-role evidence report, identical across all three application references', async () => {
+it('exports one bilingual company resume without an unsolicited audit report, identical across all three application references', async () => {
   const f = jointFixture(); let n = 0; const api = vi.mocked(chatJson); api.mockReset();
   api.mockImplementation(async (_s, messages) => {
     n++; const payload = JSON.parse(String(messages.at(-1)!.content).split('\n\n').at(-1)!);
@@ -30,8 +30,8 @@ it('exports one bilingual company resume and its per-role evidence report, ident
   for (const art of arts) { const b = await resolveArtifact(d, art); for (const lang of ['zh', 'en'] as const) expect(buildLayout(b.profile!, b.template!, lang, b.resume)).toEqual(buildLayout(a.profile!, a.template!, lang, a.resume)); }
   const names = buildExportNames(f.job.company.short, 'JOINT', new Date('2026-01-01'), 0);
   const result = await buildZip(a.profile!, a.template!, a.resume!, names, resolve('public/fonts'));
-  expect(result.errors).toEqual([]); expect(Object.keys(result.files)).toHaveLength(5); expect(result.files['evidence-and-gaps.json']).toBeDefined();
-  const report = JSON.parse(new TextDecoder().decode(result.files['evidence-and-gaps.json'])); expect(report.targets).toHaveLength(3); expect(report.synthesis.conflicts).toHaveLength(1);
+  expect(result.errors).toEqual([]); expect(Object.keys(result.files)).toHaveLength(4); expect(result.files['evidence-and-gaps.json']).toBeUndefined();
+  expect(r.evidenceReport?.targets).toHaveLength(3);
   for (const [name, bytes] of Object.entries(result.files)) {
     if (name.endsWith('.docx')) { const z = await JSZip.loadAsync(bytes), xml = await z.file('word/document.xml')!.async('string');
       expect(xml).not.toContain('MOCK-UG-GRADE'); expect(xml).not.toContain('example.com/resume-tool'); expect(xml).toContain(name.includes('_CN') ? '轮机工程' : 'Marine Engineering');

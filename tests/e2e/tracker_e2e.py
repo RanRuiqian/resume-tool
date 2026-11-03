@@ -16,7 +16,7 @@ SEED="""d=>new Promise(r=>{const q=indexedDB.open('resume-tool');q.onsuccess=()=
 prof=tempfile.mkdtemp(prefix='chrome-p4-'); prof2=tempfile.mkdtemp(prefix='chrome-p4b-')
 dialogs=[]
 with sync_playwright() as p:
-    ctx=p.chromium.launch_persistent_context(prof, executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], viewport={'width':1280,'height':1000}, accept_downloads=True)
+    ctx=p.chromium.launch_persistent_context(prof, executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/google-chrome'), args=['--no-sandbox'], viewport={'width':1280,'height':1000}, accept_downloads=True)
     pg=ctx.pages[0]; errs=[]; pg.on('pageerror', lambda e: errs.append(str(e)))
     def on_dialog(x): dialogs.append(x.message); x.accept()
     pg.on('dialog', on_dialog)
@@ -55,7 +55,8 @@ with sync_playwright() as p:
     chk('点击投递链接在新标签页打开招聘页', np.value.url.startswith('https://example.com/jobs/101')); np.value.close()
     # 关联当前简历
     pg.click('[data-testid=link-current]'); pg.wait_for_timeout(500)
-    chk('关联当前生成的简历（快照，带事实审查摘要）', pg.locator('[data-testid=artifact]').count()==1 and '事实审查' in pg.locator('[data-testid=artifact]').first.inner_text())
+    linked=pg.evaluate(DUMP,'resume-tool')['artifacts']
+    chk('直接关联当前简历，快照内容保存且无事实审查门槛', pg.locator('[data-testid=artifact]').count()==1 and '事实审查' not in pg.locator('[data-testid=artifact]').first.inner_text() and linked[0]['kind']=='snapshot' and linked[0]['resume']['id']==d['resume']['id'] and linked[0]['resume']['items']==d['resume']['items'])
     pg.set_input_files('[data-testid=submitted-input]',os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','fixtures','files','Mock_Vision_Engineer_CN.pdf')); pg.wait_for_timeout(500)
     chk('上传实际提交的 PDF，标记为实际提交版本', '实际提交版本' in pg.locator('[data-testid=artifacts]').inner_text() and 'Mock_Vision_Engineer_CN.pdf' in pg.locator('[data-testid=artifacts]').inner_text())
     pg.set_input_files('[data-testid=att-input]',os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','fixtures','files','jd_screenshot_mock.png')); pg.wait_for_timeout(500)
@@ -132,7 +133,7 @@ with sync_playwright() as p:
     chk('无页面错误', not errs); print(errs)
     ctx.close()
     # 恢复到新浏览器
-    ctx2=p.chromium.launch_persistent_context(prof2, executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], viewport={'width':1280,'height':1000})
+    ctx2=p.chromium.launch_persistent_context(prof2, executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/google-chrome'), args=['--no-sandbox'], viewport={'width':1280,'height':1000})
     pg2=ctx2.pages[0]; pg2.on('dialog', lambda x: x.accept())
     pg2.goto(B+'#applications/backup'); pg2.wait_for_selector('[data-testid=backup-panel]')
     pg2.set_input_files('[data-testid=archive-file]', zpath); pg2.wait_for_selector('[data-testid=archive-check]')
@@ -140,10 +141,12 @@ with sync_playwright() as p:
     pg2.click('[data-testid=restore-confirm]'); pg2.wait_for_selector('[data-testid=restore-result]')
     new=pg2.evaluate(DUMP,'resume-tool')
     chk('新浏览器恢复：岗位 / 申请 / 历史 / 简历版本 / 附件数量一致', all(len(new[k])==len(real_before[k]) for k in ['postings','applications','appEvents','artifacts','attachments','attachmentBlobs']))
-    chk('新浏览器恢复：不含 API Key（设置未导入）', not new.get('settings'))
+    chk('新浏览器恢复：不含 API Key（v3 起 API 设置可导入，但未加密导出时 Key 为空）', all(not x.get('apiKey') and all(not q.get('apiKey') for q in (x.get('apiProfiles') or [])) for x in (new.get('settings') or [])))
     pg2.goto(B+'#applications/'+pid); pg2.reload(); pg2.wait_for_selector('[data-testid=posting-detail]')
     pg2.locator('[data-testid=attachment-row]').first.locator('text=校验').click(); pg2.wait_for_timeout(500)
     chk('恢复后附件校验通过', '校验通过' in pg2.locator('[data-testid=detail-msg]').inner_text())
     ctx2.close()
 shutil.rmtree(prof); shutil.rmtree(prof2)
 print('RESULT', sum(ok), '/', len(ok))
+
+raise SystemExit(0 if all(ok) else 1)

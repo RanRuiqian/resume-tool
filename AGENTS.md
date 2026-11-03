@@ -1,12 +1,14 @@
 # AGENTS.md — 给 AI 编程助手（Codex / Cursor / Claude 等）的说明
 
-不需要任何聊天记录即可接手。阅读顺序：本文件 → `docs/AI_HANDOFF.md` → `docs/DATA_SCHEMA.md` → `docs/PROJECT_STATUS.md`。
+不需要任何聊天记录即可接手。**先读 `docs/HANDOFF.md`（最新一轮的状态、负责人决定与下一步，每轮结束必须更新并推送）**，再按顺序读：本文件 → `docs/AI_HANDOFF.md` → `docs/DATA_SCHEMA.md` → `docs/PROJECT_STATUS.md`。旧文档与 `docs/HANDOFF.md` 冲突时以后者为准。
 
 ## 项目一句话
-纯前端（React + TypeScript + Vite + Dexie/IndexedDB）的「双语简历生成器 + 求职投递管理」，部署在 GitHub Pages：https://ranruiqian.github.io/resume-tool/ 。没有后端，用户数据只在用户自己的浏览器里。
+纯前端（React + TypeScript + Vite + Dexie/IndexedDB）的 AI 辅助个人简历生成与编辑工具。核心三步：建立个人资料库 → 岗位语义匹配与 AI 生成 → 左侧素材选择/编辑、右侧实时预览及导出。投递管理作为辅助功能保留。用户数据在用户浏览器内。
+
+产品不是事实认证、科研审查或企业合规系统。AI 不得捏造事实，内部生成校验继续保留；人工编辑只作简短提示，不要求证据录入、风险二次确认或导出审批。勾选必须本地立即生效，不调用 AI；取消与恢复须保留人工编辑及母库。保留 V7 兼容、旧数据及清空功能。
 
 ## 绝对规则
-1. **不得提交、打印或导出 API Key。** Key 只存在浏览器 IndexedDB `settings` 表（多套配置在同一条 `settings` 记录的 `apiProfiles` 里，见 `docs/AI_HANDOFF.md`「多 API 配置」）。界面只显示脱敏 Key（`maskKey`）。备份 ZIP / JSON、日志、fixture、截图都不能出现它（`src/tracker/backup.ts` 的 `scrubSecrets` 与测试会检查）。
+1. **不得提交、打印或导出 API Key。** Key 只存在浏览器 IndexedDB `settings` 表（多套配置在同一条 `settings` 记录的 `apiProfiles` 里，见 `docs/AI_HANDOFF.md`「多 API 配置」）。界面只显示脱敏 Key（`maskKey`）。备份 ZIP / JSON、日志、fixture、截图都不能出现**明文** Key（`src/tracker/backup.ts` 的 `scrubSecrets` 与测试会检查）。唯一例外（负责人 2026-11-03 决定，用于换设备）：用户在备份面板主动勾选并设置密码时，Key 以 AES-GCM 密文写入 `data/keys.enc.json`（`src/tracker/backupSettings.ts`），默认不导出。
 2. **只用虚构数据**：公司名带「模拟 / 虚构 / 示例」，网址用 `example.com`，人名用「测试用户X」。不得提交真实简历、联系方式、附件。
 3. **数据库只做增量迁移**：在 `src/storage/db.ts` 追加 `this.version(N+1)`；不删表、不清库、不修改已有版本。当前版本 **6**。
 4. **不得伪造事实**：不自动投递、不自动发邮件、不把未知状态猜成「已投递」、不编造投递时间或个人经历。

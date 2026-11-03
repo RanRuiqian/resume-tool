@@ -85,13 +85,14 @@ describe('v1.13 privacy and source safety', () => {
     expect(clean.courses![0].grade.raw).toBe(''); expect(clean.courses![0].sources).toEqual([]); expect(profile).toEqual(before);
     // P2 允许课程语义关联，但绝不能借课程 ID 绕过实践事实边界。
     const falsePractice = personalPlan(); falsePractice.requirements![0] = { text: '供应商开发 / PLC 编程经验', tier: 'must', assessment: 'direct', evidenceIds: [profile.courses![0].id] };
-    expect(() => validateAiSelection(falsePractice, profile, jobs().A, 'zh', 1)).toThrow(/课程不能当作直接/);
+    // 2026-11：不再报错阻断，而是降级为「仅课程知识」——课程 ID 依旧不能证明实践。
+    expect(validateAiSelection(falsePractice, profile, jobs().A, 'zh', 1).requirements[0]).toMatchObject({ assessment: 'learning', evidenceIds: [profile.courses![0].id] });
   });
-  it('retains unconfirmed imports in the master library but excludes them from automatic selection and rendered profile', () => {
+  it('uses imported facts without a certification step, leaving master data and provenance unchanged', () => {
     const profile = p(); profile.work[0].importedFrom = { importTag: 'fake-import', incomingId: 'incoming', at: '2026-01-01' };
     const brief = selectionBrief(profile, jobs().A, 'zh', 1);
-    expect(brief.allowedIds.entries.some((e) => e.entryId === 'career')).toBe(false);
-    expect(buildLayout(profile, { ...template() }, 'en').main.flatMap((s) => s.blocks).some((b) => b.title === profile.work[0].company.en)).toBe(false);
+    expect(brief.allowedIds.entries.some((e) => e.entryId === 'career')).toBe(true);
+    expect(buildLayout(profile, { ...template() }, 'en').main.flatMap((s) => s.blocks).some((b) => b.title === profile.work[0].company.en)).toBe(true);
     expect(profile.work[0].enabled).toBe(true);
     profile.work[0].userConfirmedAt = '2026-01-02'; expect(selectionBrief(profile, jobs().A, 'zh', 1).allowedIds.entries.some((e) => e.entryId === 'career')).toBe(true);
   });
@@ -112,11 +113,11 @@ describe('v1.13 privacy and source safety', () => {
     expect(JSON.stringify(buildLayout(profile, template(), 'zh', r))).toBe(before);
     expect(before).toContain('MOCK-UG-GRADE-2'); expect(before).not.toContain('MOCK-UG-GRADE-1'); expect(before).not.toContain('PLC 内容待核实');
   });
-  it('does not print project credit, pending courses, unpublished or obscured grades even on explicit invalid request', () => {
+  it('allows saved courses without certification but never prints project credit or invents unpublished or obscured grades', () => {
     const profile = p(); profile.courses![0].confirmation = 'pending';
     const s = courseSelectionSnapshot(profile, profile.courses!.map((c) => c.id), profile.courses!.map((c) => c.id));
-    expect(s.ids).toHaveLength(81); expect(s.snapshots!.some((c) => c.name.en?.includes('Industry-based'))).toBe(false);
-    expect(s.gradeIds).not.toContain(profile.courses![74].id); expect(s.gradeIds).not.toContain(profile.courses![79].id); expect(s.ids).not.toContain(profile.courses![0].id);
+    expect(s.ids).toHaveLength(82); expect(s.snapshots!.some((c) => c.name.en?.includes('Industry-based'))).toBe(false);
+    expect(s.gradeIds).not.toContain(profile.courses![74].id); expect(s.gradeIds).not.toContain(profile.courses![79].id); expect(s.ids).toContain(profile.courses![0].id);
   });
 });
 import { BUILTIN_TEMPLATES } from '../src/templates';
@@ -136,8 +137,9 @@ describe('v1.13 fixed summary and per-resume variants', () => {
     expect(edited.items.find((i) => i.sourceId === 'summary')!.syncStatus).toBe('needs-review'); expect(profile).toEqual(before);
     expect(restoreSummaryBaseline(edited).items.find((i) => i.sourceId === 'summary')).toEqual(base);
     expect(r.summaryBaseline).toBeUndefined();
-    expect(() => applySummaryVariant(r, { zh: '', en: base.en })).toThrow(/清空/);
-    expect(() => applySummaryVariant(r, { zh: base.zh + ' 已获得 IELTS 9。', en: base.en + ' IELTS 9.' })).toThrow();
+    expect(applySummaryVariant(r, { zh: '', en: base.en }).items.find((i) => i.sourceId === 'summary')!.zh).toBe('');
+    // 人工文字不拦截，AI 自动改写的拒绝测试仍独立保留。
+    expect(applySummaryVariant(r, { zh: base.zh + ' 人工修改。', en: base.en }).items.find((i) => i.sourceId === 'summary')!.zh).toContain('人工修改');
   });
   it('does not duplicate a campus appointment into employment when selected twice', () => {
     const profile = p(), r = generateRules(profile, jobs().A, 'zh'); r.layoutPolicy = 'readable'; r.selection.work = ['career', 'student', 'student'];

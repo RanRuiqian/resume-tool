@@ -1,8 +1,10 @@
 import { compactGpaNote, tidyProjectTitle } from './resumeText';
+import { profileWithResumeEdits } from './resumeEdits';
+import { withLangOverrides } from './langOverrides';
 import { LANG_TEST } from '../ai/relevance';
 import { eduDateText } from './degree';
 import { inferWorkKind, isCampusKind } from './classify';
-import type { Lang, ProfileDoc, ResumeDoc, TemplateConfig, ModuleKey, LocalizedText, Typography, PhotoPosition } from '../types';
+import type { EducationEntry, Lang, ProfileDoc, ResumeDoc, TemplateConfig, ModuleKey, LocalizedText, Typography, PhotoPosition } from '../types';
 import { lt, formatRange, formatDate, moduleOrderFor } from '../locale/text';
 import { academicHighlight, academicGradeText, courseLines, profileForGeneration } from '../privacy/resume';
 
@@ -74,7 +76,16 @@ const PERSONAL_LABEL: Record<Lang, Record<string, string>> = {
   en: { birth: 'Born', gender: 'Gender', hometown: 'Hometown', politics: 'Political status' },
 };
 
-export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resume?: ResumeDoc | null): LayoutModel {
+/** 学校排名：显示在学校名后；英文简历只用英文（或纯 ASCII 的中文栏），避免英文版夹中文 */
+function schoolRank(e: EducationEntry, lang: Lang): string {
+  const r = e.ranking; if (!r) return '';
+  const zh = (r.zh ?? '').trim(), en = (r.en ?? '').trim();
+  const t = lang === 'zh' ? (zh || en) : (en || (/^[\x20-\x7e]+$/.test(zh) ? zh : ''));
+  return t ? (lang === 'zh' ? `（${t}）` : ` (${t})`) : '';
+}
+export function buildLayout(p: ProfileDoc, tplIn: TemplateConfig, lang: Lang, resume?: ResumeDoc | null): LayoutModel {
+  const tpl = withLangOverrides(tplIn, lang);
+  p = profileWithResumeEdits(p, resume);
   const loc = tpl.locales[lang];
   const sel = resume?.selection ?? selectionFromProfile(p);
   const itemMap = new Map((resume?.items ?? []).map((i) => [i.sourceId, i]));
@@ -82,7 +93,9 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   /** bullet：生成结果优先，否则资料库原文 */
   const B = (t: LocalizedText) => {
     const it = t.id ? itemMap.get(t.id) : undefined;
-    return (it && (it[lang] || '').trim()) || T(t);
+    if (!it) return T(t);
+    // 人工清空主版本不恢复母库原文；新勾选素材缺少译文时先展示原文。
+    return it[lang] || (!it.confirmedLangs?.includes(lang) ? it[lang === 'zh' ? 'en' : 'zh'] : '');
   };
   /** 生成结果中若存在某条目的 bullet 子集，则只取已选 bullet */
   const pickBullets = (arr: LocalizedText[]) => {
@@ -135,16 +148,23 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   // v1.10：生成的简历副本里，GPA 后的核验说明只保留「估算 / 非官方」等必要限定（资料库原文不变）
   const ed = byIds(p.education, sel.education).map((e) => {
     const courses = courseLines(p, resume, e.id, lang);
-    // 同时检查原始 highlight 和用户编辑的生成句，避免旧缓存绕过默认隐藏。
-    const bullets = pickBullets(e.highlights.filter((b) => !academicHighlight(b))).filter((t) => !academicGradeText(t));
-    return { title: T(e.school), subtitle: eduSub(e), date: eduRange(e), bullets: [...(resume ? bullets.map((x) => compactGpaNote(x, lang)) : bullets), ...(courses.length ? [`${lang === 'zh' ? '相关课程（课程知识）' : 'Relevant coursework (academic knowledge)'}: ${courses.join(lang === 'zh' ? '、' : '; ')}`] : [])] };
+    // 自动生成仍默认隐藏成绩；用户单独选用或手工编辑的文字应如实预览和导出。
+    const highlights = e.highlights.filter((b) => (b.id && itemMap.get(b.id)?.manual) || !academicHighlight(b));
+    const bullets = pickBullets(highlights).filter((t) => !academicGradeText(t) || highlights.some((b) => b.id && itemMap.get(b.id)?.manual && B(b) === t));
+    return { title: T(e.school) + schoolRank(e, lang), subtitle: eduSub(e), date: eduRange(e), bullets: [...(resume ? bullets.map((x) => compactGpaNote(x, lang)) : bullets), ...(courses.length ? [`${lang === 'zh' ? '相关课程' : 'Relevant coursework'}: ${courses.join(lang === 'zh' ? '、' : '; ')}`] : [])] };
   });
   if (ed.length) sections.education = { key: 'education', title: title('education'), blocks: ed };
   const sk = byIds(p.skills, sel.skills);
   if (sk.length) {
-    // 按分类分组
+    // 2026-11：先按 AI 给本岗位的分组与顺序；未分组的（如用户后来手动勾选的）再按资料库分类。
     const groups = new Map<string, string[]>();
-    sk.forEach((s) => { const raw = T(s.category), c = resumeSkillCategory(raw, T(s.name), lang);
+    const placed = new Set<string>();
+    for (const g of resume?.skillGroups ?? []) {
+      const names = g.ids.map((id) => sk.find((s) => s.id === id)).filter((s): s is typeof sk[number] => !!s && !placed.has(s.id) && !!placed.add(s.id)).map((s) => skillName(T(s.name), ''));
+      const label = (g[lang] || g[lang === 'zh' ? 'en' : 'zh'] || '').trim();
+      if (names.length) groups.set(label, [...(groups.get(label) ?? []), ...names]);
+    }
+    sk.filter((s) => !placed.has(s.id)).forEach((s) => { const raw = T(s.category), c = resumeSkillCategory(raw, T(s.name), lang);
       groups.set(c, [...(groups.get(c) ?? []), skillName(T(s.name), raw)]); });
     sections.skills = { key: 'skills', title: title('skills'), blocks: [...groups].map(([c, names]) => ({ title: c || undefined, bullets: [], text: names.join(lang === 'zh' ? '、' : ', ') })) };
   }
@@ -153,7 +173,7 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   if (langCerts.length) {
     const names = langCerts.map((e) => [T(e.name), formatDate(e.date, loc.dateFormat, loc.presentLabel)].filter(Boolean).join(lang === 'zh' ? '，' : ', '));
     const blocks = sections.skills?.blocks ?? [];
-    const g = blocks.find((b) => /^(?:语言|语言能力|外语|languages?|language skills)$/i.test((b.title ?? '').trim()));
+    const g = blocks.find((b) => /语言|外语|languages?/i.test((b.title ?? '').trim()));
     if (g) g.text = [g.text, ...names].filter(Boolean).join(lang === 'zh' ? '；' : '; ');
     else blocks.push({ title: lang === 'zh' ? '语言' : 'Languages', bullets: [], text: names.join(lang === 'zh' ? '；' : '; ') });
     sections.skills = { key: 'skills', title: title('skills'), blocks };
@@ -200,7 +220,7 @@ export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resu
   return {
     lang, pageSize: tpl.page.size, marginMm: tpl.page.marginMm, columns: tpl.layout.columns, sidebarWidthPercent: tpl.layout.sidebarWidthPercent,
     headerStyle: tpl.layout.headerStyle, titleStyle: tpl.layout.titleStyle ?? 'underline', style: tpl.layout.style ?? 'default', headerAlign: tpl.layout.headerAlign ?? 'left', colors: tpl.colors, spacing: tpl.spacing, typography: loc.typography, photo,
-    header: { name: T(p.profile.name), headline: T(p.profile.headline), contacts, personal },
+    header: { name: T(p.profile.name), headline: (resume?.headline?.[lang] ?? '').trim() || T(p.profile.headline), contacts, personal },
     main, side: sideS, movedFromSide,
   };
 }

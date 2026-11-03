@@ -1,0 +1,20 @@
+import { dirname } from 'node:path';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { coursesFixture } from '../tests/helpers/v113CoursesFixture.ts';
+import { jobs } from '../tests/helpers/v110Fixture.ts';
+import { generateRules } from '../src/ai/generate.ts';
+import { BUILTIN_TEMPLATES } from '../src/templates/index.ts';
+// Only synthetic data is written. No live API calls or existing browser data.
+const profile = coursesFixture(), job = jobs().A;
+const resume = generateRules(profile, job, 'zh'); resume.layoutPolicy = 'readable';
+const entry = profile.projects.find(e => resume.items.some(i => e.bullets.some(b => b.id === i.sourceId)))!;
+const item = resume.items.find(i => entry.bullets.some(b => b.id === i.sourceId))!;
+const extra = { ...structuredClone(entry), id: 'simulated-extra', name: { zh: '模拟辅助课程项目', en: 'Fictional extra coursework' }, start:'2020-01', end:'2020-06' };
+profile.projects.push(extra);
+extra.bullets = [{ id: 'local-only-language', zh: '测试用户X仅有中文的课程实践要点。' }];
+profile.education[0].highlights.push({ id:'manual-grade-highlight', zh:'GPA: MOCK-MANUAL-GRADE', en:'GPA: MOCK-MANUAL-GRADE' });
+const settings = { id:'settings', demoMode:false, baseUrl:'https://api.deepseek.com', apiKey:'FAKE-WORKSPACE-ONLY', model:'deepseek-flash', provider:'deepseek', uiLang:'zh', setupDone:true, ocrMode:'local', visionModel:'', translateModel:'deepseek-flash' };
+const destination = process.env.WORKSPACE_FIXTURE || '/tmp/resume-workspace-fictional.json';
+mkdirSync(dirname(destination), { recursive: true });
+writeFileSync(destination, JSON.stringify({profile,job,resume,entryId:entry.id,itemId:item.sourceId,extraId:extra.id,template:BUILTIN_TEMPLATES[0],settings}));
+console.log('Prepared fictional resume workspace fixture (no API call).');

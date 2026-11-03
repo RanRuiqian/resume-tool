@@ -9,6 +9,7 @@ import { generateCoverKit, generatePrep } from '../src/ai/extras';
 import { generateRules } from '../src/ai/generate';
 import { parseJdAi } from '../src/ai/jd';
 import { resumeSkillCategory } from '../src/render/layout';
+import { makeGenericJob, GENERIC_JOB_ID } from '../src/ai/genericJob';
 
 const api = chatJson as unknown as ReturnType<typeof vi.fn>;
 beforeEach(() => api.mockReset());
@@ -89,7 +90,7 @@ describe('v1.12 AI-owned semantic selection and provenance', () => {
     api.mockRejectedValueOnce(new Error('translation temporarily offline'));
     const r = await generateResume(S, library(), J, 'zh', 1);
     expect(r.generatedBy).toBe('ai');
-    expect(r.selection.projects).toEqual(['proj-hyd']);
+    expect(r.selection.projects[0]).toBe('proj-hyd'); // 2026-11：版面有空位时会按相关度补入程序备选项目
     expect(r.selection.work).toEqual(['work-1']);
     expect(r.items.some((it) => it.sourceId === 'proj-hyd-b1' && it.zh.includes('AMESim'))).toBe(true);
     expect(r.selection.work).not.toContain('work-empty');
@@ -334,10 +335,16 @@ describe('v1.12 evidence catalog and bounded local correction', () => {
   it.each([
     ['duplicate evidence', ['work-1-b1', 'work-1-b1']],
     ['withheld GPA', ['edu-1-b1']],
-    ['empty direct evidence', []],
   ])('retains strict checks after repair: %s', async (_label, ids) => {
     api.mockResolvedValueOnce(invalidProposal()).mockResolvedValueOnce(requirementRepair(ids));
     await expect(planWithAi(S, library(), J, 'zh', 1)).rejects.toThrow('局部修复失败');
+    expect(api).toHaveBeenCalledTimes(2);
+  });
+  // 2026-11：修复后「直接匹配」却没有证据 → 降级为缺口（只往低说），不再让整份简历失败。
+  it('downgrades a repaired direct claim with no evidence to a gap', async () => {
+    api.mockResolvedValueOnce(invalidProposal()).mockResolvedValueOnce(requirementRepair([]));
+    const r = await planWithAi(S, library(), J, 'zh', 1);
+    expect(r.requirements.some((x) => x.assessment === 'gap' && !x.evidenceIds.length)).toBe(true);
     expect(api).toHaveBeenCalledTimes(2);
   });
 
@@ -390,5 +397,29 @@ describe('v1.12 evidence catalog and bounded local correction', () => {
     expect(writing).toBeGreaterThan(repair);
     expect(translation).toBeGreaterThan(writing);
     expect(api).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('2026-11 公版简历', () => {
+  it('makeGenericJob 生成合成岗位：通用要求、generic 标记、有文本哈希，不含公司信息', () => {
+    const j = makeGenericJob(library());
+    expect(j.id).toBe(GENERIC_JOB_ID); expect(j.generic).toBe(true); expect(j.textHash).toBeTruthy();
+    expect(j.mustHave.length).toBeGreaterThanOrEqual(3); expect(j.mustHave.every((x) => x.zh && x.en)).toBe(true);
+    expect(j.title.zh).toContain('公版'); expect(j.keywords.length).toBeGreaterThan(0);
+  });
+  it('公版：选材与撰写提示词带公版说明、岗位标记为 generic，且不补程序备选项目', async () => {
+    api.mockResolvedValueOnce(proposal());
+    api.mockResolvedValueOnce({ items: [] });
+    api.mockRejectedValueOnce(new Error('translation temporarily offline'));
+    const r = await generateResume(S, library(), makeGenericJob(library()), 'zh', 1);
+    const last = (i: number) => String(api.mock.calls[i][1].at(-1).content), planMsg = last(0), writeMsg = last(1);
+    expect(planMsg).toContain('公版简历模式'); expect(planMsg).toContain('"generic":true');
+    expect(writeMsg).toContain('公版简历模式');
+    expect(r.selection.projects).toEqual(['proj-hyd']); // 不因版面空位而补入其它项目
+  });
+  it('普通岗位的提示词不含公版说明', async () => {
+    api.mockResolvedValueOnce(proposal()); api.mockResolvedValueOnce({ items: [] }); api.mockRejectedValueOnce(new Error('x'));
+    await generateResume(S, library(), J, 'zh', 1);
+    expect(JSON.stringify(api.mock.calls[0][1])).not.toContain('公版简历模式');
   });
 });

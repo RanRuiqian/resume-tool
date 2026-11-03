@@ -41,8 +41,7 @@ with sync_playwright() as p:
     pg.evaluate(SEED,[KEY,LEGACY]); pg.goto(B+'#profile'); pg.reload(); pg.wait_for_selector('[data-testid=organize-start]')
     orig=prof(pg); orig_s=json.dumps(orig,sort_keys=True)
     chk('前置：旧版污染资料 2/7/14/29/2/5', [len(orig[k]) for k in ['education','work','projects','skills','certificates','awards']]==[2,7,14,29,2,5])
-    rs=pg.locator('[data-testid=review-summary]').inner_text()
-    chk(f'机翻改为非阻塞汇总：{rs.splitlines()[0][:60]}', '可直接用于求职' in rs and '逐条确认' not in pg.locator('main').inner_text())
+    chk('不设置认证待办中心，资料可直接编辑', pg.locator('[data-testid=review-summary]').count()==0 and pg.get_by_placeholder('中文',exact=True).count()>0)
     pg.screenshot(path=S+'p14_profile_before.png')
     # ---- 点击 → 快照 + 本地检查 + AI 提示，尚未调用 AI ----
     pg.click('[data-testid=organize-start]'); pg.wait_for_selector('[data-testid=organize-ask]')
@@ -105,12 +104,9 @@ with sync_playwright() as p:
     pg.locator('details.backups summary').click(); pg.wait_for_timeout(400)
     pg.locator('details.backups tr', has_text='AI 整理现有资料前').last.locator('button').click(); pg.wait_for_timeout(800)
     chk('从快照恢复后资料与整理前快照完全一致', json.dumps(prof(pg),sort_keys=True)==snap_s)
-    # ---- 机翻批量确认：只在用户勾选后才改 ----
+    # 取消旧的机翻逐条认证流程；状态不阻止直接编辑或生成。
     m0=json.dumps(prof(pg)).count('"machine"')
-    pg.locator('[data-testid=review-machine] summary').click(); pg.wait_for_timeout(300)
-    pg.locator('[data-testid=review-machine] label.check input').first.check(); pg.click('[data-testid=review-confirm-machine]'); pg.wait_for_timeout(800)
-    chk(f'机翻批量校对：勾选 1 条确认后 machine {m0}→{json.dumps(prof(pg)).count(chr(34)+"machine"+chr(34))}', json.dumps(prof(pg)).count('"machine"')==m0-1)
-    pg.screenshot(path=S+'p14_review_summary.png')
+    chk('无需批量认证译文，保留旧状态且不改写数据', pg.locator('[data-testid=review-confirm-machine]').count()==0 and json.dumps(prof(pg)).count('"machine"')==m0)
     # ---- 首次导入执行同样的质量检查 ----
     pg.evaluate(SEED,[KEY,None]); pg.goto(B+'#profile'); pg.reload(); pg.wait_for_selector('[data-testid=smart-import]')
     f=os.path.join(tempfile.mkdtemp(),'fictional_profile.txt'); open(f,'w').write('测试用户九 t9@example.com\n示例测控公司 测试实习生 2024-07 至 2024-09\n我在公司使用设备进行测试。实际职责以本人核实为准。这可以作为求职材料。\n示例理工大学 硕士 机械工程 2025-09 至 2027-01 预计2027年1月授予硕士学位\n课程实验：夹具设计 2025-10 至 2025-12 完成夹具三维建模。第一版方案因刚度不足失败。\n')

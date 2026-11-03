@@ -1,5 +1,5 @@
 import { assertProfileEpoch } from '../storage/clearProfile';
-import { useAuditSummary } from '../audit/useAudit';
+import { ResumeNotice } from './ResumeNotice';
 import { useEffect, useMemo, useState } from 'react';
 import { useApp } from '../store';
 import { buildExportNames, formatDateStamp } from '../export/naming';
@@ -10,9 +10,17 @@ import { FEATURES } from '../features';
 import type { Lang } from '../types';
 import { kitExportState } from '../quality/kitVerify';
 
+/** iPhone：zip 不便打开，单独的 PDF 走系统分享面板（存到「文件」或发微信 / 邮件）；不支持时直接下载。 */
+async function sharePdf(name: string, bytes: Uint8Array) {
+  try {
+    const file = new File([bytes as BlobPart], name, { type: 'application/pdf' });
+    if (navigator.canShare?.({ files: [file] })) { await navigator.share({ files: [file] }); return; }
+  } catch (e) { if ((e as Error).name === 'AbortError') return; }
+  downloadBytes(bytes, name, 'application/pdf');
+}
+
 /** 导出前确认公司名 / 岗位缩写，预览 zip 与 4 个文件名（F6.6–F6.9） */
 export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?: boolean }) {
-  const auditSum = useAuditSummary();
   const { profile, profileEpoch, template, resume, job } = useApp();
   const [company, setCompany] = useState(job?.company.short ?? '');
   const [abbr, setAbbr] = useState(job?.roleAbbr ?? '');
@@ -20,14 +28,14 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
   const [done, setDone] = useState('');
+  const [pdfs, setPdfs] = useState<{ name: string; bytes: Uint8Array }[]>([]);
   const [date] = useState(() => formatDateStamp(new Date()));
   const names = buildExportNames(company, abbr, date, count);
   const [withKit, setWithKit] = useState(() => localStorage.getItem('zipKit') !== '0');
   const ex = resume?.extras;
-  // v1.10.1：求职信 / 自我介绍逐句核对未通过且未人工确认时，不进入 Word（备考方向不受影响）
+  // 人工编辑自由导出；事实检查仅作简短提示。
   const kitState = useMemo(() => kitExportState(profile, job ?? null, ex, resume), [profile, job, ex, resume]);
-  const letterOk = kitState.exportable;
-  const hasKit = (FEATURES.coverLetter || FEATURES.prepDirections) && !!((letterOk && (ex?.coverLetter || ex?.selfIntro)) || ex?.prep?.length);
+  const hasKit = (FEATURES.coverLetter || FEATURES.prepDirections) && !!(ex?.coverLetter || ex?.selfIntro || ex?.prep?.length);
   const stem = names.base;
   const kitNames = hasKit && withKit ? (['zh', 'en'] as Lang[]).map((l) => `${stem}_CoverLetter_Prep_${l === 'zh' ? 'CN' : 'EN'}.docx`) : [];
   const buildKit = async (): Promise<Record<string, Uint8Array>> => {
@@ -37,9 +45,9 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
     for (const [i, l] of (['zh', 'en'] as Lang[]).entries()) {
       const T = (z: string, e: string) => (l === 'zh' ? z : e);
       const secs = [
-        ...(letterOk && ex.coverLetter?.[l] ? [{ title: T('求职信', 'Cover Letter'), body: ex.coverLetter[l] }] : []),
-        ...(letterOk && ex.selfIntro?.[l] ? [{ title: T('1 分钟自我介绍', '1-Minute Self-Introduction'), body: ex.selfIntro[l] }] : []),
-        ...(ex.prep?.length ? [{ title: T('备考大方向', 'What to Prepare'), body: ex.prep.map((q, n) => `${n + 1}. ${q.area[l]}：${q.why[l]}\n${T('岗位原文：', 'From the JD: ')}“${q.source}”`).join('\n') }] : []),
+        ...(ex.coverLetter?.[l] ? [{ title: T('求职信', 'Cover Letter'), body: ex.coverLetter[l] }] : []),
+        ...(ex.selfIntro?.[l] ? [{ title: T('1 分钟自我介绍', '1-Minute Self-Introduction'), body: ex.selfIntro[l] }] : []),
+        ...(ex.prep?.length ? [{ title: T('备考大方向', 'What to Prepare'), body: ex.prep.map((q, n) => `${n + 1}. ${q.area[l] || q.area.zh}：${q.why[l] || q.why.zh}${(q.points ?? []).map((p) => `\n   · ${p[l] || p.zh}`).join('')}\n${T('岗位原文：', 'From the JD: ')}“${q.source}”`).join('\n') }] : []),
       ];
       if (secs.length) out[kitNames[i]] = await textDocxBytes(l, secs);
     }
@@ -49,7 +57,6 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
 
   const warnings: string[] = [];
   if (!company.trim()) warnings.push('未填写公司名，将使用 "Company"');
-  if (resume?.consistency.issues.length) warnings.push(`存在 ${resume.consistency.issues.length} 个中英一致性问题`);
   if (resume?.items.some((i) => /演示机翻/.test(i.zh + i.en))) warnings.push('包含「演示机翻」占位文本，请先人工校对');
   if (!resume) warnings.push('尚未针对岗位生成，将导出资料库全部启用条目');
 
@@ -60,6 +67,7 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
       const r = await exportZip(profile, template, resume, names, (f) => setBusy(`生成 ${f} …`), await buildKit());
       await db.transaction('r', db.state, () => assertProfileEpoch(db, profileEpoch));
       downloadBytes(r.zip, names.zipName, 'application/zip');
+      setPdfs([names.files.cnPdf, names.files.enPdf].filter((n) => r.files[n]).map((n) => ({ name: n, bytes: r.files[n] })));
       await db.transaction('rw', db.exports, db.state, async () => { await assertProfileEpoch(db, profileEpoch); await db.exports.put({ id: uid('export'), resumeId: resume?.id ?? '', company: names.company, roleAbbr: names.roleAbbr, date, seq: names.seq, zipName: names.zipName, files: Object.keys(r.files), exportedAt: new Date().toISOString(), jobId: job?.id, zip: r.zip, blobs: r.files }); });
       setCount((c) => c + 1);
       setDone(`已下载 ${names.zipName}（中文 ${r.pages.zh} 页 / 英文 ${r.pages.en} 页${r.fitLevel.zh || r.fitLevel.en ? '，已自动缩排以控制页数' : ''}）`);
@@ -82,11 +90,12 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
         </div>
         {hasKit && <label className="check"><input type="checkbox" checked={withKit} onChange={(e) => { setWithKit(e.target.checked); localStorage.setItem('zipKit', e.target.checked ? '1' : '0'); }} /> 同时打包求职信 / 自我介绍 / 备考方向（Word）</label>}
         <div className="muted small">PDF 直接投递；Word 版方便你再微调。文件名不含姓名，投递前可自行改名。</div>
-        {kitState.hasText && !letterOk && <div className="notice warn" data-testid="export-kit-blocked">⚠ 求职信 / 自我介绍有 {kitState.verdict.issues.length} 句无法对应到你的资料（事实检查未通过），本次不会打包进 Word。可在「求职信」区域修改，或逐句人工核对后选择「允许导出」。</div>}
-        {auditSum && auditSum.unconfirmedRed > 0 && <div className="notice error" data-testid="export-audit-warn">⚠ 事实审查还有 {auditSum.unconfirmedRed} 处高风险改写未确认，导出的简历可能包含无法追溯到你资料的内容。仍可导出，但建议先处理。</div>}
+        {kitState.hasText && !kitState.verdict.passed && <p className="muted small" data-testid="export-kit-note">求职信 / 自我介绍可能有与资料不同的表述，请留意关键事实；当前文字仍会按选择导出。</p>}
+        <ResumeNotice />
         {warnings.map((w) => <div key={w} className="notice warn">⚠ {w}</div>)}
         {busy && <div className="notice">{busy}</div>}
         {done && <div className="notice ok">✓ {done}</div>}
+        {pdfs.length > 0 && <div className="row" data-testid="export-pdf-share">{pdfs.map((f) => <button key={f.name} onClick={() => sharePdf(f.name, f.bytes)}>📤 {/CN/.test(f.name) ? '中文' : '英文'} PDF（保存 / 分享）</button>)}</div>}
         {err && <pre className="notice error">{err}</pre>}
         <div className="row end">{!inline && <button onClick={onClose}>取消</button>}<button className="primary big" disabled={!!busy} onClick={run}>⬇ 下载 zip（{4 + kitNames.length} 个文件）</button></div>
     </div>

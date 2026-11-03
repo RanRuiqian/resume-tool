@@ -13,7 +13,9 @@
     "verify:export": "tsx --tsconfig tsconfig.app.json scripts/verify-export.ts",
     "e2e:ai": "tsx --tsconfig tsconfig.app.json scripts/e2e-ai.ts",
     "prebuild": "node scripts/copy-ocr-assets.mjs",
-    "predev": "node scripts/copy-ocr-assets.mjs"
+    "predev": "node scripts/copy-ocr-assets.mjs",
+    "verify:import": "tsx --tsconfig tsconfig.app.json scripts/verify-structured-import.ts",
+    "verify:import:private": "tsx --tsconfig tsconfig.app.json scripts/verify-private-import.ts"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.9.0",

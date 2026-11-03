@@ -1,13 +1,26 @@
+> **2026-11-02 起，最新状态见 [HANDOFF.md](HANDOFF.md)**（事实护栏放宽、简介按岗位定制、中英文一次撰写、V7 导入清理）。本文件以下内容为历史记录，冲突时以 HANDOFF.md 为准。
+
 # AI 交接说明（AI_HANDOFF）
 
-本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-11-02（v1.13 P2 已接入：同企业 1–3 JD 联合语义选材、逐岗证据报告与共同不可变版本；仍为 Draft PR #14，依赖未合并的 PR #13；未合并未部署）。
+PR #16 后续：AI 整理按钮已修复“已确认/干净文字被整体跳过”的发送前筛选，新增逐请求模型/成功失败/跳过原因报告，用户选择应用建议与 AI 事实保护保留，不再作风险二次确认。详见 [AI_ORGANIZE_DISPATCH.zh-CN.md](AI_ORGANIZE_DISPATCH.zh-CN.md)。
 
-当前实现与验收见 [V113_P2_JOINT_MATCH.zh-CN.md](V113_P2_JOINT_MATCH.zh-CN.md)。P0/P1 历史报告为 V113_COURSE_LIBRARY.zh-CN.md。分支 `feat/v1.13-course-library` 基于 PR #13 的 `f7d947c`，继续更新 #14，不能合并/改动 #13。
+编号母库导入后续：`feat/v7-structured-import` 基于 PR #15 `c3c27ee`，保留 #13/#14/#15 功能，继续以 Draft 叠加 PR 交付。实现与待验边界见 [V7_STRUCTURED_IMPORT.zh-CN.md](V7_STRUCTURED_IMPORT.zh-CN.md)。已收到真实 V7 并完成本地隔离回归：299/299 编号事实、76/76 本科、6/6 硕士、2/2 核心项目；私有原件不入 Git/CI。历史 15/80 项清单未提供，报告区分历史不可还原与当前预览实测。
 
-## 1. 产品
-面向中国求职者（主要是 2027 届机械 / 机器视觉方向）的双语简历工具：
-- **简历生成**：维护一份中英双语资料库 → 粘贴岗位 JD → AI 匹配与改写 → 事实审查（每条内容要有依据，红色项需二次确认）→ 导出中英文 PDF / Word（同一 ZIP）。
-- **求职投递管理（第三阶段）**：岗位库、申请状态与历史、待办 / 面试、简历版本快照、附件、统计；从旧「2027 求职投递导航」工具导入；完整备份恢复。
+本文件让新的 AI 助手无需阅读聊天记录即可接手。最后更新：2026-11-02；当前 Draft PR #16 包含 #13 → #14 → #15 的功能依赖与后续导入、编辑修复，未合并未部署。
+
+v1.13 P2 历史实现与验收见 [V113_P2_JOINT_MATCH.zh-CN.md](V113_P2_JOINT_MATCH.zh-CN.md)，P0/P1 历史报告为 V113_COURSE_LIBRARY.zh-CN.md。原分支 `feat/v1.13-course-library` 基于 PR #13 的 `f7d947c`；本轮继续在 #16 开发分支交付，不修改前置 PR。
+
+## 1. 当前产品定位（PR #16，本节优先于后文历史说明）
+这是 AI 辅助的个人简历生成与编辑工具，不是事实认证、科研审查或企业合规系统。
+1. 建立个人资料库：识别、分类、逐条保存，可长期复用，兼容 V7。
+2. 岗位匹配与生成：真实 AI 理解 JD，决定选材、排序与撰写；本地规则仅作演示或 AI 输出校验。
+3. 实时编辑与导出：左侧素材勾选/编辑/排序，右侧即时预览；同页下载中英文 PDF/Word。
+
+取消不删母库；重新勾选恢复 AI 文案和人工编辑。勾选不自动调用翻译；翻译仅由明确的同步按钮发起，过期响应不能覆盖后续编辑。AI 生成仍校验合法来源、数字、日期、学位、技能与参与程度。人工编辑不受这些检查阻断；只显示简短提醒，不录入证明材料、不作风险二次确认、不拦截导出。匹配说明折叠可选，无匹配评分或认证流程。
+
+`FactAudit`、`AuditBadge`、`MatchInsights` UI 已移除。旧 evidence/audit/kitReview 等数据兼容保留，不删除；旧规则函数仅用于兼容和内部生成校验，不代表当前工作流。共同简历关联仍保留不可变内容版本，但不要求审查通过。API 设置、课程、投递、模板、备份与一键清空保持。
+
+当前分支 `feat/v7-structured-import` 更新 Draft #16，依赖 #13 → #14 → #15，未合并未部署。历史报告关于“二次确认 / 拦截导出 / 未确认素材不入池”的产品约束已被本节替代。见 [产品简化与验收](RESUME_WORKSPACE.zh-CN.md)。
 
 ## 2. 技术栈与运行
 React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，oxlint，Python Playwright e2e。GitHub Actions：`pr-check.yml`（PR：测试、类型、lint、构建），`deploy.yml`（推送 main → GitHub Pages）。
@@ -108,7 +121,7 @@ React 19 + TypeScript + Vite，Dexie（IndexedDB），vitest + fake-indexeddb，
 - 测试：`tests/kitVerifyV1101.test.ts`、`tests/e2e/kit_verify_e2e.py`。
 
 ## 4g. 分阶段选材与 DeepSeek（v1.11.0）
-- 选材是确定性的：`evidence.ts`（`analyzeJd` 能力族 → `extractEvidence` / `rankEvidence` 证据分 → `allocate` 预算两轮分配 → `coverage` 匹配度 / 缺口），`relevance.planResume` 委托给它；AI（`GENERATE_PROMPT`）只拿到已选事实的 brief（sourceId / 角色 / 原文 / 预算 / 限定），只改写不挑选，结果逐条过 `guardRewrite` + 实体检查。
+- 历史演示规则选材（真实模式已由 AI 主导，见当前产品定位）：`evidence.ts`（`analyzeJd` 能力族 → `extractEvidence` / `rankEvidence` 证据分 → `allocate` 预算两轮分配 → `coverage` 匹配度 / 缺口），`relevance.planResume` 委托给它；AI（`GENERATE_PROMPT`）只拿到已选事实的 brief（sourceId / 角色 / 原文 / 预算 / 限定），只改写不挑选，结果逐条过 `guardRewrite` + 实体检查。
 - 简介：`summary.ts` 的 `focusSummary`（逐分句精简，只删不加）与 `guardSummary`（AI 简介的护栏）。
 - `generateResume` 最后统一 `stripAuthorList`（简历不放论文作者名单）。
 - Provider：`finish_reason=length` → `AiError('format')`；非法 JSON → `AiError('json')` 并在 `chatJson` 内重试 1 次；`onAiUsage(fn)` 监听用量（无 Key）；`RETIRED_DEEPSEEK_MODELS` 迁移旧模型名。

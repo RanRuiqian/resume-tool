@@ -18,7 +18,7 @@ SETKEY="""k=>new Promise(r=>{const q=indexedDB.open('resume-tool');q.onsuccess=(
 dirs=[]
 def ctx_new(p, vp={'width':1280,'height':900}, **kw):
     d=tempfile.mkdtemp(prefix='chrome-p5-'); dirs.append(d)
-    c=p.chromium.launch_persistent_context(d, executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], viewport=vp, accept_downloads=True, **kw)
+    c=p.chromium.launch_persistent_context(d, executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/google-chrome'), args=['--no-sandbox'], viewport=vp, accept_downloads=True, **kw)
     pg=c.pages[0]; pg.errs=[]; pg.on('pageerror', lambda e: pg.errs.append(str(e))); pg.on('dialog', lambda x: x.accept()); return c,pg
 def nav(pg,h,sel='[data-testid=applications-page]'):
     pg.goto(B+'#'+h); pg.reload(); pg.wait_for_selector(sel, timeout=15000); pg.wait_for_timeout(300)

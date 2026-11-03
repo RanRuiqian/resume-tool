@@ -61,7 +61,7 @@ export function JobHistory({ onOpen, go }: { onOpen: () => void; go?: (p: string
     if (job?.id === id) { setJob(null); setResume(null); }
     setOpen(null); setRows(await load());
   };
-  const title = (j: JobParse) => `${j.company.short || j.company.full || L('未知公司', 'Unknown company')} · ${j.title.zh || j.title.en || L('岗位', 'Role')}`;
+  const title = (j: JobParse) => { const c = j.company.short || j.company.full || L('未知公司', 'Unknown company'); const t = (j.title.zh || j.title.en || L('岗位', 'Role')); return t.startsWith(c) ? t : `${c} · ${t}`; };
   return (
     <>
       <div className="card job-history" data-testid="job-history">

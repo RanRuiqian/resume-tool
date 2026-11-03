@@ -61,12 +61,16 @@ describe('AI 信息丢失回归（v1.9.3：丢失 → 反馈重试 → 仍丢失
     const p = one(dirty(src, lang), lang, opt); const before = JSON.stringify(p); const expectText = await localOnly(p, lang);
     aiWith({ [src]: bad });
     const plan = await planOrganize(S, p, { useAi: true });
-    expect(mock, '首轮 + 1 次反馈重试').toHaveBeenCalledTimes(2);
+    if (opt?.section === 'education') {
+      expect(mock).not.toHaveBeenCalled(); // 学历事实不送给措辞整理接口，比事后拦截更严格。
+      expect(plan.ai?.noCallReason).toContain('教育事实受保护');
+    } else {
+      expect(mock, '首轮 + 1 次反馈重试').toHaveBeenCalledTimes(2);
+      expect(plan.stats?.rejected).toBe(1);
+      expect(plan.rejectedItems?.[0].reasons.join('；')).toMatch(why);
+      const retryBody = (mock.mock.calls[1][1] as { content: string }[])[1].content; expect(retryBody).toContain('lostFacts');
+    }
     expect(plan.proposals.some((x) => x.source === 'ai'), '丢失事实的 AI 改写不会成为任何建议').toBe(false);
-    expect(plan.stats?.rejected).toBe(1);
-    expect(plan.rejectedItems?.[0].reasons.join('；')).toMatch(why);
-    // 重试请求带上了具体丢失的事实
-    const retryBody = (mock.mock.calls[1][1] as { content: string }[])[1].content; expect(retryBody).toContain('lostFacts');
     const out = applyOrganize(p, plan, safe(plan));
     expect(textOf(out, lang)).toBe(expectText); // 只有本地机械清洗写入
     expect(textOf(out, lang)).not.toContain(lang === 'zh' ? '实际职责' : 'reference only');
@@ -113,7 +117,10 @@ describe('AI 信息丢失回归（v1.9.3：丢失 → 反馈重试 → 仍丢失
       return { items: [{ key: items[0].key, zh: 12345 }, ...items.slice(1).map((x) => ({ key: x.key, category: 'resume', zh: x.zh.replace('完成', '独立完成') }))] };
     });
     const plan = await planOrganize(S, p, { useAi: true, batchSize: 20 });
-    expect(plan.aiErrors?.length).toBe(1);
+    expect(plan.aiErrors).toHaveLength(3); // 超时一批，另外两批含非字符串正文，必须明确报告缺失结果。
+    expect(plan.aiErrors![0]).toContain('请求超时');
+    expect(plan.aiErrors!.slice(1).every((e) => e.includes('缺少 1 条结果'))).toBe(true);
+    expect(plan.ai?.batches.map((b) => b.status)).toEqual(['failed', 'partial', 'partial']);
     const out = applyOrganize(p, plan, safe(plan));
     expect(out.work[0].bullets.map((b) => b.zh)).toEqual(Array.from({ length: 25 }, (_, i) => `完成第${i}项测试。`));
     expect(out.work[0].bullets.map((b) => b.id)).toEqual(Array.from({ length: 25 }, (_, i) => `w-b${i}`));
@@ -210,7 +217,8 @@ describe('英文译文交叉核对', () => {
     const p = trans(zh, 'old machine text', opt); enAi(bad);
     const plan = await planOrganize(S, p, { useAi: true });
     expect(plan.proposals.some((x) => x.source === 'ai' && (x.after as Record<string, string>).en === bad)).toBe(false);
-    const r = plan.rejectedItems![0].reasons.join(); expect(r).toMatch(/译文待核对/); expect(r).toMatch(why);
+    if (opt?.section === 'education') { expect(mock).not.toHaveBeenCalled(); expect(plan.ai?.noCallReason).toContain('教育事实受保护'); }
+    else { const r = plan.rejectedItems![0].reasons.join(); expect(r).toMatch(/译文待核对/); expect(r).toMatch(why); }
     const out = applyOrganize(p, plan, safe(plan)); expect(textOf(out, 'en')).toBe('old machine text'); expect(textOf(out)).toBe(zh);
   });
   it('正确译文仍为 A 类', async () => {

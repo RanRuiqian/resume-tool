@@ -38,24 +38,41 @@ const template = () => structuredClone(BUILTIN_TEMPLATES[0]);
 const summaryOf = (items: GenItem[]) => items.find((i) => i.sourceId === 'summary');
 
 describe('A: fixed bilingual personal introduction', () => {
-  it('uses exactly the same approved text across two JDs, ignores AI summary and never sends it for rewriting', async () => {
+  // 2026-11：用户要求简介按岗位定制。AI 只能用资料里已有的事实改写；出现资料外的数字 / 工具时回退到固定简介。
+  it('keeps the fixed library summary (2026-11 owner decision), uses the JD-tailored headline, never edits the profile', async () => {
     const p = personalFixture(), before = structuredClone(p);
-    mockGeneration(undefined, { items: [{ sourceId: 'summary', text: 'AI should never replace the identity' }] });
+    const tailoredA = { zh: `面向岗位 A：${p.profile.summary.zh}`, en: `Targeting role A. ${p.profile.summary.en}` };
+    const plan = personalPlan();
+    let call = 0;
+    api.mockImplementation(async (_s, msgs) => {
+      call++;
+      if (call === 1) return plan;
+      const payload = JSON.parse(String(msgs.at(-1)!.content).split('\n\n').at(-1)!);
+      if (call === 2) return { summary: tailoredA, headline: { zh: '结构设计方向', en: 'Mechanical Design' }, items: payload.facts.map((x: { sourceId: string; text: string }) => ({ sourceId: x.sourceId, text: x.text })) };
+      return { items: payload.items.map((x: { sourceId: string; sourceIds?: string[] }) => ({ sourceId: x.sourceId, text: sourceText(p, x)[String(msgs.at(-1)!.content).includes('为中文副版本') ? 'zh' : 'en'] })) };
+    });
     const a = await generateResume(settings, p, jobs().A, 'zh', 1);
-    mockGeneration();
-    const b = await generateResume(settings, p, jobs().B, 'en', 1);
-    for (const r of [a, b]) {
-      expect(summaryOf(r.items)).toMatchObject({ zh: p.profile.summary.zh, en: p.profile.summary.en });
-      expect(buildLayout(p, template(), 'en', r).main.concat(buildLayout(p, template(), 'en', r).side).find((x) => x.key === 'summary')!.blocks[0].text).toBe(p.profile.summary.en);
-    }
-    const sent = JSON.stringify(api.mock.calls);
-    expect(sent).not.toContain(p.profile.summary.zh);
-    const planningPayload = JSON.parse(String(api.mock.calls[0][1][1].content).split('\n\n').at(-1)!);
-    expect(planningPayload.candidate).not.toHaveProperty('summaryOriginal');
+    expect(summaryOf(a.items)).toMatchObject({ zh: p.profile.summary.zh, en: p.profile.summary.en });
+    void tailoredA;
+    expect(a.headline).toEqual({ zh: '结构设计方向', en: 'Mechanical Design' });
+    expect(buildLayout(p, template(), 'en', a).header.headline).toBe('Mechanical Design');
     const writingPayload = JSON.parse(String(api.mock.calls[1][1][1].content).split('\n\n').at(-1)!);
-    expect(writingPayload).not.toHaveProperty('summaryOriginal');
-    expect(writingPayload).not.toHaveProperty('summaryFocus');
+    expect(writingPayload.candidate.fixedSummary.zh).toBe(p.profile.summary.zh);
     expect(p).toEqual(before);
+
+    // 定制简介出现资料中没有的数字 → 回退固定简介，不显示 AI 版本
+    api.mockReset(); call = 0;
+    api.mockImplementation(async (_s, msgs) => {
+      call++;
+      if (call === 1) return plan;
+      const payload = JSON.parse(String(msgs.at(-1)!.content).split('\n\n').at(-1)!);
+      if (call === 2) return { summary: { zh: '拥有 8 年经验的资深工程师', en: 'Senior engineer with 8 years of experience' }, items: payload.facts.map((x: { sourceId: string; text: string }) => ({ sourceId: x.sourceId, text: x.text })) };
+      return { items: payload.items.map((x: { sourceId: string; sourceIds?: string[] }) => ({ sourceId: x.sourceId, text: sourceText(p, x)[String(msgs.at(-1)!.content).includes('为中文副版本') ? 'zh' : 'en'] })) };
+    });
+    const b = await generateResume(settings, p, jobs().B, 'en', 1);
+    expect(summaryOf(b.items)).toMatchObject({ zh: p.profile.summary.zh, en: p.profile.summary.en });
+    expect(b.headline).toBeUndefined();
+    expect(JSON.stringify(b.items)).not.toContain('8 years');
   });
 
   it('does not modify stored summaries when the profile changes or planning fails', async () => {
@@ -150,7 +167,7 @@ describe('B/C: professional and student background, no keyword exclusion', () =>
     const r = await generateResume(settings, p, jobs().A, 'zh', 1, undefined, { template: template(), measure });
     expect(r.selection.work).toContain('career'); expect(r.selection.work).not.toContain('student');
     expect(summaryOf(r.items)!.zh).toBe(p.profile.summary.zh);
-    expect(r.notes!.join()).toContain('撤回候补');
+    expect(r.notes!.join()).toMatch(/撤回(了 \d+ 段)?.*候补/);
     expect(measure).toHaveBeenCalledTimes(2); expect(api).toHaveBeenCalledTimes(3);
   });
 });
@@ -169,7 +186,9 @@ describe('D/F: professional expression with complete source tracing', () => {
     const restored = applyDecision(p, r, item.sourceId, 'zh', 'restored');
     expect(restored.items.find((x) => x.sourceId === item.sourceId)!.zh).toBe(p.projects[0].bullets.map((x) => x.zh).join('\n'));
     const off = toggleBullet(p, r, 'projects', 'core', p.projects[0].bullets[1], false);
-    expect(off.items.find((x) => x.sourceId === 'core-b1')!.zh).toBe(p.projects[0].bullets[0].zh);
+    // 合并句整体取消，不能悄悄改回母库句子而丢掉人工文案。
+    expect(off.items.some((x) => x.sourceId === 'core-b1')).toBe(false);
+    expect(toggleBullet(p, off, 'projects', 'core', p.projects[0].bullets[1], true).items.find((x) => x.sourceId === item.sourceId)!.zh).toBe(expression);
     expect(off.items.some((x) => x.sourceId === 'core-b2')).toBe(false);
     expect(toggleEntry(p, r, 'projects', 'core', false).items.some((x) => x.sourceId.startsWith('core'))).toBe(false);
   });

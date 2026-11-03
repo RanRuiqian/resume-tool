@@ -34,6 +34,8 @@ export interface PersonalInfo { birth?: string; gender?: string; hometown?: stri
 
 export interface BaseEntry {
   id: string; enabled: boolean;
+  /** 编号母库的原始事实身份；不以名称相似度替代此身份。raw 仅作内部追溯。 */
+  sourceRecord?: { format: 'numbered-library'; id: string; section: string; raw: string; reviewed: boolean };
   /** 智能导入时 AI 不确定的地方，需人工核对（v1.3） */
   uncertain?: string[];
   /** 相关但独立的条目（同公司其它职位 / 同项目其它阶段）（v1.4） */
@@ -107,6 +109,8 @@ export interface EducationEntry extends BaseEntry {
   coursesInText?: number;
   /** 通过学习获得的专业能力（自填，仅作素材） */
   abilities?: string;
+  /** 学校排名（2026-11-03，可选），如「QS 世界大学排名 2027 第 31 位」/「QS World University Rankings 2027: #31」；简历固定显示在学校名后，不经 AI 选材 / 裁剪 */
+  ranking?: LocalizedText;
 }
 /** 经历类型（v1.6）：正式工作、实习、兼职、社团任职、志愿服务等，便于按岗位挑选；未填 = 未区分 */
 export type WorkKind = '' | 'fulltime' | 'internship' | 'parttime' | 'club' | 'volunteer' | 'other';
@@ -190,8 +194,16 @@ export interface ProfileDoc {
   courses?: CourseEntry[];
   /** v1.6 智能导入的完整原始文本（母库原件），可检索；不参与简历生成 */
   sourceTexts?: SourceText[];
+  /** 一事实一编号的母库账本；多个事实可映射到同一实体，原文只作私有追溯。 */
+  sourceFacts?: { id: string; section: string; raw: string; reviewed: boolean; entityIds: string[] }[];
 }
-export interface SourceText { id: string; at: string; files: string[]; text: string }
+export interface ImportIntegrity {
+  format: 'numbered-library';
+  groups: { label: string; expected: string[]; recognized: string[]; missing: string[]; declared?: number }[];
+  issues: { id: string; reason: string }[];
+  complete: boolean;
+}
+export interface SourceText { id: string; at: string; files: string[]; text: string; integrity?: ImportIntegrity }
 
 /** campus（v1.7）：校园经历，由 work.kind = club / volunteer 派生；只有模板顺序里包含 campus 时才单列，否则仍归入 work（兼容旧模板） */
 export type ModuleKey = 'summary' | 'work' | 'projects' | 'education' | 'skills' | 'campus' | 'certificates' | 'awards';
@@ -208,6 +220,9 @@ export interface TemplateLocale {
   photo: { enabled: boolean; position: PhotoPosition; sizeMm: number };
   personalFields: (keyof PersonalInfo)[];
   moduleOrderOverride: ModuleKey[] | null;
+  /** 2026-11：只对本语言生效的页边距 / 间距（预览右侧「快捷版式」取消「中英文同步」后写入）；缺省 = 用模板的 page.marginMm / spacing */
+  marginMm?: { top: number; right: number; bottom: number; left: number };
+  spacing?: { sectionGapMm: number; itemGapMm: number };
 }
 export interface TemplateConfig {
   id: string;
@@ -233,7 +248,8 @@ export interface TemplateConfig {
 
 export interface Bi { zh: string; en: string }
 /** 备考大方向：每条必须引用 JD 原文 */
-export interface PrepDirection { area: Bi; why: Bi; source: string }
+/** source：对应的岗位要求原文（多条用「；」连接）；points（2026-11-03 新增，可选）：要复习的具体知识点 */
+export interface PrepDirection { area: Bi; why: Bi; source: string; points?: Bi[] }
 export interface JobParse {
   joint?: JointSet;
   id: string;
@@ -256,7 +272,22 @@ export interface JobParse {
   textHash?: string;
   /** v1.10 截图识别的完整原文（可追溯依据；rawText 是用户确认后的岗位正文） */
   ocrRawText?: string;
+  /** 2026-11：岗位要求解读（AI 按行业常识解释每条职责 / 要求的含义与所需能力；只读说明，不参与选材与简历内容） */
+  explain?: JobExplain;
+  /** 2026-11：公版简历（不针对具体岗位）。由 makeGenericJob 生成的合成岗位，AI 按「通用、精炼、有代表性」选材。 */
+  generic?: boolean;
 }
+
+export interface RequirementExplanation {
+  /** 与 jobRequirements(job) 的 id 一致 */
+  id: string;
+  /** 解读时的要求原文，用于判断岗位文字变化后是否过期 */
+  text: string;
+  meaning: string;
+  abilities: string;
+  experience: string;
+}
+export interface JobExplain { createdAt: string; items: RequirementExplanation[] }
 
 /** needs-review：副版本未通过数字 / 事实一致性校验，需要人工核对（A2） */
 export type SyncStatus = 'in-sync' | 'pending' | 'needs-review';
@@ -276,8 +307,14 @@ export interface GenItem {
   translation?: TranslationCheck;
   /** 用户人工确认过的语言版本：重新本地化时优先保留（B6） */
   confirmedLangs?: Lang[];
+  /** 用户在本简历中明确编辑或单独选用；不由 AI 输出设置。 */
+  manual?: true;
 }
 export interface ConsistencyIssue { sourceId?: string; type: 'missing' | 'extra' | 'number' | 'empty' | 'count'; message: string }
+export interface ResumeEntryEdit {
+  texts?: Partial<Record<'school' | 'degree' | 'major' | 'company' | 'title' | 'name' | 'role' | 'category' | 'issuer', Bi>>;
+  start?: string; end?: string; date?: string;
+}
 export interface ResumeDoc {
   evidenceReport?: EvidenceReport;
   id: string;
@@ -291,6 +328,18 @@ export interface ResumeDoc {
   selection: Record<Exclude<ModuleKey, 'summary' | 'campus'>, string[]>;
   /** 改写后的条目：summary / bullet / highlight，按 sourceId 对应资料库 */
   items: GenItem[];
+  /** 本份简历暂未选用的文字，保留 AI 文案、翻译及人工编辑；不写回母库。旧简历缺省为空。 */
+  deselectedItems?: GenItem[];
+  /** 取消整项前的要点选择与位置，重新勾选时恢复。 */
+  entrySelectionMemory?: Record<string, { sourceIds: string[]; index: number }>;
+  /** 要点顺序包含暂未选用项，保证取消、恢复不会重排 AI 或人工文案。 */
+  itemOrder?: string[];
+  /** 仅用于本份简历的标题、名称和日期编辑，取消素材后仍保留。 */
+  entryEdits?: Record<string, ResumeEntryEdit>;
+  /** 2026-11：按岗位定制的姓名下求职方向；缺省时显示资料库 profile.headline。 */
+  headline?: Bi;
+  /** 2026-11：AI 按岗位给出的技能分组（显示顺序与组名）；缺省或未覆盖的技能按资料库 category 分组。 */
+  skillGroups?: { zh: string; en: string; ids: string[] }[];
   consistency: { checkedAt: string; issues: ConsistencyIssue[] };
   generatedBy: 'ai' | 'rules';
   /** v1.12：新生成简历保持用户设置的正文字号，超页用提示或两页，不靠继续缩字容纳。旧记录缺省沿用原逻辑。 */

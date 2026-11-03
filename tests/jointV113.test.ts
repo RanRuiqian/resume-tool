@@ -51,24 +51,24 @@ describe('joint JD input/revisions and strict semantic decisions', () => {
     g.group.roles[0].companyConfirmed = true; expect(makeJointJob(g.group, g.jobs).joint!.targets).toHaveLength(3);
     g.group.roles.push(structuredClone(g.group.roles[0])); expect(() => makeJointJob(g.group, g.jobs)).toThrow(/1–3/);
   });
-  it.each(['unknown-proof', 'wrong-requirement', 'missing-requirement', 'course-as-practice', 'false-aggregation', 'unknown-course'] as const)('rejects %s and never removes fact checks', (kind) => {
+  it.each(['unknown-proof', 'wrong-requirement', 'missing-requirement', 'false-aggregation', 'unknown-course'] as const)('rejects %s and never removes fact checks', (kind) => {
     const f = jointFixture();
     if (kind === 'unknown-proof') f.plan.requirements![0].evidenceIds = ['fake-proof'];
     if (kind === 'wrong-requirement') f.plan.requirements![0].requirementId = 'made-up-jd:must:0';
     if (kind === 'missing-requirement') f.plan.requirements!.pop();
-    if (kind === 'course-as-practice') { f.plan.requirements![4].assessment = 'direct'; f.plan.requirements![4].evidenceIds = [f.p.courses![1].id]; }
     if (kind === 'false-aggregation') f.plan.jointSummary!.common[0].requirementIds = ['fictional-job-0:must:0'];
     if (kind === 'unknown-course') f.plan.courses = ['unconfirmed-or-fictional-course'];
     expect(() => validateAiSelection(f.plan, f.p, f.job, 'zh', 1)).toThrow();
   });
-  it('repairs a course falsely cited as PLC practice locally, revalidates the same requirement and stops on failed repair', async () => {
-    const f = jointFixture(), at = f.plan.requirements!.length - 1, original = structuredClone(f.plan);
+  // 2026-11：课程被标成「直接 / 可迁移实操」证据时不再让整份简历失败，而是自动降级为「仅课程知识」（只会往低说，不会抬高）。
+  it('downgrades a course cited as direct PLC practice to course knowledge without blocking generation', async () => {
+    const f = jointFixture(), at = f.plan.requirements!.length - 1;
     f.plan.requirements![at].assessment = 'direct'; f.plan.requirements![at].evidenceIds = [f.p.courses![1].id];
-    api.mockResolvedValueOnce(f.plan).mockResolvedValueOnce({ repairs: [{ path: `/requirements/${at}`, value: original.requirements![at] }] });
-    const result = await planWithAi(s, f.p, f.job, 'zh', 1); expect(result.requirements[at].assessment).toBe('gap'); expect(api).toHaveBeenCalledTimes(2);
-    const repair = JSON.stringify(api.mock.calls[1][1]); expect(repair).toContain(f.p.courses![1].id); expect(repair).toContain('PLC 编程实际经验'); expect(repair).toContain('allowedIds');
-    api.mockReset(); api.mockResolvedValueOnce(f.plan).mockResolvedValueOnce({ repairs: [{ path: `/requirements/${at}`, value: f.plan.requirements![at] }] });
-    await expect(planWithAi(s, f.p, f.job, 'zh', 1)).rejects.toThrow(/局部修复失败/);
+    api.mockResolvedValueOnce(f.plan);
+    const result = await planWithAi(s, f.p, f.job, 'zh', 1);
+    expect(result.requirements[at]).toMatchObject({ assessment: 'learning', evidenceIds: [f.p.courses![1].id] });
+    expect(result.requirements[at].reason).toBeTruthy();
+    expect(api).toHaveBeenCalledTimes(1);
   });
   it('keeps report provenance after manual deselection and warns that source is no longer in current resume', async () => {
     const f = jointFixture(); mockGeneration(f); const r = await generateResume(s, f.p, f.job, 'zh', 1);
@@ -113,18 +113,23 @@ describe('one immutable resume version linked to multiple applications', () => {
 });
 
 it('locally appends a missing requirement without re-generating valid decisions and rejects changing a valid target ID during repair', async () => {
-  const f = jointFixture(), correct = f.plan.requirements!.pop()!, at = f.plan.requirements!.length;
-  api.mockResolvedValueOnce(f.plan).mockResolvedValueOnce({ repairs: [{ path: `/requirements/${at}`, value: correct }] });
-  expect((await planWithAi(s, f.p, f.job, 'zh', 1)).requirements.at(-1)).toEqual(correct); expect(api).toHaveBeenCalledTimes(2);
+  const f = jointFixture(), correct = f.plan.requirements!.pop()!;
+  // 2026-11：漏判的要求在本地补为【未判断】，不再为记账问题额外调用 AI，也不让整份简历失败
+  api.mockResolvedValueOnce(f.plan);
+  const last = (await planWithAi(s, f.p, f.job, 'zh', 1)).requirements.at(-1)!;
+  expect(last.requirementId).toBe(correct.requirementId); expect(last.assessment).toBe('gap'); expect(last.reason).toMatch(/^【未判断】/); expect(api).toHaveBeenCalledTimes(1);
   api.mockReset(); const g = jointFixture(); g.plan.requirements![0].evidenceIds = ['ghost'];
   api.mockResolvedValueOnce(g.plan).mockResolvedValueOnce({ repairs: [{ path: '/requirements/0', value: { ...g.plan.requirements![0], evidenceIds: ['edu-1'], requirementId: g.plan.requirements![3].requirementId } }] });
-  await expect(planWithAi(s, g.p, g.job, 'zh', 1)).rejects.toThrow(/不得挪用/);
+  // 修复试图挪用另一岗位要求 ID 被拒；该条证据无法核实 → 标为【未判断】，ID 不被挪用，简历照常生成
+  const r = await planWithAi(s, g.p, g.job, 'zh', 1);
+  expect(r.requirements[0].requirementId).toBe(g.plan.requirements![0].requirementId); expect(r.requirements[0].reason).toMatch(/^【未判断】/);
+  expect(new Set(r.requirements.map((x) => x.requirementId)).size).toBe(r.requirements.length);
 });
 it('malformed semantic explanations produce actionable validation paths instead of crashing or bypassing checks', () => {
   const f = jointFixture(); (f.plan.requirements![4] as unknown as { reason: unknown }).reason = 42;
   (f.plan.jointSummary!.common[0] as unknown as { reason: unknown }).reason = {};
   try { validateAiSelection(f.plan, f.p, f.job, 'zh', 1); throw new Error('must fail'); }
-  catch (e) { expect((e as Error).name).toBe('AiSelectionValidationError'); expect((e as Error).message).toContain('/jointSummary'); expect((e as Error).message).toContain('/requirements/4'); }
+  catch (e) { expect((e as Error).name).toBe('AiSelectionValidationError'); expect((e as Error).message).toContain('/jointSummary'); }
 });
 it('requires the canonical versions section when restoring linked records, preventing orphan pointers', async () => {
   const f = jointFixture(), d = new ResumeDB('joint-restore-source'), target = new ResumeDB('joint-restore-target'); mockGeneration(f);
@@ -132,4 +137,18 @@ it('requires the canonical versions section when restoring linked records, preve
   const archive = await readArchive(target, await exportLightJson(d));
   await expect(restoreArchive(target, archive, { sections: ['applications', 'artifacts'], overwrite: false, replaceProfile: false })).rejects.toThrow(/同时恢复/);
   expect(await target.applications.count()).toBe(0); await d.delete(); await target.delete();
+});
+it('2026-11 负责人实测：AI 漏写 requirementId、漏判若干要求、归纳不全时，按原文自动对号补齐，一次调用即通过', async () => {
+  api.mockReset(); const f = jointFixture(); const reqs = f.plan.requirements!;
+  const ids = reqs.map((r) => r.requirementId);
+  reqs[1] = { ...reqs[1], requirementId: undefined as unknown as string };
+  reqs[2] = { ...reqs[2], requirementId: undefined as unknown as string, text: ` 1. ${reqs[2].text}；` };
+  reqs.splice(3, 1);                                     // 漏判一条
+  f.plan.jointSummary = { common: [], complementary: [], conflicts: [] };
+  api.mockResolvedValueOnce(f.plan);
+  const r = await planWithAi(s, f.p, f.job, 'zh', 1);
+  expect(api).toHaveBeenCalledTimes(1);
+  expect(r.requirements.map((x) => x.requirementId).sort()).toEqual([...ids].sort());
+  expect(r.requirements.find((x) => x.requirementId === ids[3])!.reason).toMatch(/^【未判断】/);
+  expect(r.gaps).not.toContain(r.requirements.find((x) => x.requirementId === ids[3])!.text);
 });

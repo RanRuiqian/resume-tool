@@ -3,9 +3,11 @@ import { chatJson } from './provider';
 import { COVER_KIT_PROMPT, SYS_FACTS } from './prompts';
 import { numberTokens } from './consistency';
 import { buildKitContext, verifiedOnly, verifyKit, type SentenceTrace } from '../quality/kitVerify';
+export type { SentenceTrace };
 import { profileForGeneration } from '../privacy/resume';
 import { hasTerm, overlap } from './relevance';
 import { decisionModel } from './aiPlanner';
+import { jobRequirements } from '../joint/jobs';
 import { buildLayout } from '../render/layout';
 import { BUILTIN_TEMPLATES } from '../templates';
 import type { LayoutModel } from '../render/layout';
@@ -72,8 +74,17 @@ export function degradeText(t: string, l: 'zh' | 'en', k: 'intro' | 'cover', ctx
 
 export interface KitQuality {
   attempts: number;
-  /** verified：逐句核对全部通过，可保存；blocked：两次生成仍有无法追溯的自述，不保存 */
-  status: 'verified' | 'blocked';
+  /**
+   * verified：逐句核对全部通过；
+   * review（2026-11-03）：已自动删掉「硬问题」句子（新数字、抬高参与程度、把 JD 技能写成已有、学位状态、实机部署、删限定、编造的工具名），
+   *   剩下的「软问题」句子（找不到对应条目、中文机构 / 专业名对不上等，常是换了说法）保留并标出，由用户核对；文本已可保存；
+   * blocked：删掉硬问题后内容太少，不保存。
+   */
+  status: 'verified' | 'review' | 'blocked';
+  /** review：被自动删掉的句子及原因 */
+  removed?: string[];
+  /** review：保留但需人工核对的句子 */
+  flagged?: { text: string; reasons: string[] }[];
   /** 阻断性的事实问题（逐句：哪句、为什么） */
   issues: string[];
   /** 非阻断提示：长度、重复、套话 */
@@ -85,6 +96,16 @@ export interface KitQuality {
   caught: string[][];
 }
 const STYLE_ONLY = /过长|过短|重复句|套话|为空/;
+/** 硬问题：明确违反负责人定的事实边界（新数字 / 抬高 / 把 JD 技能写成已有 / 学位 / 部署 / 删限定）。其余（找不到对应条目、名词对不上）多为换了说法，只提示核对。 */
+const HARD = /数字|参与程度|学位尚未授予|实机部署|产线|删去了|已有能力|基础 \/ 了解|声称已经具备|已具备/;
+export function isHard(t: SentenceTrace): boolean {
+  return t.reasons.some((r) => HARD.test(r) || (/^提到了资料/.test(r) && /[A-Za-z]{2,}/.test(r.replace(/^[^：]*：/, ''))));
+}
+/** 从原文里删掉指定句子，保留段落换行 */
+function dropSentences(t: string, bad: string[]): string {
+  let out = t; for (const b of bad) out = out.replace(b, '');
+  return out.split('\n').map((x) => x.replace(/[ \t]{2,}/g, ' ').replace(/^\s+|\s+$/g, '')).join('\n').replace(/\n{3,}/g, '\n\n').trim();
+}
 
 export async function generateCoverKit(s: Settings, p: ProfileDoc, job: JobParse, r: ResumeDoc, opts: { maxAttempts?: number } = {}): Promise<{ coverLetter: Bi; selfIntro: Bi; quality: KitQuality }> {
   p = profileForGeneration(p);
@@ -101,7 +122,7 @@ export async function generateCoverKit(s: Settings, p: ProfileDoc, job: JobParse
   const degree = ctx.degreePending ? `\n学位状态：尚未授予，预计 ${ctx.degreePending}（只能写「预计」）。` : '';
   const gaps = ctx.gapTerms.slice(0, 30);
   const ask = (feedback: string) => chatJson<{ coverLetter?: Bi; selfIntro?: Bi }>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content:
-`${COVER_KIT_PROMPT}${feedback ? `\n\n上一版有句子未通过核对，请改正（不要再写这些内容）：\n${feedback}` : ''}
+`${COVER_KIT_PROMPT}${job.generic ? `\n\n【公版模式】这不是具体岗位，B 只是通用能力清单：求职信里公司与岗位写成占位符「【公司名称】」「【岗位名称】」（英文 [Company Name] / [Position]），让用户投递时替换；不要写「工程类岗位」这类笼统说法；中间段落挑最有代表性的 1–2 段经历；自我介绍的求职方向写资料中的求职方向。` : ''}${feedback ? `\n\n上一版有句子未通过核对，请改正（不要再写这些内容）：\n${feedback}` : ''}
 
 【A 候选人事实——唯一可以支撑「我做过 / 会 / 有」的来源】${degree}
 重点经历（最多展开 1–2 段）：${focus.join('、') || '（自选）'}
@@ -131,26 +152,87 @@ ${JSON.stringify(gaps)}` }], { model: decisionModel(s), thinking: 'enabled', tim
     feedback = [...v.issues, ...w].map((x, i) => `${i + 1}. ${x}`).join('\n');
   }
   const b = best!;
-  return { ...b.kit, quality: { attempts, status: b.v.passed ? 'verified' : 'blocked', issues: b.v.issues, warnings: b.w, trace: b.v.trace, safe: b.v.passed ? null : verifiedOnly(b.kit, ctx), caught } };
+  if (b.v.passed) return { ...b.kit, quality: { attempts, status: 'verified', issues: [], warnings: b.w, trace: b.v.trace, safe: null, caught } };
+  // 删掉硬问题句子，软问题保留并标出
+  const hard = b.v.trace.filter((t) => !t.ok && isHard(t));
+  const cleaned: Kit = { coverLetter: { ...b.kit.coverLetter }, selfIntro: { ...b.kit.selfIntro } };
+  for (const f of ['coverLetter', 'selfIntro'] as const) for (const l of ['zh', 'en'] as const) cleaned[f][l] = dropSentences(b.kit[f][l], hard.filter((t) => t.field === f && t.lang === l).map((t) => t.text));
+  let v2 = verifyKit(cleaned, ctx);
+  // 2026-11-03：删掉问题句后若某段明显过短（如自我介绍只剩 80 字），再请 AI 只用 A 中事实补足一次，补出的句子同样逐句核对、硬问题再删
+  const short = (['coverLetter', 'selfIntro'] as const).flatMap((f) => (['zh', 'en'] as const).filter((l) => size(cleaned[f][l], l) < KIT_LIMITS[f === 'coverLetter' ? 'cover' : 'intro'][l][2]).map((l) => `${f === 'coverLetter' ? '求职信' : '自我介绍'}（${l === 'zh' ? '中文' : '英文'}）只有 ${size(cleaned[f][l], l)}${l === 'zh' ? ' 字' : ' 词'}`));
+  if (short.length) {
+    try {
+      attempts++;
+      const out = await ask(`下面是删掉问题句后的当前版本，以下部分过短，请补足到目标长度：${short.join('、')}。\n只补充【A】中有的事实（教育背景、最相关项目的做法与工具、求职方向）；已有句子尽量保留原样；不要再写这些被删掉的内容：\n${hard.map((t, i) => `${i + 1}. ${t.text}（${t.reasons.join('；')}）`).join('\n')}\n当前版本：${JSON.stringify(cleaned)}`);
+      const k2: Kit = { coverLetter: { zh: (out.coverLetter?.zh ?? '').trim(), en: (out.coverLetter?.en ?? '').trim() }, selfIntro: { zh: (out.selfIntro?.zh ?? '').trim(), en: (out.selfIntro?.en ?? '').trim() } };
+      const v3 = verifyKit(k2, ctx); const hard3 = v3.trace.filter((t) => !t.ok && isHard(t));
+      for (const f of ['coverLetter', 'selfIntro'] as const) for (const l of ['zh', 'en'] as const) {
+        const t = dropSentences(k2[f][l], hard3.filter((x) => x.field === f && x.lang === l).map((x) => x.text));
+        if (size(t, l) > size(cleaned[f][l], l)) cleaned[f][l] = t; // 只在确实更长时采用
+      }
+      hard.push(...hard3.filter((x) => !hard.some((h) => h.text === x.text)));
+      v2 = verifyKit(cleaned, ctx);
+    } catch { /* 补足失败就保留删减版 */ }
+  }
+  const enough = (['coverLetter', 'selfIntro'] as const).every((f) => (['zh', 'en'] as const).every((l) => v2.trace.filter((t) => t.field === f && t.lang === l && (t.kind === 'self' || t.kind === 'other')).length >= 2));
+  if (!enough) return { ...b.kit, quality: { attempts, status: 'blocked', issues: b.v.issues, warnings: b.w, trace: b.v.trace, safe: verifiedOnly(b.kit, ctx), caught } };
+  const FIELD = { coverLetter: '求职信', selfIntro: '自我介绍' } as const;
+  const removed = hard.map((t) => `${FIELD[t.field]}（${t.lang === 'zh' ? '中文' : '英文'}）「${t.text}」：${t.reasons.join('；')}`);
+  const flagged = v2.trace.filter((t) => !t.ok).map((t) => ({ text: t.text, reasons: t.reasons }));
+  return { ...cleaned, quality: { attempts, status: flagged.length || removed.length ? 'review' : 'verified', issues: v2.issues, warnings: b.w, trace: v2.trace, safe: null, caught, removed, flagged } };
 }
 
-const norm = (t: string) => t.replace(/\s+/g, '').toLowerCase();
 /** 备考方向是「要准备什么」，不能替候选人声称已经具备某项能力（v1.10.1） */
 const PREP_CLAIM = /你已|您已|你有|您有|你具备|您具备|你熟悉|您熟悉|你掌握|已具备|已经具备|已有基础|你的(?:经历|项目|实习|背景)|候选人(?:已|具备|熟悉|有)|与你.{0,6}匹配|\byou (?:already|have|are (?:familiar|experienced|skilled))|\byour (?:experience|project|internship|background|skills?)\b|\bthe candidate (?:has|is)\b/i;
-export const prepClaims = (x: PrepDirection) => PREP_CLAIM.test(`${x.area?.zh ?? ''} ${x.area?.en ?? ''} ${x.why?.zh ?? ''} ${x.why?.en ?? ''}`);
-/** 备考大方向：只依据 JD 原文；每条必须给出 JD 原句，校验不在原文中的条目直接丢弃 */
+export const prepClaims = (x: PrepDirection) => PREP_CLAIM.test(`${x.area?.zh ?? ''} ${x.area?.en ?? ''} ${x.why?.zh ?? ''} ${x.why?.en ?? ''} ${(x.points ?? []).map((p) => `${p.zh} ${p.en}`).join(' ')}`);
+const normQ = (t: string) => t.normalize('NFKC').replace(/[\s\p{P}\p{S}]/gu, '').toLowerCase();
+const bigramSet = (t: string) => { const x = normQ(t); const b = new Set<string>(); for (let i = 0; i < x.length - 1; i++) b.add(x.slice(i, i + 2)); return b; };
+/** 摘录是否来自原文：规范化后（全半角、空格、换行、标点）为子串，或 ≥80% 的二字组出现在原文里（OCR 断行 / 少字） */
+export function quotedFrom(quote: string, source: string): boolean {
+  const q = normQ(quote), src = normQ(source); if (q.length < 4) return false;
+  if (src.includes(q)) return true;
+  const qb = bigramSet(quote), sb = bigramSet(source); if (qb.size < 3) return false;
+  let n = 0; for (const x of qb) if (sb.has(x)) n++; return n / qb.size >= 0.8;
+}
+/**
+ * 备考大方向（2026-11-03 重做）：
+ * - 以前要求 AI 逐字摘抄 JD 原句并做精确子串匹配；截图识别的原文有断行 / 全半角差异，AI 又常摘抄解析后的要求，导致全部被丢弃、界面只显示错误。
+ * - 现在把解析出的岗位要求编号发给 AI，每条方向引用编号（refs）；没给编号时，摘录按规范化 / 二字组覆盖率对照原文与要求。
+ * - 每条方向给 2–4 个要复习的知识点（points），说明准备到什么程度。仍然不评价候选人（prepClaims）。
+ */
 export async function generatePrep(s: Settings, job: JobParse): Promise<PrepDirection[]> {
-  const out = await chatJson<{ items?: PrepDirection[] }>(s, [{ role: 'system', content: '你是严谨的求职辅导顾问。只依据给出的岗位描述原文，不推测公司内部情况、面试流程或题目。只输出 JSON。' }, { role: 'user', content:
-`阅读下面的岗位描述，归纳候选人应重点准备的知识/技能大方向（3–6 条，宁少勿滥）。
-要求：
-- 每条必须对应 JD 中明确写出的要求，source 字段逐字摘抄该要求所在的原句（不可改写、不可拼接）。
-- area 是方向名称（如“SQL 与数据建模”），why 用一句话说明为什么要准备、准备到什么程度，只基于原句内容。
-- 不要写具体面试题，不要写公司特定的猜测。
-- 只写「岗位需要什么、要准备到什么程度」，不要评价候选人，不要写「你已具备 / 你熟悉 / 你有基础 / 与你的经历匹配」之类的话。
-- 中英对应。
-输出 JSON：{"items":[{"area":{"zh":"","en":""},"why":{"zh":"","en":""},"source":"JD 原句"}]}
-岗位描述原文：
-${job.rawText}` }], { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 8_000 });
-  const raw = norm(job.rawText);
-  return (out.items ?? []).filter((x) => x?.area && x.source && norm(x.source).length >= 4 && raw.includes(norm(x.source)) && !prepClaims(x)).slice(0, 6);
+  const reqs = jobRequirements(job);
+  const tierName = { must: '必备', responsibility: '职责', preferred: '加分' } as const;
+  const names = new Map((job.joint?.targets ?? []).map((t) => [t.job.id, t.name]));
+  const list = reqs.slice(0, 60).map((r, i) => ({ ref: `R${i + 1}`, r }));
+  const lines = list.map(({ ref, r }) => `${ref}｜${names.get(r.jobId) ? `${names.get(r.jobId)}｜` : ''}${tierName[r.tier as keyof typeof tierName] ?? r.tier}｜${r.text.zh.trim() || r.text.en.trim()}`).join('\n');
+  const title = job.joint ? job.joint.targets.map((t) => t.name).join(' / ') : (job.title.zh || job.title.en);
+  const out = await chatJson<{ items?: { area?: Bi; why?: Bi; points?: Bi[]; refs?: string[]; source?: string }[] }>(s, [{ role: 'system', content: '你是严谨的工科求职辅导顾问。只依据给出的岗位要求，结合行业常识说明面试 / 笔试通常会考察到什么程度；不推测公司内部情况、面试流程或具体题目。只输出 JSON。' }, { role: 'user', content:
+`岗位：${title}
+请把下面的岗位要求归纳成候选人应重点准备的知识 / 技能大方向，3–6 条，按重要性排序（必备、职责优先于加分）。相近的要求合并成一个方向。
+每条：
+- area：方向名称（如「机械设计基础与公差配合」），中英文。
+- why：一句话说明岗位为什么需要它、面试通常考到什么深度，中英文。
+- points：2–4 个具体要复习 / 准备的知识点或技能动作（如「常用配合与公差等级的选用」「能讲清一个零件从受力到选材的设计思路」），中英文，每个不超过 30 字 / 15 words。
+- refs：对应的岗位要求编号（如 ["R1","R4"]），必须来自下面的列表。
+不要写具体面试题，不要评价候选人，不要写「你已具备 / 你熟悉 / 与你的经历匹配」之类的话。
+输出 JSON：{"items":[{"area":{"zh":"","en":""},"why":{"zh":"","en":""},"points":[{"zh":"","en":""}],"refs":["R1"]}]}
+
+岗位要求（编号｜${job.joint ? '岗位｜' : ''}类别｜原文）：
+${lines || '（未解析出要求，请直接依据下面的岗位原文；此时每条用 source 字段摘抄对应原句）'}
+${lines ? '' : `\n岗位原文：\n${job.rawText}`}` }], { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 8_000 });
+  const byRef = new Map(list.map((x) => [x.ref.toLowerCase(), x.r]));
+  const sources = [job.rawText ?? '', ...reqs.flatMap((r) => [r.text.zh, r.text.en])].join('\n');
+  const res: PrepDirection[] = [];
+  for (const x of out.items ?? []) {
+    if (!x?.area || !(x.area.zh || x.area.en)) continue;
+    const hit = (x.refs ?? []).map((r) => byRef.get(String(r).trim().toLowerCase())).filter((r): r is NonNullable<typeof r> => !!r);
+    // 岗位原文：最多显示 2 条要求，每条去掉句末标点、过长截断，避免「。；」和整段 JD 堆在一起
+    const src = hit.length ? [...new Set(hit.map((r) => (r.text.zh.trim() || r.text.en.trim()).replace(/[。；;，,.\s]+$/u, '')))].slice(0, 2).map((t) => (t.length > 60 ? `${t.slice(0, 60)}…` : t)).join('；') + (hit.length > 2 ? ` 等 ${hit.length} 条` : '') : (x.source && quotedFrom(x.source, sources) ? x.source.trim() : '');
+    if (!src) continue;
+    const item: PrepDirection = { area: { zh: x.area.zh ?? '', en: x.area.en ?? '' }, why: { zh: x.why?.zh ?? '', en: x.why?.en ?? '' }, source: src, points: (x.points ?? []).filter((p) => p && (p.zh || p.en)).slice(0, 4).map((p) => ({ zh: p.zh ?? '', en: p.en ?? '' })) };
+    if (prepClaims(item)) continue;
+    res.push(item);
+  }
+  return res.slice(0, 6);
 }

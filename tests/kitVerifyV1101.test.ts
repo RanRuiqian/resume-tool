@@ -120,18 +120,17 @@ describe('v1.10.1 generateCoverKit — retry with feedback, block, never claim 1
     expect(fb).toContain('上一版有句子未通过核对'); expect(fb).toContain('我熟悉 NX'); expect(fb).toContain('学位尚未授予');
     expect(k.quality.caught[0].length).toBeGreaterThan(0);
   });
-  it('bad twice: blocked, reasons name the sentence, safe version keeps verified sentences only', async () => {
+  it('bad twice (2026-11-03): hard-problem sentences are removed and listed; the rest is saved as review', async () => {
     mock.mockResolvedValue(badKit);
     const k = await generateCoverKit(S, P, J.A, generateRules(P, J.A, 'zh'));
-    expect(mock).toHaveBeenCalledTimes(2);
-    expect(k.quality.status).toBe('blocked');
-    expect(k.quality.issues.some((x) => x.includes('我熟悉 NX') && x.includes('NX'))).toBe(true);
-    expect(k.quality.issues.some((x) => x.includes('foundation in NX'))).toBe(true);
-    expect(k.quality.trace.filter((t) => !t.ok).length).toBeGreaterThanOrEqual(2);
-    const safe = k.quality.safe!;
-    expect(safe).not.toBeNull();
-    expect(safe.coverLetter.zh).not.toContain('NX'); expect(safe.coverLetter.en).not.toContain('NX');
-    expect(verifyKit(safe, ctx('A')).passed).toBe(true);
+    // 2 次撰写 + 删句后过短时 1 次补足（2026-11-03）
+    expect(mock.mock.calls.length).toBeGreaterThanOrEqual(2); expect(mock.mock.calls.length).toBeLessThanOrEqual(3);
+    expect(k.quality.status).not.toBe('blocked');
+    const removed = (k.quality.removed ?? []).join('\n');
+    expect(removed).toContain('我熟悉 NX'); expect(removed).toContain('foundation in NX');
+    expect(k.coverLetter.zh).not.toContain('NX'); expect(k.coverLetter.en).not.toContain('NX');
+    expect(k.coverLetter.zh).not.toContain('已毕业');
+    expect(verifyKit(k, ctx('A')).trace.filter((t) => !t.ok && /NX|学位/.test(t.reasons.join(''))).length).toBe(0);
   });
   it.each([
     ['C', '我在 RobotStudio 中参与了六轴机械臂抓取路径的离线编程与仿真，并有 ROS 相关基础。'],
@@ -141,8 +140,10 @@ describe('v1.10.1 generateCoverKit — retry with feedback, block, never claim 1
     const kit = { coverLetter: { zh: goodKit.coverLetter.zh.replace('NX 我目前还没有用过，希望入职后尽快学习。', bad), en: goodKit.coverLetter.en }, selfIntro: goodKit.selfIntro };
     mock.mockResolvedValue(kit);
     const out = await generateCoverKit(S, P, J[k], generateRules(P, J[k], 'zh'));
-    expect(out.quality.status).toBe('blocked');
-    expect(out.quality.issues.join('\n')).toContain(bad.slice(0, 20));
+    // 2026-11-03：硬问题句子被删掉并列出，不进入保存的文本
+    expect(out.quality.status).not.toBe('verified');
+    if (out.quality.status === 'blocked') expect(out.quality.issues.join('\n')).toContain(bad.slice(0, 20));
+    else { expect((out.quality.removed ?? []).join('\n')).toContain(bad.slice(0, 20)); expect(out.coverLetter.zh).not.toContain(bad.slice(0, 20)); }
   });
   it('verifiedOnly returns null when too little verified content remains', () => {
     const k = { coverLetter: { zh: '我熟悉 NX。我有 ROS 基础。', en: 'I know NX.' }, selfIntro: { zh: '您好。', en: 'Hi.' } };
@@ -150,16 +151,17 @@ describe('v1.10.1 generateCoverKit — retry with feedback, block, never claim 1
   });
 });
 
-describe('v1.10.1 export gating and old data', () => {
+describe('manual exports remain free; legacy review metadata stays readable', () => {
   const R = { id: 'resume-1', createdAt: '2026-11-01T00:00:00Z', generatedBy: 'ai' as const };
   const ex = (k: typeof goodKit) => ({ coverLetter: { ...k.coverLetter }, selfIntro: { ...k.selfIntro } });
   it('verified text is exportable; old extras without kitReview are re-checked locally', () => {
     expect(kitExportState(P, J.A, ex(goodKit)).exportable).toBe(true);
     expect(kitExportState(P, J.A, undefined).hasText).toBe(false);
   });
-  it('unverified text is blocked until a manual override for that exact text', () => {
+  it('unverified text remains exportable and still reports factual differences', () => {
     const e = ex(badKit) as NonNullable<ResumeDoc['extras']>;
-    expect(kitExportState(P, J.A, e).exportable).toBe(false);
+    expect(kitExportState(P, J.A, e).exportable).toBe(true);
+    expect(kitExportState(P, J.A, e).verdict.passed).toBe(false);
     e.kitReview = makeKitReview(P, J.A, R, e, 2);
     expect(kitExportState(P, J.A, e, R).exportable).toBe(true);
   });
@@ -171,7 +173,7 @@ describe('v1.10.1 export gating and old data', () => {
     });
     it('(a) a relevant profile fact edited → invalid', () => {
       const e = setup(); const p2 = structuredClone(P); p2.projects[0].bullets[0].zh += '（改）';
-      expect(kitExportState(p2, J.A, e, R).exportable).toBe(false);
+      expect(kitExportState(p2, J.A, e, R).exportable).toBe(true);
       const p3 = structuredClone(P); p3.education[0].expectedConferralDate = '2027-06';
       expect(kitExportState(p3, J.A, e, R).overridden).toBe(false);
     });
@@ -183,7 +185,7 @@ describe('v1.10.1 export gating and old data', () => {
     });
     it('(c) cover letter or intro edited → invalid', () => {
       const e = setup(); e.coverLetter!.zh += '我还精通 CATIA。';
-      expect(kitExportState(P, J.A, e, R).exportable).toBe(false);
+      expect(kitExportState(P, J.A, e, R).exportable).toBe(true);
       const e2 = setup(); e2.selfIntro!.en += ' Extra.';
       expect(kitExportState(P, J.A, e2, R).overridden).toBe(false);
     });
