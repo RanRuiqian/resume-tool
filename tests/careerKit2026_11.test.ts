@@ -75,3 +75,26 @@ describe('备考方向：引用要求编号，不再因原文断行 / 全半角�
     expect(await generatePrep(S, job())).toEqual([]);
   });
 });
+
+describe('2026-11-03 第二轮实测：completed 不误判；删句后过短会补足', () => {
+  it('原文没有「未完成 / 计划」时，completed / 实现 只是换说法', () => {
+    expect(v('In the course project, I completed a modular fixture design in SolidWorks and 3 prototype iterations.', 'en').reasons.join('')).not.toMatch(/已完成/);
+  });
+  it('原文是计划 / 未完成时，仍拦下「完成」', () => {
+    const P2 = structuredClone(P); P2.projects[0].bullets = [{ id: 'proj-1-plan', zh: '计划在课程项目中完成夹具的有限元校核（尚未完成）。', en: 'Planned FEA check of the fixture in the course project (not yet completed).' }];
+    const c2 = buildKitContext(P2, J.A, new Date('2026-11-01'));
+    expect(verifySentence('课程项目中我完成了夹具的有限元校核。', 'zh', 'coverLetter', c2).ok).toBe(false);
+  });
+});
+
+describe('公版简历的求职信用占位符', () => {
+  it('generic 岗位时提示词要求【公司名称】【岗位名称】占位', async () => {
+    const { generateCoverKit } = await import('../src/ai/extras');
+    const { makeGenericJob } = await import('../src/ai/genericJob');
+    const { generateRules } = await import('../src/ai/generate');
+    const gj = makeGenericJob(P);
+    mock.mockResolvedValue({ coverLetter: { zh: '', en: '' }, selfIntro: { zh: '', en: '' } });
+    await generateCoverKit(S, P, gj, generateRules(P, gj, 'zh')).catch(() => null);
+    expect(mock.mock.calls[0][1][1].content as string).toContain('【公司名称】');
+  });
+});

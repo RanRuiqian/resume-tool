@@ -144,6 +144,7 @@ const FP_RE = /我|\bI\b|\bmy\b|\bme\b|\bI'm\b|\bI've\b/i;
 const KEEP_CORE = new Set(['否定 / 未完成', '进行中', '仅 / 限定', '仿真 / 模拟', '预计 / 尚未授予', '讨论 / 设想']);
 const NO_GAIN = new Set(['已完成', '已获得 / 已授予', '实现', '全职 / 正式', '商业', '独立 / 个人', '公司', '医院', '实验室', '工厂 / 车间 / 现场', '导师']);
 const PART_NAME = ['', '参与', '协助', '负责', '主导', '独立完成'];
+const UNFINISHED = { zh: /未完成|尚未|未能|计划|拟|设想|进行中|正在|在研|待/, en: /\bnot (?:yet )?(?:complete|finish)|\bincomplete\b|\bunfinished\b|\bplann|\bongoing\b|\bin progress\b|\bpending\b/i };
 const CONTEXT_NOUN = new Set(['导师', '实验室', '医院', '公司']);
 /** 句子对应的是已结束（不是预计授予）的学历 */
 const pastDegree = (id: string, ctx: KitContext) => !!ctx.finishedEdu?.includes(id);
@@ -286,6 +287,8 @@ export function verifySentence(s: string, l: Lang, field: SentenceTrace['field']
           if (CONTEXT_NOUN.has(name) && (rz.test(ctx.corpus) || re.test(ctx.corpus))) continue;
           // 已经结束的学历写「完成 / completed」不是新增事实（尚未授予的学位仍由「学位状态」检查拦截）
           if ((name === '已完成' || name === '已获得 / 已授予') && degreeTalk && pastDegree(top.f.id, ctx) ) continue;
+          // 负责人规则（HANDOFF §1.1）：只拦「把未完成 / 计划 / 进行中写成完成 / 实现」；原文没有这些限定时，「completed / 实现」只是换说法
+          if ((name === '已完成' || name === '实现') && !sup.some((x) => UNFINISHED.zh.test(x.f.zh) || UNFINISHED.en.test(x.f.en))) continue;
           reasons.push(`新增了资料没有的事实「${name}」`);
         }
       }

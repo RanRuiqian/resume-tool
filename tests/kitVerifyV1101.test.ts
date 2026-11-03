@@ -123,7 +123,8 @@ describe('v1.10.1 generateCoverKit — retry with feedback, block, never claim 1
   it('bad twice (2026-11-03): hard-problem sentences are removed and listed; the rest is saved as review', async () => {
     mock.mockResolvedValue(badKit);
     const k = await generateCoverKit(S, P, J.A, generateRules(P, J.A, 'zh'));
-    expect(mock).toHaveBeenCalledTimes(2);
+    // 2 次撰写 + 删句后过短时 1 次补足（2026-11-03）
+    expect(mock.mock.calls.length).toBeGreaterThanOrEqual(2); expect(mock.mock.calls.length).toBeLessThanOrEqual(3);
     expect(k.quality.status).not.toBe('blocked');
     const removed = (k.quality.removed ?? []).join('\n');
     expect(removed).toContain('我熟悉 NX'); expect(removed).toContain('foundation in NX');

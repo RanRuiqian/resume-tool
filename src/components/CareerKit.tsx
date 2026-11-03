@@ -37,6 +37,8 @@ export function CareerKit() {
   const ex = resume?.extras ?? {};
   const state = useMemo(() => kitExportState(profile, job, resume?.extras, resume), [profile, job, resume]);
   if (!resume || !job || (!FEATURES.coverLetter && !FEATURES.prepDirections)) return null;
+  // 公版简历没有真实岗位：备考方向没有意义（只会得到通用套话），只保留求职信（占位符版）
+  const prepOn = FEATURES.prepDirections && !job.generic;
   const save = (fn: (e: NonNullable<ResumeDoc['extras']>) => void, onlyFor?: string) => {
     const base = latest.current; if (!base || (onlyFor && base.id !== onlyFor)) return false; // 生成期间换了简历：不写到别的简历上
     const n = structuredClone(base); n.extras = n.extras ?? {}; fn(n.extras); latest.current = n; setResume(n); return true;
@@ -65,10 +67,11 @@ export function CareerKit() {
       </div>
       <p className="muted small">{L('「我做过 / 会 / 有」只取自你的资料；岗位要求只用于动机和学习方向。AI 生成时检查事实，生成后可自由编辑并导出。', 'Self-claims come only from your profile; the job post is used only for motivation and learning goals. Each sentence is checked against your profile before saving. This is a rule-based check, not a guarantee — read it yourself before sending.')}</p>
       <div className="row">
-        {FEATURES.coverLetter && FEATURES.prepDirections && <button className="primary" data-testid="kit-both" disabled={!!busy.cover || !!busy.interview} onClick={() => { go('cover'); go('interview'); }}>{L('✨ 两项一起生成', '✨ Generate both')}</button>}
+        {FEATURES.coverLetter && prepOn && <button className="primary" data-testid="kit-both" disabled={!!busy.cover || !!busy.interview} onClick={() => { go('cover'); go('interview'); }}>{L('✨ 两项一起生成', '✨ Generate both')}</button>}
         {FEATURES.coverLetter && <button disabled={!!busy.cover} onClick={() => go('cover')}>{ex.coverLetter ? '🔄 ' : '✨ '}{L('求职信 + 1 分钟自我介绍', 'Cover letter + 1-min intro')}</button>}
-        {FEATURES.prepDirections && <button disabled={!!busy.interview} onClick={() => go('interview')}>{ex.prep ? '🔄 ' : '✨ '}{L('备考大方向', 'What to prepare')}</button>}
+        {prepOn && <button disabled={!!busy.interview} onClick={() => go('interview')}>{ex.prep ? '🔄 ' : '✨ '}{L('备考大方向', 'What to prepare')}</button>}
       </div>
+      {job.generic && <p className="muted small" data-testid="kit-generic-note">{L('这是公版简历：求职信里的公司和岗位用【公司名称】【岗位名称】占位，投递时替换即可。备考方向要针对具体岗位，请在具体岗位的简历里生成。', 'Generic resume: the cover letter uses [Company Name] / [Position] placeholders. Generate prep directions from a job-specific resume.')}</p>}
       {(['cover', 'interview'] as Kind[]).map((k) => busy[k] && <div key={k} className="notice" data-testid={`kit-busy-${k}`}><span className="spinner" /> {busy[k]}</div>)}
       {(['cover', 'interview'] as Kind[]).map((k) => errs[k] && <div key={k} className="notice error" data-testid={`kit-err-${k}`}>{k === 'cover' ? L('求职信：', 'Cover letter: ') : L('备考方向：', 'Prep: ')}{errs[k]}</div>)}
       {pending && (
@@ -96,9 +99,9 @@ export function CareerKit() {
       {area(L('求职信', 'Cover letter'), ex.coverLetter, (t) => save((e) => { e.coverLetter![lang] = t; }), 10)}
       {area(L('1 分钟自我介绍', '1-minute self-introduction'), ex.selfIntro, (t) => save((e) => { e.selfIntro![lang] = t; }), 6)}
       {ex.selfIntro?.[lang] && <div className="muted small" data-testid="intro-len">{lang === 'zh' ? `自我介绍 ${zhLen(ex.selfIntro.zh)} 字（建议 180–220 字，约 1 分钟）` : `Intro: ${enWords(ex.selfIntro.en)} words (aim for 100–130, about 1 minute)`}</div>}
-      {state.hasText && !state.verdict.passed && <p className="muted small" data-testid="kit-status">{L('当前文字可能有与资料不同的表述，请留意关键事实；可继续编辑和下载。', 'Some wording may differ from your profile. You can continue editing and downloading.')}</p>}
+      {state.hasText && !state.verdict.passed && quality?.status !== 'review' && <p className="muted small" data-testid="kit-status">{L('当前文字可能有与资料不同的表述，请留意关键事实；可继续编辑和下载。', 'Some wording may differ from your profile. You can continue editing and downloading.')}</p>}
       {quality && quality.warnings.length > 0 && <div className="notice warn small" data-testid="kit-quality">{L('格式提示：', 'Style: ')}{quality.warnings.map((x, i) => <div key={i}>· {x}</div>)}</div>}
-      {ex.prep && ex.prep.length > 0 && (
+      {prepOn && ex.prep && ex.prep.length > 0 && (
         <div className="interview prep">
           <b>{L('备考大方向（每条均来自岗位原文；是要准备的方向，不代表你已具备）', 'What to prepare (each tied to the job post; not a claim that you have it)')}</b>
           {ex.prep.map((it, i) => <div key={i} className="prep-item"><div><b>{i + 1}. {it.area[lang] || it.area.zh || it.area.en}</b></div><div className="small">{it.why[lang] || it.why.zh || it.why.en}</div>{!!it.points?.length && <ul className="small" data-testid="prep-points">{it.points.map((p, j) => <li key={j}>{p[lang] || p.zh || p.en}</li>)}</ul>}<blockquote className="small muted">{L('岗位原文：', 'From the JD: ')}“{it.source}”</blockquote></div>)}

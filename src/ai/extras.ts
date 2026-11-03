@@ -122,7 +122,7 @@ export async function generateCoverKit(s: Settings, p: ProfileDoc, job: JobParse
   const degree = ctx.degreePending ? `\n学位状态：尚未授予，预计 ${ctx.degreePending}（只能写「预计」）。` : '';
   const gaps = ctx.gapTerms.slice(0, 30);
   const ask = (feedback: string) => chatJson<{ coverLetter?: Bi; selfIntro?: Bi }>(s, [{ role: 'system', content: SYS_FACTS }, { role: 'user', content:
-`${COVER_KIT_PROMPT}${feedback ? `\n\n上一版有句子未通过核对，请改正（不要再写这些内容）：\n${feedback}` : ''}
+`${COVER_KIT_PROMPT}${job.generic ? `\n\n【公版模式】这不是具体岗位，B 只是通用能力清单：求职信里公司与岗位写成占位符「【公司名称】」「【岗位名称】」（英文 [Company Name] / [Position]），让用户投递时替换；不要写「工程类岗位」这类笼统说法；中间段落挑最有代表性的 1–2 段经历；自我介绍的求职方向写资料中的求职方向。` : ''}${feedback ? `\n\n上一版有句子未通过核对，请改正（不要再写这些内容）：\n${feedback}` : ''}
 
 【A 候选人事实——唯一可以支撑「我做过 / 会 / 有」的来源】${degree}
 重点经历（最多展开 1–2 段）：${focus.join('、') || '（自选）'}
@@ -157,7 +157,23 @@ ${JSON.stringify(gaps)}` }], { model: decisionModel(s), thinking: 'enabled', tim
   const hard = b.v.trace.filter((t) => !t.ok && isHard(t));
   const cleaned: Kit = { coverLetter: { ...b.kit.coverLetter }, selfIntro: { ...b.kit.selfIntro } };
   for (const f of ['coverLetter', 'selfIntro'] as const) for (const l of ['zh', 'en'] as const) cleaned[f][l] = dropSentences(b.kit[f][l], hard.filter((t) => t.field === f && t.lang === l).map((t) => t.text));
-  const v2 = verifyKit(cleaned, ctx);
+  let v2 = verifyKit(cleaned, ctx);
+  // 2026-11-03：删掉问题句后若某段明显过短（如自我介绍只剩 80 字），再请 AI 只用 A 中事实补足一次，补出的句子同样逐句核对、硬问题再删
+  const short = (['coverLetter', 'selfIntro'] as const).flatMap((f) => (['zh', 'en'] as const).filter((l) => size(cleaned[f][l], l) < KIT_LIMITS[f === 'coverLetter' ? 'cover' : 'intro'][l][2]).map((l) => `${f === 'coverLetter' ? '求职信' : '自我介绍'}（${l === 'zh' ? '中文' : '英文'}）只有 ${size(cleaned[f][l], l)}${l === 'zh' ? ' 字' : ' 词'}`));
+  if (short.length) {
+    try {
+      attempts++;
+      const out = await ask(`下面是删掉问题句后的当前版本，以下部分过短，请补足到目标长度：${short.join('、')}。\n只补充【A】中有的事实（教育背景、最相关项目的做法与工具、求职方向）；已有句子尽量保留原样；不要再写这些被删掉的内容：\n${hard.map((t, i) => `${i + 1}. ${t.text}（${t.reasons.join('；')}）`).join('\n')}\n当前版本：${JSON.stringify(cleaned)}`);
+      const k2: Kit = { coverLetter: { zh: (out.coverLetter?.zh ?? '').trim(), en: (out.coverLetter?.en ?? '').trim() }, selfIntro: { zh: (out.selfIntro?.zh ?? '').trim(), en: (out.selfIntro?.en ?? '').trim() } };
+      const v3 = verifyKit(k2, ctx); const hard3 = v3.trace.filter((t) => !t.ok && isHard(t));
+      for (const f of ['coverLetter', 'selfIntro'] as const) for (const l of ['zh', 'en'] as const) {
+        const t = dropSentences(k2[f][l], hard3.filter((x) => x.field === f && x.lang === l).map((x) => x.text));
+        if (size(t, l) > size(cleaned[f][l], l)) cleaned[f][l] = t; // 只在确实更长时采用
+      }
+      hard.push(...hard3.filter((x) => !hard.some((h) => h.text === x.text)));
+      v2 = verifyKit(cleaned, ctx);
+    } catch { /* 补足失败就保留删减版 */ }
+  }
   const enough = (['coverLetter', 'selfIntro'] as const).every((f) => (['zh', 'en'] as const).every((l) => v2.trace.filter((t) => t.field === f && t.lang === l && (t.kind === 'self' || t.kind === 'other')).length >= 2));
   if (!enough) return { ...b.kit, quality: { attempts, status: 'blocked', issues: b.v.issues, warnings: b.w, trace: b.v.trace, safe: verifiedOnly(b.kit, ctx), caught } };
   const FIELD = { coverLetter: '求职信', selfIntro: '自我介绍' } as const;

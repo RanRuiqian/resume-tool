@@ -225,8 +225,9 @@ describe('v1.10 cover letter & self-intro quality', () => {
     const out = { coverLetter: { zh: '我精通有限元分析并带领团队提升效率 50%。', en: 'I am an expert in FEA with 10 years of experience.' }, selfIntro: { zh: '大家好。', en: 'Hello.' } };
     mock.mockResolvedValue(out);
     const k = await generateCoverKit(S, P, J.A, r);
-    expect(mock).toHaveBeenCalledTimes(2);
-    expect(k.quality.attempts).toBe(2);
+    // 2 次撰写 + 删句后过短时 1 次补足（2026-11-03），补足后仍无可用内容 → blocked
+    expect(mock).toHaveBeenCalledTimes(3);
+    expect(k.quality.attempts).toBe(3);
     // v1.10.1：两次都未通过逐句核对 → 标记 blocked，由界面决定不保存；问题逐句给出
     expect(k.quality.status).toBe('blocked');
     expect(k.quality.issues.join('\n')).toMatch(/有限元分析|FEA/);

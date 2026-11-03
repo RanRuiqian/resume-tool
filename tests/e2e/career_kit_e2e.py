@@ -66,5 +66,9 @@ with tempfile.TemporaryDirectory(prefix='kit-') as folder, sync_playwright() as 
     pg.wait_for_selector('[data-testid=kit-busy-cover]', state='detached', timeout=30000); pg.wait_for_selector('[data-testid=kit-busy-interview]', state='detached', timeout=30000); pg.wait_for_timeout(500)
     r = pg.evaluate(GET); e = r.get('extras') or {}
     chk('两项结果都保存了（求职信没有把先完成的备考方向覆盖掉）', bool(e.get('prep')) and '设计模块化外壳' in (e.get('coverLetter') or {}).get('zh', ''))
+    # ---------- 公版简历：不显示备考方向，提示占位符 ----------
+    G = json.loads(json.dumps(F)); G['job']['generic'] = True
+    pg.evaluate(SEED, G); pg.reload(); pg.wait_for_selector('.preview-page'); pg.locator('summary', has_text='可选：求职信').click()
+    chk('公版简历：隐藏「两项一起生成」「备考大方向」，显示占位符说明', pg.locator('[data-testid=kit-both]').count() == 0 and pg.get_by_role('button', name='备考大方向').count() == 0 and pg.locator('[data-testid=kit-generic-note]').count() == 1)
     chk('无页面错误', not errs)
 print(f'RESULT {sum(ok)} / {len(ok)}')

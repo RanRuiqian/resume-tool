@@ -224,6 +224,12 @@ ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按�
 - 测试：新增 `tests/careerKit2026_11.test.ts`（8 项，复现截图误判 + 仍拦下的反例 + 备考方向）；`tests/kitVerifyV1101.test.ts` 4 项按新行为改写（硬问题句被删并列出，而非整份 blocked）。全量 680/680；新 e2e `tests/e2e/career_kit_e2e.py` 6/6（需先 `npx tsx scripts/prepare-workspace-e2e.ts`）；resume_workspace 25/25。
 - `tests/e2e/kit_verify_e2e.py` **改动前就已失败**（还在等旧的「导出拦截 / 人工放行」界面，与 resume_workspace「人工修改可直接导出」冲突，且写死 `/usr/bin/google-chrome`），属过时测试，未修，可删除或按新行为重写。
 - **并行生成**（负责人 22:40 提出）：`CareerKit` 的忙碌 / 错误状态按项分开（`kit-busy-cover / kit-busy-interview`、`kit-err-*`），两项可同时点，并新增「两项一起生成」（`data-testid=kit-both`）。两次 AI 调用彼此独立，总用时约等于较慢那项。关键修复：`save` 以前基于点击时的 `resume` 副本，并行时后完成的会覆盖先完成的结果；现改为基于 `latest` ref 的最新简历，并在生成期间换了简历时不写入。e2e 扣住两个请求确认同时在途，再先回备考、后回求职信，断言两者都保存（9/9）。
+- **第二轮实测（22:51，负责人在公版简历上测「两项一起生成」）**：并行正常。问题与修改：
+  - 公版简历的备考方向全是通用套话（「工程类专业基础」「团队协作」，依据是 makeGenericJob 合成的通用要求），求职信写「贵公司工程类岗位」。→ `job.generic` 时隐藏备考方向与「两项一起生成」，显示说明（`kit-generic-note`）；求职信提示词要求【公司名称】【岗位名称】/ [Company Name] [Position] 占位。
+  - 自我介绍删句后只剩 84 字（目标 180–220），缺教育背景。→ 删硬问题句后若某段低于下限，再调一次 AI 只用 A 中事实补足（反馈带被删句与原因），补出的句子同样核对、硬问题再删，确实更长才采用；调用次数最多 3 次（测试已按此更新）。
+  - 「The working prototype was completed…」被标「新增了资料没有的事实：已完成」。→ 按负责人规则只在原文含未完成 / 计划 / 进行中时才拦「完成 / 实现」（`UNFINISHED`）。
+  - 有核对提示框时不再重复显示灰色「当前文字可能有与资料不同的表述」。
+  - 测试：careerKit2026_11 11 项；全量 683/683；career_kit e2e 10/10；resume_workspace 25/25。
 - 未验证：真实 DeepSeek 下的求职信质量与误判率、备考方向内容质量——需负责人实测。
 
 ### 下一阶段（负责人 2026-11-03 22:09 指示）
