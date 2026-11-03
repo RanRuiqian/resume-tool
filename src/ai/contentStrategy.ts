@@ -74,6 +74,7 @@ export async function fitContent(p: ProfileDoc, pool: ResumeDoc, reserveIds: str
     work: pool.selection.work.filter((id) => !reserve.has(id) || shown.has(id)), projects: pool.selection.projects.filter((id) => !reserve.has(id) || shown.has(id)) },
     items: pool.items.filter((i) => !reserve.has(owner.get(i.sourceId) ?? '') || shown.has(owner.get(i.sourceId)!)) });
   let r = make();
+  const order: string[] = [];   // 实际补入的候补，按补入顺序（AI 给的优先级）
   for (const id of reserveIds) {
     const w = p.work.find((x) => x.id === id);
     const missingBackground = w && ((isProfessionalWork(w) && !p.work.some((x) => r.selection.work.includes(x.id) && isProfessionalWork(x)))
@@ -82,7 +83,7 @@ export async function fitContent(p: ProfileDoc, pool: ResumeDoc, reserveIds: str
     if (estimateUsage(p, template, r) >= 0.95 && !missingBackground) continue;
     shown.add(id); const next = make();
     if (estimateUsage(p, template, next) > 1) { shown.delete(id); continue; }
-    r = next;
+    r = next; order.push(id);
   }
   const notes: string[] = [];
   if (options.measure) {
@@ -91,10 +92,21 @@ export async function fitContent(p: ProfileDoc, pool: ResumeDoc, reserveIds: str
       if (!measured) notes.push('PDF 页数测量暂不可用，当前仅为排版估算；请在导出预览中核对。');
       if (measured && Math.max(measured.zh.pages, measured.en.pages) > (template.page.targetPages || 1)) {
         if (shown.size) {
-          shown.clear(); r = make();
-          notes.push('按实际 PDF 页数撤回候补内容；已保留主要工作与项目，未缩小正文或删除固定简介。');
-          const base = await options.measure(r);
-          if (base && Math.max(base.zh.pages, base.en.pages) > (template.page.targetPages || 1)) notes.push('主要内容超过目标页数：请改用两页或手动精简，不自动删除职业背景。');
+          // 2026-11：以前一超页就把全部候补撤掉（负责人实测：7 段候补全撤，一页只剩一半）。
+          // 现在按补入顺序二分查找「最多能保留前几段」，从优先级最低的开始撤，用实际 PDF 页数判断。
+          const limit = template.page.targetPages || 1;
+          const setShown = (k: number) => { shown.clear(); order.slice(0, k).forEach((x) => shown.add(x)); return make(); };
+          const keep = async (k: number) => { const c = setShown(k); const m = await options.measure!(c); return { c, ok: !!m && Math.max(m.zh.pages, m.en.pages) <= limit }; };
+          let lo = 0, hi = order.length - 1, best = await keep(0);
+          if (best.ok) {
+            while (lo < hi) { const mid = (lo + hi + 1) >> 1; const t = await keep(mid); if (t.ok) { lo = mid; best = t; } else hi = mid - 1; }
+            setShown(lo); r = best.c;
+            const dropped = order.length - lo;
+            notes.push(`按实际 PDF 页数撤回了 ${dropped} 段优先级较低的候补经历（保留 ${lo} 段）；可改用两页或在素材池手工补选。`);
+          } else {
+            shown.clear(); r = make();
+            notes.push('主要内容超过目标页数：请改用两页或手动精简，不自动删除职业背景。');
+          }
         } else notes.push('主要内容超过目标页数：请改用两页或手动精简，不自动删除职业背景。');
       }
     } catch { notes.push('PDF 页数测量暂不可用，当前仅为排版估算；请在导出预览中核对。'); }

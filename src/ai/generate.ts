@@ -127,6 +127,15 @@ export function capPlanFacts(entries: PlanEntry[], softFactTarget: number): Plan
   return out;
 }
 
+/** 去掉含问题词的句子，保留其余句子；中英文任一语言保留下来即可用（另一语言稍后本地化补齐）。 */
+export function salvageSummary(c: { value: Bi | null; bad: string[] }): Bi | null {
+  if (!c.value) return null;
+  const terms = c.bad.map((b) => b.replace(/^数字\s*/, '').trim().toLowerCase()).filter(Boolean);
+  const clean = (t: string) => (t.match(/[^。！？.!?]+[。！？.!?]?/g) ?? []).filter((x) => !terms.some((w) => x.toLowerCase().includes(w))).join('').trim();
+  const zh = clean(c.value.zh), en = clean(c.value.en);
+  return zh.length >= 20 || en.length >= 40 ? { zh, en } : null;
+}
+
 async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, primary: Lang, targetPages: number, onStep?: (m: string) => void, options: ContentOptions = {}): Promise<{ resume: ResumeDoc; decision: AiSelectionResult }> {
   const sec = other(primary);
   // v1.9.1：主语言译文已过期（另一语言改过）时，改用最新的另一语言原文交给 AI 重写，不静默使用过期译文
@@ -242,9 +251,14 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   const summary = accept(checkedSummary, '简介');
   const fixed = fixedSummaryItem(p);
   if (summary) items.push({ sourceId: 'summary', zh: summary.zh || fixed?.zh || '', en: summary.en || fixed?.en || '', syncStatus: summary.zh && summary.en ? 'in-sync' : 'needs-review' });
-  else {
-    if (fixed) items.push(fixed);
+  else if (fixed) {
+    items.push(fixed);
     if (!out.summary) notes.push('AI 没有返回定制简介，已使用资料库固定简介');
+  } else {
+    // 2026-11：资料库没有固定简介时不能整段不放（负责人实测简历没有个人简介）。去掉含问题词的句子后仍有内容就用。
+    const salvaged = salvageSummary(checkedSummary);
+    if (salvaged) { items.push({ sourceId: 'summary', zh: salvaged.zh, en: salvaged.en, syncStatus: salvaged.zh && salvaged.en ? 'in-sync' : 'needs-review' }); notes.push('个人简介去掉了含资料外内容的句子；建议在「我的资料」保存一段固定简介作为兜底'); }
+    else notes.push('没有可用的个人简介：AI 简介未通过检查，资料库也没有固定简介。请在「我的资料 → 个人简介」填写一段');
   }
   const headline = accept(checkedHeadline, '求职方向');
   const grouped = new Set([...provenance.entries()].flatMap(([main, ids]) => ids.filter((id) => id !== main)));

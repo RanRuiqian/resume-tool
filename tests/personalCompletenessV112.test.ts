@@ -166,7 +166,7 @@ describe('B/C: professional and student background, no keyword exclusion', () =>
     const r = await generateResume(settings, p, jobs().A, 'zh', 1, undefined, { template: template(), measure });
     expect(r.selection.work).toContain('career'); expect(r.selection.work).not.toContain('student');
     expect(summaryOf(r.items)!.zh).toBe(p.profile.summary.zh);
-    expect(r.notes!.join()).toContain('撤回候补');
+    expect(r.notes!.join()).toMatch(/撤回(了 \d+ 段)?.*候补/);
     expect(measure).toHaveBeenCalledTimes(2); expect(api).toHaveBeenCalledTimes(3);
   });
 });

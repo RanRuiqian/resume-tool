@@ -293,3 +293,25 @@ describe('K 选材条数上限（输出被截断的回归）', () => {
     expect(capPlanFacts([edu], 10)[0].bulletIds).toHaveLength(12);
   });
 });
+
+describe('L 候补逐段撤回 / 简介兜底（2026-11 联合岗位实测回归）', () => {
+  it('实际超页时按优先级二分保留尽量多的候补，而不是全部撤回', async () => {
+    const { fitContent } = await import('../src/ai/contentStrategy');
+    const p = personalFixture();
+    const proj = (id: string) => ({ id, enabled: true, name: { zh: id, en: id }, role: { zh: '', en: '' }, start: '2025', end: '2026', tags: [], bullets: [{ id: `${id}-b`, enabled: true, text: { zh: `${id} 的要点`, en: `${id} point` } }] });
+    p.projects.push(...['r1', 'r2', 'r3', 'r4'].map(proj) as never[]);
+    const base = { id: 'x', jobId: 'j', primaryLanguage: 'zh', selection: { work: [], projects: ['r1', 'r2', 'r3', 'r4'], education: [], skills: [], certificates: [], awards: [] },
+      items: ['r1', 'r2', 'r3', 'r4'].map((id) => ({ sourceId: `${id}-b`, zh: `${id} 的要点`, en: `${id} point`, syncStatus: 'in-sync' })) } as never;
+    // 候补数 ≤2 时放得下，3 段以上超页
+    const measure = vi.fn(async (r: { selection: { projects: string[] } }) => { const n = r.selection.projects.length; return { zh: { pages: n > 2 ? 2 : 1 }, en: { pages: 1 } }; });
+    const r = await fitContent(p, base, ['r1', 'r2', 'r3', 'r4'], {}, { targetPages: 1, measure: measure as never });
+    expect(r.selection.projects).toEqual(['r1', 'r2']);
+    expect(r.notes!.join()).toContain('撤回了 2 段');
+  });
+  it('没有固定简介时，AI 简介去掉含问题词的句子后仍保留', async () => {
+    const { salvageSummary } = await import('../src/ai/generate');
+    const s = salvageSummary({ value: { zh: '应用工程硕士在读，具备结构设计与 3D 打印实践。熟悉 ANSYS 有限元分析。', en: 'Master of Applied Engineering student with structural design and 3D printing practice. Experienced in ANSYS FEA.' }, bad: ['ANSYS'] });
+    expect(s!.zh).toBe('应用工程硕士在读，具备结构设计与 3D 打印实践。'); expect(s!.en).not.toContain('ANSYS');
+    expect(salvageSummary({ value: { zh: '熟悉 ANSYS。', en: '' }, bad: ['ANSYS'] })).toBeNull();
+  });
+});
