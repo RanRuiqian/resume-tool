@@ -152,7 +152,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   onStep?.('2/3 正在撰写：AI 按岗位同时撰写中英文简历、简介与求职方向…');
   const write = (b: typeof brief) => chatJson<WriteOut>(s, [{ role: 'system', content: SYS_FACTS },
     { role: 'user', content: `${AI_WRITE_PROMPT}\n\n${JSON.stringify(b)}` }],
-  { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 16_000 });
+  { model: decisionModel(s), thinking: 'enabled', timeoutMs: 240_000, maxTokens: 24_000 });
   // 输出被截断（finish_reason=length）时，只带前一半（优先级高的）事实重试一次；其余事实按资料库原文精简后进入简历。
   const out = await write(brief).catch((e: Error) => {
     if (!/finish_reason=length/.test(e.message)) throw e;

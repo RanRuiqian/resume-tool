@@ -85,6 +85,7 @@ requirements[].evidenceIds 只用 allowedIds.evidenceIds，包括真实 sourceId
 岗位要求分 must / responsibility / preferred；direct / transferable / learning 必须引用确实支持结论的证据，gap 必须为空 evidenceIds。保留课程、仿真、参与/协助、讨论/未完成、预计授予等边界；不能把 JD 中的技能写成个人经历。
 输出 JSON：
 {"requirements":[{"text":"岗位要求","tier":"must|responsibility|preferred","assessment":"direct|transferable|learning|gap","requirementId":"联合模式必须复制 requirementRefs.id","reason":"关联依据与边界","evidenceIds":["真实证据 ID"]}],"entries":[{"entryId":"真实经历 ID","bulletIds":["所属事实 ID"],"reason":"体现直接相关、可迁移工程或职业/组织背景的理由"}],"reserveEntries":[],"courses":[],"jointSummary":{"common":[],"complementary":[],"conflicts":[]},"education":[{"entryId":"教育 ID","bulletIds":[]}],"skills":[],"certificates":[],"awards":[],"skillGroups":[{"zh":"简历上的分组名，如 设计与仿真","en":"e.g. Design & Simulation","skillIds":["从 skills 中选出的 ID"]}],"omissions":{"professionalWork":"未选时说明","campus":"未选时说明"},"tradeoffs":"概述完整画像与版面之间的取舍"}。
+输出要简洁：requirements[].reason 和 entries[].reason 每条一句话（约 15–40 字），不要复述原文；思考过程也尽量精炼，输出过长会被截断导致整次失败。
 skillGroups：把选中的技能按简历常见方式分 3–5 组（如 设计与仿真 / 制造与原型 / 编程与数据 / 机器人与视觉 / 办公与语言，按本岗位调整组名和顺序，相关的组放前面）；每个选中技能只出现在一组，组名中英文都给。`;
 
 export const AI_PLAN_REPAIR_PROMPT = `上一条 assistant 消息是你首次返回的选材方案。请结合原始岗位、素材、具体 issues 和 allowedIds，仅修复 allowedPaths 列出的错误位置，不要重新生成整份方案。

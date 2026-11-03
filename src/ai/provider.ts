@@ -100,9 +100,14 @@ export function parseJson<T>(s: string): T {
   }
 }
 
+/** 输出被 max_tokens 截断时可放宽的上限（深度思考的推理过程也计入 max_tokens）。 */
+export const MAX_OUTPUT_TOKENS = 64_000;
 export async function chatJson<T>(s: Settings, messages: ChatMsg[], opts: AiObservation & { model?: string; maxTokens?: number; timeoutMs?: number; thinking?: 'enabled' | 'disabled' } = {}): Promise<T> {
   try { return parseJson<T>(await chat(s, messages, { ...opts, json: true })); }
   catch (e) {
+    // 2026-11：被截断（多为联合岗位：三份 JD 的全部要求 + 深度思考）时，放宽到 2 倍输出上限和 2 倍等待时间自动重试一次
+    if (e instanceof AiError && /finish_reason=length/.test(e.message) && opts.maxTokens && opts.maxTokens < MAX_OUTPUT_TOKENS)
+      return chatJson<T>(s, messages, { ...opts, maxTokens: Math.min(MAX_OUTPUT_TOKENS, opts.maxTokens * 2), timeoutMs: (opts.timeoutMs ?? 120_000) * 2 });
     // 部分服务不支持 response_format，降级重试一次
     if (e instanceof AiError && /400/.test(e.message)) return parseJson<T>(await chat(s, messages, opts));
     // v1.11：输出不是合法 JSON（非截断）时整次重试一次，而不是静默丢弃该步骤结果

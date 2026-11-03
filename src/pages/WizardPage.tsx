@@ -410,7 +410,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
       r = await trimToPages(labelled.profile, fixedTpl, labelled.resume, (x) => measurePages(labelled.profile, fixedTpl, x));
       setResume({ ...r, templateId });
     }
-    catch (e) { setGen({ err: (e as Error).message, errJob: job.id }); } finally { setGen({ busy: '', running: false }); }
+    catch (e) { const at = genState.busy; setGen({ err: `${(e as Error).message}${at ? `（出错步骤：${at}）` : ''}`, errJob: job.id }); } finally { setGen({ busy: '', running: false }); }
   };
   // 同一岗位刚生成失败时，切页面回来不自动重跑（避免重复调用 AI）；用户可点「重新生成」。
   // 从第 2 步点「生成简历 / 生成共同简历」进来：当前岗位还没有对应简历时自动生成（旧岗位的简历保留在历史里）。

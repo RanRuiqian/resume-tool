@@ -104,3 +104,23 @@ describe('v1.11 DeepSeek compatibility', () => {
     vi.unstubAllGlobals();
   });
 });
+
+describe('2026-11 截断自动放宽重试', () => {
+  afterEach(() => vi.unstubAllGlobals());
+  it('finish_reason=length 时以 2 倍 max_tokens 重试一次并成功', async () => {
+    const sent: number[] = []; let n = 0;
+    vi.stubGlobal('fetch', vi.fn(async (_u: string, init: RequestInit) => {
+      sent.push(JSON.parse(String(init.body)).max_tokens);
+      const fin = n++ === 0 ? 'length' : 'stop';
+      return new Response(JSON.stringify({ choices: [{ finish_reason: fin, message: { content: fin === 'stop' ? '{"ok":1}' : '{"ok":' } }] }), { status: 200 });
+    }));
+    await expect(chatJson<{ ok: number }>(S(), [{ role: 'user', content: 'x' }], { maxTokens: 16_000 })).resolves.toEqual({ ok: 1 });
+    expect(sent).toEqual([16_000, 32_000]);
+  });
+  it('已到上限仍截断则报清楚的错误，不无限重试', async () => {
+    const f = vi.fn(async () => new Response(JSON.stringify({ choices: [{ finish_reason: 'length', message: { content: '{' } }] }), { status: 200 }));
+    vi.stubGlobal('fetch', f);
+    await expect(chatJson(S(), [{ role: 'user', content: 'x' }], { maxTokens: 32_000 })).rejects.toThrow(/finish_reason=length/);
+    expect(f).toHaveBeenCalledTimes(2);
+  });
+});
