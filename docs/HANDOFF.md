@@ -205,3 +205,4 @@ ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按�
 - 非窄屏预览缩放改为随预览栏宽度自适应（0.45–0.72）。
 - 测试：tests/e2e/a4_guides_e2e.py。
 - 2026-11-03 追加：快捷版式栏新增「中英文同步调整」勾选（默认勾选，存 localStorage `fmtSync`）。取消 = 只改当前查看的语言：页边距 / 间距写入 `TemplateLocale.marginMm / spacing`（可选字段），由 `render/langOverrides.ts#withLangOverrides` 在 buildLayout / fitTemplate / pageBudget 折进 page.marginMm / spacing（PDF、Word、预览共用）。字号、行距本来就按语言分开存。中英对照视图强制同步。测试：tests/langOverrides.test.ts、tests/e2e/a4_guides_e2e.py。
+- 2026-11-03 修正：预览 A4 纸高度曾 = 内容高度 + 下边距，内容一多纸的下边界就被撑长。现改为：页数 = ceil(内容高 / 每页可打印区高)，纸张高度固定为 N×297mm（Preview.tsx），超出 1 页时红色虚线 + 提示「超出 1 页」。

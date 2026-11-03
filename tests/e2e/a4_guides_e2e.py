@@ -31,6 +31,16 @@ with sync_playwright() as p:
     pg.click('text=English >> nth=0'); pg.wait_for_timeout(600)
     chk('重新勾选同步后，一次加减两种语言都变化', float(zh2.split('/')[0])-float(zh1.split('/')[0])==0.5 and float(v().split('/')[0])-float(en1.split('/')[0])==0.5)
     pg.click('text=中文版 >> nth=0')
+    # 拉到极致（英文版内容更长，会超过一页）：A4 纸高度必须保持 N×297mm，不能随内容一点点变长
+    H=297*3.7795
+    pg.click('text=English >> nth=0'); pg.wait_for_timeout(500)
+    for t in ['ig','sg','fs','lh','mg-all']:
+        for _ in range(40): pg.click(f'[data-testid={t}-plus]')
+    pg.wait_for_timeout(500)
+    hh=pg.evaluate("()=>document.querySelector('.preview-page').offsetHeight")
+    chk(f'内容溢出后纸张高度是整数页 A4（{hh/H:.3f} 页，不随内容变长）', abs(hh/H-round(hh/H))<0.01 and hh/H>1.5)
+    chk('溢出时提示超出 1 页', '超出 1 页' in info())
+    pg.click('text=中文版 >> nth=0')
     pg.locator('[data-testid=a4-bar] input').first.uncheck()
     chk('可关闭 A4 边界', pg.locator('[data-testid=a4-guides]').count()==0)
     chk('无页面报错', not errs); b.close()

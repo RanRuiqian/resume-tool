@@ -67,10 +67,12 @@ export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number })
   const showG = canGuide && guides;
   const H = hMm * PX, mt = m.marginMm.top * PX, mb = m.marginMm.bottom * PX, ml = m.marginMm.left * PX, mr = m.marginMm.right * PX;
   const bottomY = mt + contentH;                                   // 内容底部（px，自页面顶部）
-  const pages = Math.max(1, Math.ceil((bottomY - 1) / H));
+  const U = H - mt - mb;                                           // 每页可打印区高度
+  // 内容超过一页的可打印区就算多一页（压进下边距也不行，PDF 会换页），A4 纸本身始终是 N × 297 mm，不会跟着内容变长
+  const pages = Math.max(1, Math.ceil((contentH - 0.5) / U));
   const printEnd = pages * H - mb;                                 // 最后一页可打印区底边
-  const blankMm = (printEnd - bottomY) / PX;                       // 正数 = 底部空白；负数 = 压进下边距
-  const usedPct = Math.round(((bottomY - (pages - 1) * H - mt) / (H - mt - mb)) * 100);
+  const blankMm = (pages * U - contentH) / PX;                     // 正数 = 末页底部空白；负数不会出现（超出就换页）
+  const usedPct = Math.round(((contentH - (pages - 1) * U) / U) * 100);
   const toggle = (v: boolean) => { setGuides(v); try { localStorage.setItem('previewGuides', v ? '1' : '0'); } catch { /* 无存储时只在本次生效 */ } };
   const lab: React.CSSProperties = { position: 'absolute', fontSize: 11, color: '#3b6fd4', background: 'rgba(255,255,255,.85)', padding: '0 3px', lineHeight: '14px', whiteSpace: 'nowrap' };
   const overlay = showG && contentH > 0 && (
@@ -78,7 +80,7 @@ export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number })
       {Array.from({ length: pages }, (_, i) => (
         <div key={i} style={{ position: 'absolute', left: ml, right: mr, top: i * H + mt, height: H - mt - mb, border: '1px dashed rgba(59,111,212,.55)' }} />
       ))}
-      {blankMm > 1 && <div data-testid="a4-blank" style={{ position: 'absolute', left: ml, right: mr, top: bottomY, height: printEnd - bottomY,
+      {pages === 1 && blankMm > 1 && <div data-testid="a4-blank" style={{ position: 'absolute', left: ml, right: mr, top: bottomY, height: printEnd - bottomY,
         background: 'repeating-linear-gradient(135deg, rgba(245,166,35,.16) 0 6px, rgba(245,166,35,.04) 6px 12px)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <span style={{ ...lab, position: 'static', color: '#a35f00' }}>空白约 {Math.round(blankMm)} mm</span></div>}
       {Array.from({ length: pages - 1 }, (_, i) => (
@@ -96,11 +98,11 @@ export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number })
     {canGuide && (
       <div className="preview-guide-bar muted small" data-testid="a4-bar" style={{ width: wMm * PX * scale, display: 'flex', gap: 8, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', margin: '0 0 4px' }}>
         <label style={{ display: 'flex', flexDirection: 'row', gap: 4, alignItems: 'center', whiteSpace: 'nowrap', margin: 0 }}><input style={{ width: 'auto' }} type="checkbox" checked={guides} onChange={(e) => toggle(e.target.checked)} />显示 A4 边界</label>
-        {contentH > 0 && <span data-testid="a4-info">{m.pageSize} {wMm}×{hMm} mm · {pages} 页 · {pages === 1 ? '' : '末页'}已用 {usedPct}%{blankMm >= 0 ? `，底部空白约 ${Math.round(blankMm)} mm` : `，超出可打印区 ${Math.round(-blankMm)} mm`}</span>}
+        {contentH > 0 && <span data-testid="a4-info">{m.pageSize} {wMm}×{hMm} mm · {pages} 页 · {pages === 1 ? '' : '末页'}已用 {usedPct}%{pages > 1 ? '（超出 1 页，内容会排到下一页）' : `，底部空白约 ${Math.round(blankMm)} mm`}</span>}
       </div>
     )}
     <div className="preview-wrap" style={{ width: wMm * PX * scale, minHeight: hMm * PX * scale, ...(scaledH ? { height: scaledH } : {}) }}>
-      <div className="preview-page" ref={pageRef} style={{ width: wMm * PX, minHeight: hMm * PX, position: 'relative', transform: `scale(${scale})`, padding: `${m.marginMm.top * PX}px ${m.marginMm.right * PX}px ${m.marginMm.bottom * PX}px ${m.marginMm.left * PX}px`, fontFamily: font, fontSize: pt(ty.bodySizePt), lineHeight: ty.lineHeight, color: m.colors.text }}>
+      <div className="preview-page" ref={pageRef} style={{ width: wMm * PX, minHeight: hMm * PX, ...(showG && contentH > 0 ? { height: pages * H } : {}), position: 'relative', transform: `scale(${scale})`, padding: `${m.marginMm.top * PX}px ${m.marginMm.right * PX}px ${m.marginMm.bottom * PX}px ${m.marginMm.left * PX}px`, fontFamily: font, fontSize: pt(ty.bodySizePt), lineHeight: ty.lineHeight, color: m.colors.text }}>
         <div ref={contentRef}>
         <div style={eng ? { display: 'flex', alignItems: 'flex-start', paddingBottom: 2, marginBottom: m.spacing.sectionGapMm * PX * 0.8 } : { display: 'flex', alignItems: 'center', borderBottom: `${m.headerStyle === 'band' ? 3 : 1}px solid ${m.headerStyle === 'band' ? m.colors.accent : m.colors.primary}`, paddingBottom: 6, marginBottom: m.spacing.sectionGapMm * PX }}>
           {m.photo?.position === 'left' && photo}
