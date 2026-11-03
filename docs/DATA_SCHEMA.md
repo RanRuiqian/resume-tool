@@ -200,3 +200,6 @@ EDU 只建立能确认学校名称的教育记录；项目学分单元不创建�
 - V7 导入：标量字段去句末标点；本科课程第二列（课程性质）不再作为英文名；INTRO 去字段名；项目「性质」可从同行分句读取，不再用栏目标题顶替。
 - `ResumeDoc.skillGroups?: {zh,en,ids}[]`（第二轮）：AI 按岗位给出的技能分组与顺序，只影响显示；未覆盖的已选技能按 `SkillEntry.category` 分组。旧简历无此字段，行为不变。
 - V7 组织 / 兼职 / 志愿条目：`WorkEntry.company` 现为单位（如「X 校学生会」「肯德基（KFC）」），`title` 为职务（「外联部成员」「兼职」）；兼职 `kind=parttime`，不归为实习。
+
+## 求职信 / 备考方向（2026-11-03，无数据库变更）
+`PrepDirection.points?: Bi[]`（可选，2–4 个要复习的知识点）；`PrepDirection.source` 现为对应岗位要求原文（多条以「；」连接）。`KitQuality.status` 新增 `review`，附 `removed`（被自动删掉的句子及原因）、`flagged`（保留待核对的句子）；KitQuality 只在内存中，不入库。

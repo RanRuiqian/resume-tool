@@ -38,8 +38,8 @@ export function CareerKit() {
     try {
       if (kind === 'cover') {
         const k = await generateCoverKit(settings, profile, job, resume); setQuality(k.quality);
-        if (k.quality.status === 'verified') adopt(k); else setPending(k);
-      } else { const q = await generatePrep(settings, job); if (!q.length) throw new Error(L('没有得到能对应到岗位原文的方向，请检查岗位文字是否完整', 'No directions could be tied to the job text; check the job description')); save((e) => { e.prep = q; }); }
+        if (k.quality.status === 'blocked') setPending(k); else adopt(k);
+      } else { const q = await generatePrep(settings, job); if (!q.length) throw new Error(L('AI 没有返回能对应到岗位要求的方向。请确认第 2 步已解析出岗位要求（职责 / 必备 / 加分），再试一次。', 'The AI returned no directions tied to the job requirements. Check that step 2 parsed the requirements, then retry.')); save((e) => { e.prep = q; }); }
     } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
   const area = (title: string, v: Bi | undefined, set: (t: string) => void, rows = 8) => v && (
@@ -70,6 +70,16 @@ export function CareerKit() {
           </div>
         </div>
       )}
+      {quality?.status === 'review' && ex.coverLetter && (
+        <div className="notice warn small" data-testid="kit-review">
+          {!!quality.removed?.length && <details><summary>{L(`已自动删掉 ${quality.removed.length} 句不符合资料的内容（如新数字、抬高参与程度、把岗位要求写成已有能力）`, `Removed ${quality.removed.length} sentence(s) that did not match your profile`)}</summary><ul data-testid="kit-removed">{quality.removed.map((x, i) => <li key={i}>{x}</li>)}</ul></details>}
+          {!!quality.flagged?.length && <>
+            <div>{L(`以下 ${quality.flagged.length} 句程序没能在资料里逐字对上，多半只是换了说法，请看一眼是否属实：`, `${quality.flagged.length} sentence(s) could not be matched word-for-word to your profile — usually rephrasing; please check:`)}</div>
+            <ul data-testid="kit-flagged">{quality.flagged.map((x, i) => <li key={i}>「{x.text}」<span className="muted">——{x.reasons.join('；')}</span></li>)}</ul>
+            <div className="row"><button data-testid="kit-drop-flagged" onClick={() => { const bad = quality.flagged!.map((x) => x.text); save((e) => { for (const f of ['coverLetter', 'selfIntro'] as const) for (const l of ['zh', 'en'] as const) if (e[f]) { let t = e[f]![l] ?? ''; for (const b of bad) t = t.replace(b, ''); e[f]![l] = t.replace(/\n{3,}/g, '\n\n').trim(); } }); setQuality({ ...quality, flagged: [] }); }}>{L('删掉这些句子', 'Remove these sentences')}</button><button onClick={() => setQuality({ ...quality, flagged: [] })}>{L('我已核对，没问题', 'Checked, keep them')}</button></div>
+          </>}
+        </div>
+      )}
       {area(L('求职信', 'Cover letter'), ex.coverLetter, (t) => save((e) => { e.coverLetter![lang] = t; }), 10)}
       {area(L('1 分钟自我介绍', '1-minute self-introduction'), ex.selfIntro, (t) => save((e) => { e.selfIntro![lang] = t; }), 6)}
       {ex.selfIntro?.[lang] && <div className="muted small" data-testid="intro-len">{lang === 'zh' ? `自我介绍 ${zhLen(ex.selfIntro.zh)} 字（建议 180–220 字，约 1 分钟）` : `Intro: ${enWords(ex.selfIntro.en)} words (aim for 100–130, about 1 minute)`}</div>}
@@ -78,7 +88,7 @@ export function CareerKit() {
       {ex.prep && ex.prep.length > 0 && (
         <div className="interview prep">
           <b>{L('备考大方向（每条均来自岗位原文；是要准备的方向，不代表你已具备）', 'What to prepare (each tied to the job post; not a claim that you have it)')}</b>
-          {ex.prep.map((it, i) => <div key={i} className="prep-item"><div><b>{i + 1}. {it.area[lang] || it.area.zh || it.area.en}</b></div><div className="small">{it.why[lang] || it.why.zh || it.why.en}</div><blockquote className="small muted">{L('岗位原文：', 'From the JD: ')}“{it.source}”</blockquote></div>)}
+          {ex.prep.map((it, i) => <div key={i} className="prep-item"><div><b>{i + 1}. {it.area[lang] || it.area.zh || it.area.en}</b></div><div className="small">{it.why[lang] || it.why.zh || it.why.en}</div>{!!it.points?.length && <ul className="small" data-testid="prep-points">{it.points.map((p, j) => <li key={j}>{p[lang] || p.zh || p.en}</li>)}</ul>}<blockquote className="small muted">{L('岗位原文：', 'From the JD: ')}“{it.source}”</blockquote></div>)}
         </div>
       )}
     </div>

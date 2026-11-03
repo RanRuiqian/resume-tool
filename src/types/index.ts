@@ -246,7 +246,8 @@ export interface TemplateConfig {
 
 export interface Bi { zh: string; en: string }
 /** 备考大方向：每条必须引用 JD 原文 */
-export interface PrepDirection { area: Bi; why: Bi; source: string }
+/** source：对应的岗位要求原文（多条用「；」连接）；points（2026-11-03 新增，可选）：要复习的具体知识点 */
+export interface PrepDirection { area: Bi; why: Bi; source: string; points?: Bi[] }
 export interface JobParse {
   joint?: JointSet;
   id: string;

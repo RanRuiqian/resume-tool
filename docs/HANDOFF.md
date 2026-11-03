@@ -4,7 +4,7 @@
 > 本文件只描述「当前状态 + 最近一轮改了什么 + 下一步」。更早的历史见 `docs/AI_HANDOFF.md` 与各版本报告，其中与本文件冲突的以本文件为准。
 > 项目负责人要求：每一轮开发结束都要更新本文件并推送到 GitHub，因为不同 AI 工具的额度会轮流用完。
 
-最后更新：2026-11-03 22:30（北京时间，§2.14 换设备备份），由 Claude（Claude Code 云端会话）完成。
+最后更新：2026-11-03 22:40（北京时间，§2.14 换设备备份、§2.15 求职信 / 备考方向），由 Claude（Claude Code 云端会话）完成。
 分支：`feat/v7-structured-import` → Draft PR #16（依赖链 main ← #13 ← #14 ← #15 ← #16，均未合并、未部署）。**不要推 main，不要合并，不要 force push。**
 
 ---
@@ -215,6 +215,15 @@ ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按�
   - **入口**：「设置」页底部、「我的资料」页「换设备 / 完整备份」折叠栏、原「求职投递 → 备份」，三处同一组件 `BackupPanel`。
 - 测试：`tests/backupSettings.test.ts`（9 项）；全量 672/672；e2e 新增 `tests/e2e/backup_settings_e2e.py` 14/14；回归 release 35/35、tracker 33/33（「恢复后不含 Key」断言改为「设置可导入但 Key 为空」）、api_profiles 48/48、mobile 28/28。
 - 未验证：iPhone Safari 上 `crypto.subtle`（需 HTTPS，GitHub Pages 满足）与下载 ZIP 的实际体验。
+
+### 2.15 求职信 / 自我介绍 / 备考方向重做（2026-11-03 晚，负责人实测两项都不好用）
+负责人截图：求职信两次生成都被「事实检查未通过」整份拦下（误判「马来西亚校区攻读应用工程」「也符合岗位对实践项目和专业工具」「已完成（本科）」「导师」「LAN」）；备考方向直接报「没有得到能对应到岗位原文的方向」无输出。
+- **求职信核对误判修复**（`src/quality/kitVerify.ts`）：专业核对把学位名（如「应用工程硕士」）也算依据；「专业工具 / 专业知识」及含「岗位 / 要求 / 符合 / 实践 / 项目」的片段不再当专业名；导师 / 实验室 / 医院 / 公司在资料任一处出现即可；已结束学历写「完成 / completed」不算新增；常见缩写 ↔ 中文（LAN↔局域网、FEA↔有限元、CNC↔数控等，`ACRONYM_ZH`）。同时补强：找不到对应条目的句子仍检查「部署 / 产线」、高参与程度（带领 / 主导 / 负责）和新数字。
+- **不再整份拦截**（`src/ai/extras.ts generateCoverKit`）：两次生成后若仍有问题，**硬问题句子自动删掉**（新数字、抬高参与程度、把 JD 技能写成已有、学位状态、部署 / 产线、删限定、编造的英文工具名；`isHard`），保留段落换行；**软问题**（找不到对应条目、中文名词对不上——多为换了说法）保留并在界面列出，可一键删除或确认保留。状态新增 `review`；只有删完后每段自述不足 2 句才 `blocked`（旧界面）。界面：`data-testid=kit-review / kit-removed / kit-flagged / kit-drop-flagged`。
+- **备考方向重做**（`generatePrep`）：把 `jobRequirements(job)` 编号（R1…，联合岗位带岗位名）发给 AI，AI 用 `refs` 引用；source 填对应要求原文。无编号时摘录用 `quotedFrom`（NFKC、去空白标点后子串，或 ≥80% 二字组覆盖）对照原文与要求，解决 OCR 断行 / 全半角导致全部被丢的问题。每条新增 `points`（2–4 个要复习的知识点，`PrepDirection.points?` 可选字段，无迁移），界面与 Word 导出都显示。`prepClaims` 仍过滤「你已具备」类。
+- 测试：新增 `tests/careerKit2026_11.test.ts`（8 项，复现截图误判 + 仍拦下的反例 + 备考方向）；`tests/kitVerifyV1101.test.ts` 4 项按新行为改写（硬问题句被删并列出，而非整份 blocked）。全量 680/680；新 e2e `tests/e2e/career_kit_e2e.py` 6/6（需先 `npx tsx scripts/prepare-workspace-e2e.ts`）；resume_workspace 25/25。
+- `tests/e2e/kit_verify_e2e.py` **改动前就已失败**（还在等旧的「导出拦截 / 人工放行」界面，与 resume_workspace「人工修改可直接导出」冲突，且写死 `/usr/bin/google-chrome`），属过时测试，未修，可删除或按新行为重写。
+- 未验证：真实 DeepSeek 下的求职信质量与误判率、备考方向内容质量——需负责人实测。
 
 ### 下一阶段（负责人 2026-11-03 22:09 指示）
 修「求职信 + 1 分钟自我介绍」与「备考大方向」两个功能（第 3 步底部「可选」折叠栏）。负责人实测：

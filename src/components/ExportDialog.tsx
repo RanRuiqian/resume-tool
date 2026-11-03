@@ -47,7 +47,7 @@ export function ExportPanel({ onClose, inline }: { onClose?: () => void; inline?
       const secs = [
         ...(ex.coverLetter?.[l] ? [{ title: T('求职信', 'Cover Letter'), body: ex.coverLetter[l] }] : []),
         ...(ex.selfIntro?.[l] ? [{ title: T('1 分钟自我介绍', '1-Minute Self-Introduction'), body: ex.selfIntro[l] }] : []),
-        ...(ex.prep?.length ? [{ title: T('备考大方向', 'What to Prepare'), body: ex.prep.map((q, n) => `${n + 1}. ${q.area[l]}：${q.why[l]}\n${T('岗位原文：', 'From the JD: ')}“${q.source}”`).join('\n') }] : []),
+        ...(ex.prep?.length ? [{ title: T('备考大方向', 'What to Prepare'), body: ex.prep.map((q, n) => `${n + 1}. ${q.area[l] || q.area.zh}：${q.why[l] || q.why.zh}${(q.points ?? []).map((p) => `\n   · ${p[l] || p.zh}`).join('')}\n${T('岗位原文：', 'From the JD: ')}“${q.source}”`).join('\n') }] : []),
       ];
       if (secs.length) out[kitNames[i]] = await textDocxBytes(l, secs);
     }
