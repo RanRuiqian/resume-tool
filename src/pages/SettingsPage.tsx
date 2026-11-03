@@ -2,9 +2,10 @@ import { useApp } from '../store';
 import { useT } from '../i18n';
 import type { Settings } from '../types';
 import { ApiManager } from '../components/ApiManager';
+import { BackupPanel } from '../components/tracker/BackupPanel';
 
 export function SettingsPage() {
-  const { settings, setSettings } = useApp();
+  const { settings, setSettings, isDemo } = useApp();
   const t = useT();
   return (
     <div className="page narrow">
@@ -18,6 +19,7 @@ export function SettingsPage() {
         <label>界面语言<select value={settings.uiLang} onChange={(e) => setSettings({ ...settings, uiLang: e.target.value as 'zh' | 'en' })}><option value="zh">中文</option><option value="en">English（部分）</option></select></label>
         <div className="notice">{t('privacy')}</div>
       </div>
+      <BackupPanel isDemo={isDemo} />
     </div>
   );
 }

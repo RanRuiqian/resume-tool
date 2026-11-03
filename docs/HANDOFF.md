@@ -4,7 +4,7 @@
 > 本文件只描述「当前状态 + 最近一轮改了什么 + 下一步」。更早的历史见 `docs/AI_HANDOFF.md` 与各版本报告，其中与本文件冲突的以本文件为准。
 > 项目负责人要求：每一轮开发结束都要更新本文件并推送到 GitHub，因为不同 AI 工具的额度会轮流用完。
 
-最后更新：2026-11-03 凌晨（北京时间，第三轮），由 Claude（Claude Code 云端会话）完成。
+最后更新：2026-11-03 22:30（北京时间，§2.14 换设备备份），由 Claude（Claude Code 云端会话）完成。
 分支：`feat/v7-structured-import` → Draft PR #16（依赖链 main ← #13 ← #14 ← #15 ← #16，均未合并、未部署）。**不要推 main，不要合并，不要 force push。**
 
 ---
@@ -207,3 +207,16 @@ ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按�
 - 2026-11-03 追加：快捷版式栏新增「中英文同步调整」勾选（默认勾选，存 localStorage `fmtSync`）。取消 = 只改当前查看的语言：页边距 / 间距写入 `TemplateLocale.marginMm / spacing`（可选字段），由 `render/langOverrides.ts#withLangOverrides` 在 buildLayout / fitTemplate / pageBudget 折进 page.marginMm / spacing（PDF、Word、预览共用）。字号、行距本来就按语言分开存。中英对照视图强制同步。测试：tests/langOverrides.test.ts、tests/e2e/a4_guides_e2e.py。
 - 2026-11-03 修正：预览 A4 纸高度曾 = 内容高度 + 下边距，内容一多纸的下边界就被撑长。现改为：页数 = ceil(内容高 / 每页可打印区高)，纸张高度固定为 N×297mm（Preview.tsx），超出 1 页时红色虚线 + 提示「超出 1 页」。
 - 2026-11-03 真分页预览（Preview.tsx）：单栏模板里把「标题+首段 / 每个条目」当不可拆分单元（data-unit / data-keep），放不下当前页就用空白占位 div 推到下一张 A4 的上边距处；两张 A4 之间 16px 灰色间隙（data-testid=a4-gap），每页各有虚线页边距框和「第 N 页」。双栏模板仍连续排版（只给页数提示）。选「1 页内」时也照样画出第 2 页（只是预览；导出是否自动收紧由原有 autoFit 决定）。
+
+### 2.14 换设备备份（2026-11-03 晚，负责人待办 ①）
+- 原有「完整求职档案」备份（`src/tracker/backup.ts`）只在「求职投递 → 备份」里，且不含 API 设置、我的版式。现在：
+  - **归档 v3**：新增 `templates` section；可选 `data/settings.json`（API 配置不含 Key、界面语言、识别方式）；可选 `data/keys.enc.json`——用户勾选「同时备份 API Key」并设 ≥6 位密码时，Key 用 PBKDF2-SHA256（25 万次）+ AES-GCM-256 加密，文件里无明文。新文件 `src/tracker/backupSettings.ts`（`encryptKeys / decryptKeys / mergeSettings`）。AGENTS.md 规则 1 已写明这个唯一例外。
+  - **恢复**：先解密（密码错 → 报错、不写任何数据）；同 id 配置默认跳过；本机没有可用启用配置时启用备份里的那套；写入资料 / 模板 / 设置后 2.5 秒自动刷新页面（store 只在启动时读这些）。有加密 Key 但不填密码 → 只恢复不含 Key 的配置。v2 旧备份照常可读。
+  - **入口**：「设置」页底部、「我的资料」页「换设备 / 完整备份」折叠栏、原「求职投递 → 备份」，三处同一组件 `BackupPanel`。
+- 测试：`tests/backupSettings.test.ts`（9 项）；全量 672/672；e2e 新增 `tests/e2e/backup_settings_e2e.py` 14/14；回归 release 35/35、tracker 33/33（「恢复后不含 Key」断言改为「设置可导入但 Key 为空」）、api_profiles 48/48、mobile 28/28。
+- 未验证：iPhone Safari 上 `crypto.subtle`（需 HTTPS，GitHub Pages 满足）与下载 ZIP 的实际体验。
+
+### 下一阶段（负责人 2026-11-03 22:09 指示）
+修「求职信 + 1 分钟自我介绍」与「备考大方向」两个功能（第 3 步底部「可选」折叠栏）。负责人实测：
+- 求职信：事实检查过严，把「马来西亚校区攻读应用工程」「已完成」「导师」「LAN」等改写 / 同义说法判为「资料中没有」，两次生成都未通过，只能用精简版。
+- 备考方向：直接报「没有得到能对应到岗位原文的方向，请检查岗位文字是否完整」，没有任何输出。

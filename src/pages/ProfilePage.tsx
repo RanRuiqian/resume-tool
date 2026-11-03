@@ -1,3 +1,4 @@
+import { BackupPanel as ArchivePanel } from '../components/tracker/BackupPanel';
 import { ClearPersonalDataButton } from '../components/ClearPersonalDataButton';
 import { OrganizePanel } from '../components/OrganizePanel';
 import { useRef, useState } from 'react';
@@ -44,7 +45,7 @@ function newEntry(k: ListKey): Record<string, unknown> {
 }
 
 export function ProfilePage() {
-  const { profile, setProfile, settings, replaceProfile, listBackups, restoreBackup } = useApp();
+  const { profile, setProfile, settings, replaceProfile, listBackups, restoreBackup, isDemo } = useApp();
   const hasData = !!(profile.profile.name.zh || profile.profile.name.en || profile.work.length || profile.education.length || profile.projects.length || profile.skills.length);
   const t = useT();
   const [tab, setTab] = useState<(typeof TABS)[number]['key']>('basic');
@@ -133,6 +134,7 @@ export function ProfilePage() {
         <button disabled={!!busy} onClick={() => doTranslate('zh')}>{t('translateToZh')}（{pending.zh}）</button>
       </div>
       <SmartImport />
+      <details className="card" data-testid="profile-archive"><summary><b>换设备 / 完整备份</b>：导出或导入整个工具的数据（资料库、简历、投递记录、版式、API 设置）</summary><ArchivePanel isDemo={isDemo} /></details>
       <BackupPanel list={listBackups} restore={async (id) => { if (!confirm('恢复这份快照会替换当前资料（当前资料也会先存一份快照）。确定吗？')) return; if (await restoreBackup(id)) setMsg('已恢复快照。'); }} />
       {(busy || msg) && <div className="notice">{busy || msg}</div>}
       <OrganizePanel />

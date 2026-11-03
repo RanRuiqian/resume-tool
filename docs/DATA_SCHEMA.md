@@ -162,6 +162,7 @@
 - `SharedResumeVersion` 内容寻址 ID=`version-<SHA256>`，digest 覆盖规范化 profile/template/resume/job（排序使用固定字符串顺序，不依赖地区）。profile 使用隐私副本，隐藏课程分数不复制；明确开启的原始成绩只在 resume.courseSelection 保存。冻结完整模板，旧导出不受后来模板修改影响。哈希只验证内容完整性，不证明用户事实本身真实。
 - `Application.resumeVersionId?` 指向同一共同版本；`ResumeArtifact.versionId?` 是只读引用，不各复制一份正文。批量关联事务创建/复用该组角色的岗位/申请、共同版本与引用，默认新状态 pending、没有 appliedAt；已有状态/手工岗位不覆盖，已有 artifacts 不修改。重复关联同内容幂等；编辑后显式关联产生新版本，旧内容和实际提交标记仍保留。删除一条申请不删除其他申请共用的版本。
 - 归档新增 jdGroups/resumeVersions sections，archiveVersion=2（旧 v1 可读，旧客户端应拒绝新版以免漏掉关联）。恢复前检查版本哈希；不可变版本同 ID 冲突拒绝，artifacts/版本已有记录不覆盖。选中有关联指针的记录时，必须一并恢复共用版本或确保本机已有该版本，防止静默悬空。
+- **archiveVersion=3（2026-11-03，换设备备份）**：新增 `templates` section（`data/templates.json`，用户自己的版式模板，恢复时 `normalizeTemplate`）；可选 `data/settings.json`（`SettingsArchive`：uiLang、ocrMode、activeProfileId、apiProfiles **去掉 apiKey**）；可选 `data/keys.enc.json`（`EncryptedKeys`：`{alg:'AES-GCM-256', kdf:'PBKDF2-SHA256', iterations:250000, salt, iv, data, count}`，base64，明文为 `{profileId: apiKey}`）。轻量 JSON 对应顶层字段 `settings` / `encryptedKeys`。manifest 新增 `settings`、`encryptedKeys`（条数）。Key **只在用户勾选并设置 ≥6 位密码时**以密文导出，明文永不进入备份。恢复：`restoreSettings` + `keyPassword`；先解密（密码错误抛错、不写任何数据），再在同一事务写入；同 id 配置按 `overwrite`（覆盖时备份无 Key 则保留本机 Key）；本机无可用启用配置时启用备份的启用配置。v2 备份缺 templates 文件不报警告。代码：`src/tracker/backupSettings.ts`、`backup.ts`；测试 `tests/backupSettings.test.ts`、`tests/e2e/backup_settings_e2e.py`。
 
 ## 用户明确清空个人资料（不升级 schema，仍为 Dexie 6）
 

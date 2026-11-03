@@ -141,7 +141,7 @@ with sync_playwright() as p:
     pg2.click('[data-testid=restore-confirm]'); pg2.wait_for_selector('[data-testid=restore-result]')
     new=pg2.evaluate(DUMP,'resume-tool')
     chk('新浏览器恢复：岗位 / 申请 / 历史 / 简历版本 / 附件数量一致', all(len(new[k])==len(real_before[k]) for k in ['postings','applications','appEvents','artifacts','attachments','attachmentBlobs']))
-    chk('新浏览器恢复：不含 API Key（设置未导入）', not new.get('settings'))
+    chk('新浏览器恢复：不含 API Key（v3 起 API 设置可导入，但未加密导出时 Key 为空）', all(not x.get('apiKey') and all(not q.get('apiKey') for q in (x.get('apiProfiles') or [])) for x in (new.get('settings') or [])))
     pg2.goto(B+'#applications/'+pid); pg2.reload(); pg2.wait_for_selector('[data-testid=posting-detail]')
     pg2.locator('[data-testid=attachment-row]').first.locator('text=校验').click(); pg2.wait_for_timeout(500)
     chk('恢复后附件校验通过', '校验通过' in pg2.locator('[data-testid=detail-msg]').inner_text())
