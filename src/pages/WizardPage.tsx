@@ -542,7 +542,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
           <div className="previews" ref={previewRef}>
             {(view === 'both' && !narrow ? (['zh', 'en'] as Lang[]) : [view === 'both' ? 'zh' as Lang : view]).map((l) => <Preview key={l} m={buildLayout(profile, template, l, resume)} scale={previewScale} />)}
           </div>
-          <FormatPanel />
+          <FormatPanel view={view} />
         </div>
       </div>
       <ResumeFactsOptions />

@@ -218,6 +218,9 @@ export interface TemplateLocale {
   photo: { enabled: boolean; position: PhotoPosition; sizeMm: number };
   personalFields: (keyof PersonalInfo)[];
   moduleOrderOverride: ModuleKey[] | null;
+  /** 2026-11：只对本语言生效的页边距 / 间距（预览右侧「快捷版式」取消「中英文同步」后写入）；缺省 = 用模板的 page.marginMm / spacing */
+  marginMm?: { top: number; right: number; bottom: number; left: number };
+  spacing?: { sectionGapMm: number; itemGapMm: number };
 }
 export interface TemplateConfig {
   id: string;

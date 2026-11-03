@@ -1,5 +1,6 @@
 import type { Lang, ProfileDoc, ResumeDoc, TemplateConfig } from '../types';
 import { buildLayout, type LSection } from '../render/layout';
+import { withLangOverrides } from '../render/langOverrides';
 import { inferWorkKind, isCampusKind } from '../render/classify';
 import { BUILTIN_TEMPLATES } from '../templates';
 import { fixedSummaryText } from './fixedSummary';
@@ -11,7 +12,8 @@ export const CATEGORY_LABEL: Record<ContentCategory, string> = { education: '教
 export const isProfessionalWork = (w: ProfileDoc['work'][number]) => ['fulltime', 'internship', '', 'other'].includes(inferWorkKind(w));
 export const isCampusWork = (w: ProfileDoc['work'][number]) => isCampusKind(inferWorkKind(w));
 
-export function pageBudget(pages: number, lang: Lang, template = BUILTIN_TEMPLATES[0], profile?: ProfileDoc) {
+export function pageBudget(pages: number, lang: Lang, templateIn = BUILTIN_TEMPLATES[0], profile?: ProfileDoc) {
+  const template = withLangOverrides(templateIn, lang);
   const ty = template.locales[lang].typography;
   const height = (template.page.size === 'LETTER' ? 279.4 : 297) - template.page.marginMm.top - template.page.marginMm.bottom;
   const lineMm = ty.bodySizePt * ty.lineHeight * 25.4 / 72;

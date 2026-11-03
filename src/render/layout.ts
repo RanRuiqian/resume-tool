@@ -1,5 +1,6 @@
 import { compactGpaNote, tidyProjectTitle } from './resumeText';
 import { profileWithResumeEdits } from './resumeEdits';
+import { withLangOverrides } from './langOverrides';
 import { LANG_TEST } from '../ai/relevance';
 import { eduDateText } from './degree';
 import { inferWorkKind, isCampusKind } from './classify';
@@ -75,7 +76,8 @@ const PERSONAL_LABEL: Record<Lang, Record<string, string>> = {
   en: { birth: 'Born', gender: 'Gender', hometown: 'Hometown', politics: 'Political status' },
 };
 
-export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resume?: ResumeDoc | null): LayoutModel {
+export function buildLayout(p: ProfileDoc, tplIn: TemplateConfig, lang: Lang, resume?: ResumeDoc | null): LayoutModel {
+  const tpl = withLangOverrides(tplIn, lang);
   p = profileWithResumeEdits(p, resume);
   const loc = tpl.locales[lang];
   const sel = resume?.selection ?? selectionFromProfile(p);

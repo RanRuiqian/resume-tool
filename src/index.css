@@ -414,3 +414,4 @@ button, a, summary { -webkit-tap-highlight-color: rgba(49, 130, 206, .15); touch
 @media (max-width: 1280px) { .pool-layout:has(> .fmt-panel) { grid-template-columns: minmax(330px, 400px) minmax(0, 1fr); } .pool-layout > .fmt-panel { grid-column: 1 / -1; position: static; } }
 @media (max-width: 1000px) { .pool-layout:has(> .fmt-panel) { grid-template-columns: 1fr; } }
 @media (max-width: 640px), (pointer: coarse) { .pool-layout[data-m='pool'] > .fmt-panel { display: none; } .fmt-row button { min-width: 44px; min-height: 40px; } }
+.fmt-sync { display: flex; flex-direction: row; align-items: center; gap: 6px; margin: 0; font-weight: 600; } .fmt-sync input { width: auto; }
