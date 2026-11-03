@@ -72,10 +72,13 @@ export const AI_PLAN_PROMPT = `你是理解候选人职业发展背景的工程�
 - 技能 skills：先选与岗位直接相关的，再补其它真实掌握的常用工具与方法，通常 12–20 项，排版后总共约 4–5 行（每组不超过约 8 项）；只选真正的工具 / 软件 / 方法 / 语言，不选软技能（沟通、协调等，这些由经历体现）、工作场所（如“生产现场”）或兴趣爱好。注意 level（如“基础使用”“基础接触”“课程知识”）表示熟练度，弱项可以选但不要排在最前。
 - 证书、奖项：证书基本都列；奖项优先列竞赛 / 学术类，趣味活动类（如拔河）只在版面有余时放。
 - 每段经历的 bulletIds 按重要性排序，最重要的放最前（论文 / 发表、可量化成果、与岗位最直接相关的工作放前面）——版面不够时程序从末尾删起。
+- 项目数量：项目经历通常主选 3–5 段（素材足够时不要只选 1–2 段），另给 3–5 段 reserveEntries 候补；版面由程序按实际页数裁剪，宁可多给候补也不要留白。
+- 按岗位要求逐类找证据（2026-11 负责人要求）：把 JD 的要求归成几个方向（如 机械 / 结构设计、仿真、制造 / 工艺 / 精益 / 质量、机器人 / 自动化、AI / 算法 / 软件 / 数据），每个方向只要候选人有真实实践，就至少选一段项目来体现。课程里的实验、作业、项目（如深度学习 / 神经网络实验、供应链数据与 AI 场景练习、机器人实验、精益制造作业）和个人开发的软件 / AI 工具项目都是真实动手实践，可以作为项目经历入选，并在 requirements 里作为 transferable（课程项目 / 个人项目）证据引用其事实 sourceId——不要因为它们来自课程或不是公司项目就忽略。JD 提到 AI、算法、编程、数据、自动化时尤其要选这类项目。
+- 联想要有度：先逐条想清楚「这条岗位要求，候选人哪些经历直接做过、哪些是擦边相关（同类方法 / 同一技术领域 / 课程实践）」，两者都要考虑；但详略分级——直接相关的写 3–6 条，擦边相关的只给 1–2 条、点到为止，和岗位没有关系的不为凑满而放。每段入选经历都要能说出它回应了哪条岗位要求（写在 reason 里），说不出来的就不选。
 - 主选 entries 估计约占满 85–90%；拿不准能否放下的次要经历（第二、第三个课程项目、学生组织、兼职）放进 reserveEntries，程序会按实际版面能放多少补多少，避免超页。
 entries 按优先级返回主选经历，每段可指定不同要点数；reserveEntries 可给出少量有价值的候补（优先其它专业实践/主要组织经历），会一起撰写，程序仅按版面决定是否补入，不另做关键词取舍。主选和候补不得重复条目或事实。若有有效正式工作或组织经历却两者均不收录，必须在 omissions.professionalWork / omissions.campus 说明结合个人画像和空间仍省略的具体原因，不能仅写“不相关”。其它缺失类别也请说明原因。
 个人简介是用户在资料库保存的固定双语内容，不参与选材或岗位改写，不生成 summaryFocus 或简介正文。
-联合岗位（存在 targets 时）：逐个阅读独立 JD，不把多个 JD 当作一个岗位。requirementRefs 提供每岗每条真实要求的 requirementId、jobId、双语 text、tier；requirements 必须逐条完整对应，text 逐字复制任一语言原文，tier 与 requirementId 不变，并填写 reason 解释事实与岗位能力的关联。不能省略弱项或挪用另一岗位要求。jointSummary 返回 common / complementary / conflicts 三个数组，每项 {"requirementIds":["真实岗位要求 ID"],"reason":"具体依据"}；common 跨至少两个岗位，complementary 记录各岗特有或可兼顾要求，二者合计恰好覆盖全部要求一次；conflicts 可额外标注跨岗无法同时满足的方向。无共性时明确写入 conflicts 并提醒单份简历难以同时强匹配，但仍给出一份诚实的共同方案，不生成三份不同正文。
+联合岗位（存在 targets 时）：逐个阅读独立 JD，不把多个 JD 当作一个岗位。requirementRefs 提供每岗每条真实要求的 requirementId、jobId、双语 text、tier；requirements 必须逐条完整对应，text 逐字复制任一语言原文，tier 与 requirementId 不变，并填写 reason 解释事实与岗位能力的关联。不能省略弱项或挪用另一岗位要求。jointSummary 返回 common / complementary / conflicts 三个数组，每项 {"requirementIds":["真实岗位要求 ID"],"reason":"具体依据"}；common 跨至少两个岗位，complementary 记录各岗特有或可兼顾要求，二者合计恰好覆盖全部要求一次；conflicts 可额外标注跨岗无法同时满足的方向。无共性时明确写入 conflicts 并提醒单份简历难以同时强匹配，但仍给出一份诚实的共同方案，不生成三份不同正文。联合模式选材：先满足共同要求，再保证每个岗位的特有要求（complementary）至少有一段主选经历直接回应（例如一岗偏结构设计、一岗偏工艺 / 精益 / 质量、一岗偏研发 / AI 工具，则三类项目都要出现），不能只按其中一个岗位选材。
 课程语义：candidate.courses 提供正式名称、别名、内容概述、知识域、证据等级及关联项目 ID。按“JD 能力→课程内容/验证项目/实际经历”的关系推理，不要求标题逐字命中。Supply Chain 可支持供应链优化知识，不证明供应商开发/合同谈判；热力学可支持热过程理论；辅机中推断的 PLC 注释不证明 PLC 编程。课程确认与概述证据等级不同：inferred/recalled/unverified 必须说明不确定性。course ID 只能用于 assessment=learning 的知识支持，不能用于 direct/transferable 实操判断；learning 的实践缺口仍应提示，不能伪装直接匹配。真实实践必须另引项目/工作事实 sourceId。courses 数组只从 allowedIds.courses 选择适合打印名称的授课课程，不输出概述或成绩；不因课程推断新增 skills。reason 给出语义关联与不能证明的边界，不写成候选人已掌握的软件或已负责的任务。
 所有 ID 只能逐字复制 allowedIds：entries / reserveEntries 使用 allowedIds.entries，bulletIds 必须属于该 entryId；education 使用 allowedIds.education，教育主体默认保留，非官方/估算 GPA 不选。skills / certificates / awards 使用各自列表。
 requirements[].evidenceIds 只用 allowedIds.evidenceIds，包括真实 sourceId、技能/证书/奖项 ID 和 educationEvidenceIds 中的教育主体 ID（只证明已提供的学校、专业、学位与授予状态，不能代替被排除的 GPA 或课程事实）。工作/项目 entryId 仅作分组，不是证据；名称、别名、usedIn 引用或编造的 ID 不可用。
@@ -124,6 +127,7 @@ export const AI_WRITE_PROMPT = `你在替一名工科学生撰写投递某个具
 另外写两项按本岗位定制的内容：
 - summary：个人简介，中英文各 2–3 句（中文约 60–110 字，英文约 40–70 词）。第一句说明身份（学位 / 专业 / 在读或预计毕业），接着写与本岗位最相关的 2–3 项真实能力或经历，最后可写一句求职方向。可参考 candidate.fixedSummary 的事实，但要按岗位重写，不要原样照抄，也不要写「善于沟通、学习能力强」这类无依据的自我评价。
 - headline：姓名下面的一行求职方向，中英文各一条，10–25 字 / 4–10 词，对准本岗位所在的方向（如「机械结构设计方向」/「Mechanical Design」），只写方向，不写成已有的职位头衔。
+- 联合岗位（输入里 targets 有多个岗位时）：headline 和 summary 要同时覆盖这几个岗位的共同方向（如「机械设计 / 工艺 / 研发方向」），summary 里分别点到与各岗位最相关的真实经历，不要只写其中一个岗位。
 
 输出 JSON：{"headline":{"zh":"","en":""},"summary":{"zh":"","en":""},"items":[{"sourceId":"主来源 ID","sourceIds":["可选，合并时列出全部来源"],"zh":"中文要点","en":"English bullet"}],"reasons":"一句话说明取舍"}`;
 

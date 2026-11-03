@@ -66,7 +66,7 @@ export function WizardPage({ go }: { go: (p: string) => void }) {
       <TrackerReturnBanner go={go} />
       {settings.demoMode && <div className="notice warn">{L('当前为演示模式：不调用 AI，只做关键词匹配，英文缺失处用占位文字。', 'Demo mode: no AI calls — keyword matching only, missing translations use placeholders.')}<button className="link" onClick={() => go('settings')}>{L('连接 AI 服务 →', 'Connect AI →')}</button></div>}
       {cur === 1 && <Step1 next={() => setStep(2)} go={go} hasProfile={hasProfile} />}
-      {cur === 2 && <Step2 next={() => setStep(3)} back={() => setStep(1)} />}
+      {cur === 2 && <Step2 next={() => { uiStorage.setItem(GEN_REQUEST, '1'); setStep(3); }} back={() => setStep(1)} />}
       {cur === 2 && <JobHistory onOpen={() => setStep(3)} go={go} />}
       {cur === 3 && <Step3 back={() => setStep(2)} go={go} />}
     </div>
@@ -215,6 +215,7 @@ function Step2({ next, back }: { next: () => void; back: () => void }) {
  * 原因是这些都存在组件本地 state，切页面组件被卸载。现在放到模块级存储（应用内切换页面不丢），
  * 岗位文字另存 uiStorage（刷新也不丢）；识别 / 分析 / 生成任务在后台继续，回来时显示进度与结果。
  */
+const GEN_REQUEST = 'genRequest';
 type JdDraft = { init: boolean; jobId?: string; shots: { url: string; raw: string }[]; text: string; edited: boolean; busy: string; pct?: number; err: string; info: string };
 const JD_DRAFT_TEXT = 'jdDraftText';
 let jdDraft: JdDraft = { init: false, shots: [], text: '', edited: false, busy: '', err: '', info: '' };
@@ -412,7 +413,14 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
     catch (e) { setGen({ err: (e as Error).message, errJob: job.id }); } finally { setGen({ busy: '', running: false }); }
   };
   // 同一岗位刚生成失败时，切页面回来不自动重跑（避免重复调用 AI）；用户可点「重新生成」。
-  useEffect(() => { if (!started.current && job && !resume && !running && genState.errJob !== job.id) { started.current = true; run(); } });
+  // 从第 2 步点「生成简历 / 生成共同简历」进来：当前岗位还没有对应简历时自动生成（旧岗位的简历保留在历史里）。
+  // 其它方式进入（刷新、从历史打开）只在完全没有简历时自动生成，不覆盖已编辑的旧简历。
+  useEffect(() => {
+    if (started.current || !job || running || genState.errJob === job.id) return;
+    const requested = uiStorage.getItem(GEN_REQUEST) === '1';
+    if (requested) uiStorage.setItem(GEN_REQUEST, '');
+    if (!resume || (requested && resume.jobId !== job.id)) { started.current = true; run(); }
+  });
   // 实时统计 PDF 页数（Worker 中渲染，防抖）
   useEffect(() => {
     if (!resume) return;
