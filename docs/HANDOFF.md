@@ -198,3 +198,9 @@ git pull origin feat/v7-structured-import && npm ci && npm run dev -- --host 0.0
 
 ### 2.12b 导出：单个 PDF 分享（iPhone）
 ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按钮：`navigator.share({files})`，不支持则直接下载 PDF。
+
+### 2.13 预览 A4 边界 + 快捷版式栏（2026-11-03，负责人要求）
+- `Preview.tsx`：scale≥0.4 的预览显示 A4 外框、蓝色虚线页边距框（含 上/下/左/右 mm 标注）、内容下方橙色斜纹「空白约 N mm」、多页时红色虚线页边界；预览上方一行显示「A4 210×297 · N 页 · 已用 x%，底部空白约 y mm」，可勾选关闭（localStorage `previewGuides`）。内容高度用 contentRef 实测（HTML 预览近似，最终以 PDF 为准）。
+- `components/FormatPanel.tsx`：第 3 步预览右侧「快捷版式」栏：页边距整体 ±0.5 mm（可分别调上下左右）、正文字号 ±0.25 pt、行距 ±0.02、板块间距 / 条目间距 ±0.5 mm；经 `useEditTemplate` 保存（内置模板自动另存为「我的」）。宽屏三栏，≤1280px 栏放预览下方。
+- 非窄屏预览缩放改为随预览栏宽度自适应（0.45–0.72）。
+- 测试：tests/e2e/a4_guides_e2e.py。

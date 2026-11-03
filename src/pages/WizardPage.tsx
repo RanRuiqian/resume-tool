@@ -26,6 +26,7 @@ import { normalizeProfile } from '../storage/profileIO';
 import { buildLayout } from '../render/layout';
 import { Preview } from '../render/Preview';
 import { useEditTemplate } from '../render/useEditTemplate';
+import { FormatPanel } from '../components/FormatPanel';
 import { makeGenericJob } from '../ai/genericJob';
 import { JobExplainPanel } from '../components/JobExplainPanel';
 import { measurePages, type PageInfo } from '../export/client';
@@ -421,7 +422,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
   const vw = useViewportWidth(), narrow = vw <= 1000;
   const [mTab, setMTab] = useState<'preview' | 'pool'>('preview'), [zoom, setZoom] = useState(false);
   const [previewRef, previewW] = useElementWidth();
-  const previewScale = narrow ? (zoom ? 0.9 : Math.min(0.72, ((previewW || vw - 44) - 2) / (210 * 3.7795))) : view === 'both' ? 0.46 : 0.72;
+  const previewScale = narrow ? (zoom ? 0.9 : Math.min(0.72, ((previewW || vw - 44) - 2) / (210 * 3.7795))) : view === 'both' ? 0.46 : (previewW ? Math.max(0.45, Math.min(0.72, (previewW - 4) / (210 * 3.7795))) : 0.72);
   const [showItems, setShowItems] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [pages, setPages] = useState<PageInfo | null | 'error'>(null);
@@ -541,6 +542,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
           <div className="previews" ref={previewRef}>
             {(view === 'both' && !narrow ? (['zh', 'en'] as Lang[]) : [view === 'both' ? 'zh' as Lang : view]).map((l) => <Preview key={l} m={buildLayout(profile, template, l, resume)} scale={previewScale} />)}
           </div>
+          <FormatPanel />
         </div>
       </div>
       <ResumeFactsOptions />
