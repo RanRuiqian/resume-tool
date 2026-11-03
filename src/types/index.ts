@@ -109,6 +109,8 @@ export interface EducationEntry extends BaseEntry {
   coursesInText?: number;
   /** 通过学习获得的专业能力（自填，仅作素材） */
   abilities?: string;
+  /** 学校排名（2026-11-03，可选），如「QS 世界大学排名 2027 第 31 位」/「QS World University Rankings 2027: #31」；简历固定显示在学校名后，不经 AI 选材 / 裁剪 */
+  ranking?: LocalizedText;
 }
 /** 经历类型（v1.6）：正式工作、实习、兼职、社团任职、志愿服务等，便于按岗位挑选；未填 = 未区分 */
 export type WorkKind = '' | 'fulltime' | 'internship' | 'parttime' | 'club' | 'volunteer' | 'other';

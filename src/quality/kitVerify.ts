@@ -32,7 +32,7 @@ export function profileFacts(p: ProfileDoc): KitFact[] {
   const add = (id: string, zh: string[], en: string[], type: KitFact['type'] = 'bullet', core?: LocalizedText) => f.push({ id, zh: zh.filter(Boolean).join(' | '), en: en.filter(Boolean).join(' | '), type, core: core ? L(core) : undefined });
   const h = p.profile; add('profile', [L(h.name).zh, L(h.headline).zh, L(h.summary).zh], [L(h.name).en, L(h.headline).en, L(h.summary).en], 'meta');
   for (const e of p.education.filter((x) => x.enabled)) {
-    const c = (l: Lang) => [L(e.school)[l], L(e.degree)[l], L(e.major)[l], `${e.start}–${e.end}`, e.expectedConferralDate ? (l === 'zh' ? `预计 ${e.expectedConferralDate} 授予学位` : `degree expected ${e.expectedConferralDate}`) : ''];
+    const c = (l: Lang) => [L(e.school)[l], e.ranking?.[l] ?? '', L(e.degree)[l], L(e.major)[l], `${e.start}–${e.end}`, e.expectedConferralDate ? (l === 'zh' ? `预计 ${e.expectedConferralDate} 授予学位` : `degree expected ${e.expectedConferralDate}`) : ''];
     add(e.id, [...c('zh'), ...(e.courses ?? []), e.abilities ?? ''], [...c('en'), ...(e.courses ?? [])], 'entry');
     e.highlights.forEach((b, i) => add(b.id ?? `${e.id}-h${i}`, [...c('zh'), L(b).zh], [...c('en'), L(b).en], 'bullet', b));
   }

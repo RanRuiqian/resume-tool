@@ -203,3 +203,6 @@ EDU 只建立能确认学校名称的教育记录；项目学分单元不创建�
 
 ## 求职信 / 备考方向（2026-11-03，无数据库变更）
 `PrepDirection.points?: Bi[]`（可选，2–4 个要复习的知识点）；`PrepDirection.source` 现为对应岗位要求原文（多条以「；」连接）。`KitQuality.status` 新增 `review`，附 `removed`（被自动删掉的句子及原因）、`flagged`（保留待核对的句子）；KitQuality 只在内存中，不入库。
+
+## 学校排名（2026-11-03，无数据库变更）
+`EducationEntry.ranking?: LocalizedText`：学校排名原文（用户自填，如 QS 名次与年份）。版式固定显示在学校名后；英文版只用 en 或纯 ASCII 的 zh。

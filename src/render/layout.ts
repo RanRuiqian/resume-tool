@@ -4,7 +4,7 @@ import { withLangOverrides } from './langOverrides';
 import { LANG_TEST } from '../ai/relevance';
 import { eduDateText } from './degree';
 import { inferWorkKind, isCampusKind } from './classify';
-import type { Lang, ProfileDoc, ResumeDoc, TemplateConfig, ModuleKey, LocalizedText, Typography, PhotoPosition } from '../types';
+import type { EducationEntry, Lang, ProfileDoc, ResumeDoc, TemplateConfig, ModuleKey, LocalizedText, Typography, PhotoPosition } from '../types';
 import { lt, formatRange, formatDate, moduleOrderFor } from '../locale/text';
 import { academicHighlight, academicGradeText, courseLines, profileForGeneration } from '../privacy/resume';
 
@@ -76,6 +76,13 @@ const PERSONAL_LABEL: Record<Lang, Record<string, string>> = {
   en: { birth: 'Born', gender: 'Gender', hometown: 'Hometown', politics: 'Political status' },
 };
 
+/** 学校排名：显示在学校名后；英文简历只用英文（或纯 ASCII 的中文栏），避免英文版夹中文 */
+function schoolRank(e: EducationEntry, lang: Lang): string {
+  const r = e.ranking; if (!r) return '';
+  const zh = (r.zh ?? '').trim(), en = (r.en ?? '').trim();
+  const t = lang === 'zh' ? (zh || en) : (en || (/^[\x20-\x7e]+$/.test(zh) ? zh : ''));
+  return t ? (lang === 'zh' ? `（${t}）` : ` (${t})`) : '';
+}
 export function buildLayout(p: ProfileDoc, tplIn: TemplateConfig, lang: Lang, resume?: ResumeDoc | null): LayoutModel {
   const tpl = withLangOverrides(tplIn, lang);
   p = profileWithResumeEdits(p, resume);
@@ -144,7 +151,7 @@ export function buildLayout(p: ProfileDoc, tplIn: TemplateConfig, lang: Lang, re
     // 自动生成仍默认隐藏成绩；用户单独选用或手工编辑的文字应如实预览和导出。
     const highlights = e.highlights.filter((b) => (b.id && itemMap.get(b.id)?.manual) || !academicHighlight(b));
     const bullets = pickBullets(highlights).filter((t) => !academicGradeText(t) || highlights.some((b) => b.id && itemMap.get(b.id)?.manual && B(b) === t));
-    return { title: T(e.school), subtitle: eduSub(e), date: eduRange(e), bullets: [...(resume ? bullets.map((x) => compactGpaNote(x, lang)) : bullets), ...(courses.length ? [`${lang === 'zh' ? '相关课程' : 'Relevant coursework'}: ${courses.join(lang === 'zh' ? '、' : '; ')}`] : [])] };
+    return { title: T(e.school) + schoolRank(e, lang), subtitle: eduSub(e), date: eduRange(e), bullets: [...(resume ? bullets.map((x) => compactGpaNote(x, lang)) : bullets), ...(courses.length ? [`${lang === 'zh' ? '相关课程' : 'Relevant coursework'}: ${courses.join(lang === 'zh' ? '、' : '; ')}`] : [])] };
   });
   if (ed.length) sections.education = { key: 'education', title: title('education'), blocks: ed };
   const sk = byIds(p.skills, sel.skills);

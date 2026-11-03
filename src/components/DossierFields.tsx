@@ -17,7 +17,11 @@ export function EducationExtra({ e, set }: { e: EducationEntry; set: (fn: (x: Ed
   const filled = [e.courseCompletionDate, e.expectedConferralDate, e.actualConferralDate, e.availableFullTimeDate].filter(Boolean).length;
   return (
     <details className="df">
-      <summary>🎓 毕业相关日期与课程{filled ? `（已填 ${filled} 个日期）` : '（可选，应届生建议填写）'}</summary>
+      <summary>🎓 学校排名、毕业相关日期与课程{filled ? `（已填 ${filled} 个日期）` : '（可选，应届生建议填写）'}</summary>
+      <div className="grid2">
+        <Txt rows={1} label="学校排名（中文，显示在学校名后）" hint="如：QS 世界大学排名 2027 第 31 位" value={e.ranking?.zh} onChange={(v) => set((x) => { x.ranking = { ...(x.ranking ?? {}), zh: v } as EducationEntry['ranking']; })} />
+        <Txt rows={1} label="学校排名（英文）" hint="如：QS World University Rankings 2027: #31" value={e.ranking?.en} onChange={(v) => set((x) => { x.ranking = { ...(x.ranking ?? {}), en: v } as EducationEntry['ranking']; })} />
+      </div>
       <p className="muted small">这几个日期分开保存：很多校招要求“某日前取得学位证”，课程结束 ≠ 拿到学位。</p>
       <div className="grid2">
         <Txt rows={1} label="课程完成日期" hint="YYYY-MM" value={e.courseCompletionDate} onChange={(v) => set((x) => { x.courseCompletionDate = v; })} />
