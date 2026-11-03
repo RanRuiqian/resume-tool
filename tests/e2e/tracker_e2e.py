@@ -16,7 +16,7 @@ SEED="""d=>new Promise(r=>{const q=indexedDB.open('resume-tool');q.onsuccess=()=
 prof=tempfile.mkdtemp(prefix='chrome-p4-'); prof2=tempfile.mkdtemp(prefix='chrome-p4b-')
 dialogs=[]
 with sync_playwright() as p:
-    ctx=p.chromium.launch_persistent_context(prof, executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], viewport={'width':1280,'height':1000}, accept_downloads=True)
+    ctx=p.chromium.launch_persistent_context(prof, executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/google-chrome'), args=['--no-sandbox'], viewport={'width':1280,'height':1000}, accept_downloads=True)
     pg=ctx.pages[0]; errs=[]; pg.on('pageerror', lambda e: errs.append(str(e)))
     def on_dialog(x): dialogs.append(x.message); x.accept()
     pg.on('dialog', on_dialog)
@@ -133,7 +133,7 @@ with sync_playwright() as p:
     chk('无页面错误', not errs); print(errs)
     ctx.close()
     # 恢复到新浏览器
-    ctx2=p.chromium.launch_persistent_context(prof2, executable_path='/usr/bin/google-chrome', args=['--no-sandbox'], viewport={'width':1280,'height':1000})
+    ctx2=p.chromium.launch_persistent_context(prof2, executable_path=os.environ.get('CHROMIUM_PATH','/usr/bin/google-chrome'), args=['--no-sandbox'], viewport={'width':1280,'height':1000})
     pg2=ctx2.pages[0]; pg2.on('dialog', lambda x: x.accept())
     pg2.goto(B+'#applications/backup'); pg2.wait_for_selector('[data-testid=backup-panel]')
     pg2.set_input_files('[data-testid=archive-file]', zpath); pg2.wait_for_selector('[data-testid=archive-check]')

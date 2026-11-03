@@ -1,8 +1,20 @@
+import { useLayoutEffect, useRef, useState } from 'react';
 import type { LayoutModel, LSection } from './layout';
 
 const PX = 3.7795; // px per mm
 /** 网页预览：与 PDF 渲染器共用同一 Layout Model（近似 WYSIWYG） */
 export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number }) {
+  // transform: scale 不改变布局尺寸，外框要按缩放后的真实高度收口，否则页面下方会留一大片空白（手机上尤其明显）
+  const pageRef = useRef<HTMLDivElement>(null);
+  const [scaledH, setScaledH] = useState<number | null>(null);
+  useLayoutEffect(() => {
+    const el = pageRef.current; if (!el) return;
+    const update = () => setScaledH(Math.ceil(el.offsetHeight * scale));
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update); ro.observe(el);
+    return () => ro.disconnect();
+  }, [scale]);
   const ty = m.typography;
   const font = m.lang === 'zh' || ty.fontFamily === 'Noto Sans SC' ? "'Noto Sans SC', sans-serif" : ty.fontFamily === 'Arimo' ? "Arimo, Arial, 'Liberation Sans', 'Noto Sans SC', sans-serif" : ty.fontFamily === 'Times-Roman' ? "'Times New Roman', Times, 'Noto Sans SC', serif" : "Helvetica, Arial, 'Noto Sans SC', sans-serif";
   const pt = (n: number) => `${n * 1.333}px`;
@@ -48,8 +60,8 @@ export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number })
   const photo = m.photo && <img src={m.photo.dataUrl} style={{ width: m.photo.sizeMm * m.photo.aspect * PX, height: m.photo.sizeMm * PX, objectFit: 'cover', [m.photo.position === 'left' ? 'marginRight' : 'marginLeft']: 12 }} />;
   const twoCol = m.columns === 2 && m.side.length > 0;
   return (
-    <div className="preview-wrap" style={{ width: wMm * PX * scale, minHeight: hMm * PX * scale }}>
-      <div className="preview-page" style={{ width: wMm * PX, minHeight: hMm * PX, transform: `scale(${scale})`, padding: `${m.marginMm.top * PX}px ${m.marginMm.right * PX}px ${m.marginMm.bottom * PX}px ${m.marginMm.left * PX}px`, fontFamily: font, fontSize: pt(ty.bodySizePt), lineHeight: ty.lineHeight, color: m.colors.text }}>
+    <div className="preview-wrap" style={{ width: wMm * PX * scale, minHeight: hMm * PX * scale, ...(scaledH ? { height: scaledH } : {}) }}>
+      <div className="preview-page" ref={pageRef} style={{ width: wMm * PX, minHeight: hMm * PX, transform: `scale(${scale})`, padding: `${m.marginMm.top * PX}px ${m.marginMm.right * PX}px ${m.marginMm.bottom * PX}px ${m.marginMm.left * PX}px`, fontFamily: font, fontSize: pt(ty.bodySizePt), lineHeight: ty.lineHeight, color: m.colors.text }}>
         <div style={eng ? { display: 'flex', alignItems: 'flex-start', paddingBottom: 2, marginBottom: m.spacing.sectionGapMm * PX * 0.8 } : { display: 'flex', alignItems: 'center', borderBottom: `${m.headerStyle === 'band' ? 3 : 1}px solid ${m.headerStyle === 'band' ? m.colors.accent : m.colors.primary}`, paddingBottom: 6, marginBottom: m.spacing.sectionGapMm * PX }}>
           {m.photo?.position === 'left' && photo}
           <div style={{ flex: 1, textAlign: m.headerAlign }}>

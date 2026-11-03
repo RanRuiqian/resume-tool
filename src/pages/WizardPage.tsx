@@ -218,6 +218,25 @@ function Step2({ next, back }: { next: () => void; back: () => void }) {
  * 岗位文字另存 uiStorage（刷新也不丢）；识别 / 分析 / 生成任务在后台继续，回来时显示进度与结果。
  */
 const GEN_REQUEST = 'genRequest';
+/** 元素当前可用宽度（display:none 时 clientWidth 为 0，保留上一次的值） */
+function useElementWidth() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [w, setW] = useState(0);
+  useEffect(() => {
+    const el = ref.current; if (!el) return;
+    const update = () => { if (el.clientWidth) setW(el.clientWidth); };
+    update();
+    if (typeof ResizeObserver === 'undefined') return;
+    const ro = new ResizeObserver(update); ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  return [ref, w] as const;
+}
+function useViewportWidth() {
+  const [w, setW] = useState(() => (typeof window === 'undefined' ? 1200 : window.innerWidth));
+  useEffect(() => { const f = () => setW(window.innerWidth); window.addEventListener('resize', f); return () => window.removeEventListener('resize', f); }, []);
+  return w;
+}
 /** 生成耗时提示：联合岗位深度思考可能要好几分钟，让用户知道仍在运行。 */
 function Elapsed() {
   const [sec, setSec] = useState(0);
@@ -398,6 +417,11 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
   const setBusy = (v: string) => setGen({ busy: v });
   const setErr = (v: string) => setGen({ err: v });
   const [view, setView] = useState<'zh' | 'en' | 'both'>('zh');
+  // 手机 / 窄屏：预览和素材库分成两个标签，预览按屏幕宽度缩放（可点「放大看」横向滑动）
+  const vw = useViewportWidth(), narrow = vw <= 1000;
+  const [mTab, setMTab] = useState<'preview' | 'pool'>('preview'), [zoom, setZoom] = useState(false);
+  const [previewRef, previewW] = useElementWidth();
+  const previewScale = narrow ? (zoom ? 0.9 : Math.min(0.72, ((previewW || vw - 44) - 2) / (210 * 3.7795))) : view === 'both' ? 0.46 : 0.72;
   const [showItems, setShowItems] = useState(false);
   const [showExport, setShowExport] = useState(false);
   const [pages, setPages] = useState<PageInfo | null | 'error'>(null);
@@ -482,6 +506,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
       {pending > 0 && <div className="notice warn">{pendingItems ? `${pendingItems} 条文字` : ''}{pendingItems && pendingLabels ? '、' : ''}{pendingLabels ? `${pendingLabels} 个名称` : ''}的另一语言可按需同步，也可直接编辑和下载。<button onClick={resync}>同步翻译</button></div>}
 
       <div className="card quick-layout">
+        <details className="m-collapse" open={!narrow}><summary>版式：样式 / 照片 / 篇幅 / 配色</summary>
         <div className="row">
           <b>样式</b>
           {ALL_TEMPLATES.map((t) => <button key={t.id} className={baseOf(templateId) === t.id ? 'active' : ''} onClick={() => setTemplateId(templates.find((x) => !x.builtin && x.id.startsWith(t.id + '-custom'))?.id ?? t.id)}>{t.name.zh}</button>)}
@@ -498,15 +523,23 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
           {FEATURES.undo && <button disabled={!canUndo} title="Ctrl+Z" onClick={undo}>↶ 撤销</button>}
           <button className="link" onClick={() => go('layout')}>更多版式设置 →</button>
         </div>
+        </details>
         <div className="row">
           {(['zh', 'en', 'both'] as const).map((v) => <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>{v === 'zh' ? '中文版' : v === 'en' ? 'English' : '中英对照'}</button>)}
           <span className="muted small">中文版 {pageText('zh')} · 英文版 {pageText('en')}</span>
         </div>
         {pages && pages !== 'error' && (pages.zh.overflow || pages.en.overflow) && <div className="notice warn small" data-testid="overflow-tip">超出目标页数：建议在左侧清单取消勾选和岗位关系最弱的条目（如与岗位无关的项目、奖项或证书），或改为「2 页内」。本工具不会为了塞进页面而把字号缩到难以阅读。</div>}
-        <div className="pool-layout">
+        {narrow && resume && (
+          <div className="m-tabs" data-testid="m-tabs">
+            <button className={mTab === 'preview' ? 'active' : ''} data-testid="m-tab-preview" onClick={() => setMTab('preview')}>简历预览</button>
+            <button className={mTab === 'pool' ? 'active' : ''} data-testid="m-tab-pool" onClick={() => setMTab('pool')}>编辑素材</button>
+            {mTab === 'preview' && <button data-testid="m-zoom" onClick={() => setZoom(!zoom)}>{zoom ? '适应屏幕' : '放大看'}</button>}
+          </div>
+        )}
+        <div className="pool-layout" data-m={narrow && resume ? mTab : undefined}>
           {resume && <MaterialPool />}
-          <div className="previews">
-            {(view === 'both' ? (['zh', 'en'] as Lang[]) : [view]).map((l) => <Preview key={l} m={buildLayout(profile, template, l, resume)} scale={view === 'both' ? 0.46 : 0.72} />)}
+          <div className="previews" ref={previewRef}>
+            {(view === 'both' && !narrow ? (['zh', 'en'] as Lang[]) : [view === 'both' ? 'zh' as Lang : view]).map((l) => <Preview key={l} m={buildLayout(profile, template, l, resume)} scale={previewScale} />)}
           </div>
         </div>
       </div>

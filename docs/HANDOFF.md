@@ -133,6 +133,12 @@
 - 实现：第 2 步顶部新增「生成公版简历 →」按钮（`data-testid="generic-resume"`），用 `makeGenericJob`（`src/ai/genericJob.ts`，`JobParse.generic = true`，id 固定 `generic-resume`）合成一个只有通用能力要求的岗位，走同一条生成流程；`prompts.ts` 的 `GENERIC_PLAN_NOTE` / `GENERIC_WRITE_NOTE` 覆盖「基本填满」「按岗位找证据」：覆盖面广、每个方向挑最强一段、占页 75–85%、项目 3–4 段、不补候补（`extraReserves` 对 generic 跳过，reserves 置空）、headline 写通用方向。岗位要求解读栏对 generic 隐藏。
 - 测试：`tests/aiPlannerV112.test.ts` 末尾 3 项。未验证：真实 DeepSeek 的公版选材质量。
 
+### 2.12 iPhone / 手机端优化（2026-11-03，负责人要求）
+- 先用 iPhone 尺寸（390 / 360）的浏览器逐页审计：各页本来就没有横向溢出，真正的问题是：第 3 步预览比屏幕宽被截断、预览下方留一大片空白（`transform: scale` 不改布局高度）、素材库很长，预览被挤到页面最下面、点按区域只有 30px、输入框字号 < 16px（iOS 聚焦会自动放大页面）、设置页「演示模式」说明被挤成竖排。
+- 修复：`Preview.tsx` 按缩放后高度收口；第 3 步窄屏（≤1000px）加「简历预览 / 编辑素材」标签（`data-testid="m-tab-preview|m-tab-pool|m-zoom"`），预览按 `.previews` 实际宽度缩放，「放大看」可在预览区内横向滑动；样式/照片/篇幅/配色收进「版式」折叠栏（桌面端仍展开）；步骤条一行三格；`index.css` 末尾「手机优化」块（≥44px 点按高度、输入框 16px、安全区、`viewport-fit=cover`、`touch-action: manipulation`）；导航在手机上不吸顶（省首屏）。
+- 测试：`tests/e2e/mobile_e2e.py`（28 项，需 `npm run build && npx vite preview --port 4173`，演示模式）；`release_e2e` 35/35、`tracker_e2e` 33/33、`resume_workspace_e2e` 25/25、`jd_step2_e2e` 17/17、`job_explain_e2e` 6/6 均通过。
+- 未验证：真机 iPhone Safari（本环境只有 Chromium 的 iPhone 模拟）。已知：导出仍是 ZIP（PDF + Word），iOS 上下载后在「文件」App 里解压；后续可加 Web Share 单独分享 PDF。
+
 ## 3. 验证（本轮实际运行结果）
 
 | 检查 | 结果 |
