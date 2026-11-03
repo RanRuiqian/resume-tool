@@ -9,7 +9,7 @@ const TIER = { responsibility: '岗位职责', must: '必备要求', preferred: 
 export function JobExplainPanel({ open }: { open?: boolean }) {
   const { settings, job, setJob } = useApp();
   const [busy, setBusy] = useState(false), [err, setErr] = useState('');
-  if (!job) return null;
+  if (!job || job.generic) return null;
   const refs = jobRequirements(job);
   if (!refs.length) return null;
   const have = new Map((job.explain?.items ?? []).map((x) => [x.id, x]));

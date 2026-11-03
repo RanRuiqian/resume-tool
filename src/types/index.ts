@@ -268,6 +268,8 @@ export interface JobParse {
   ocrRawText?: string;
   /** 2026-11：岗位要求解读（AI 按行业常识解释每条职责 / 要求的含义与所需能力；只读说明，不参与选材与简历内容） */
   explain?: JobExplain;
+  /** 2026-11：公版简历（不针对具体岗位）。由 makeGenericJob 生成的合成岗位，AI 按「通用、精炼、有代表性」选材。 */
+  generic?: boolean;
 }
 
 export interface RequirementExplanation {

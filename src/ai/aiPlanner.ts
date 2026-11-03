@@ -3,7 +3,7 @@ import { other } from '../locale/text';
 import { isOfficialDeepSeek } from '../storage/defaults';
 import { analyzeJd, extractEvidence, rankEvidence } from './evidence';
 import { chatJson, type ChatMsg } from './provider';
-import { AI_PLAN_PROMPT, AI_PLAN_REPAIR_PROMPT, SYS_FACTS } from './prompts';
+import { AI_PLAN_PROMPT, AI_PLAN_REPAIR_PROMPT, GENERIC_PLAN_NOTE, SYS_FACTS } from './prompts';
 import type { PlanEntry, ResumePlan } from './relevance';
 import { inferWorkKind } from '../render/classify';
 import { isProfessionalWork, isCampusWork, pageBudget, type ContentCategory } from './contentStrategy';
@@ -110,7 +110,7 @@ export function selectionBrief(p: ProfileDoc, job: JobParse, lang: Lang, targetP
   return {
     targets: job.joint?.targets.map((t) => ({ roleId: t.roleId, revision: t.revision, name: t.name, job: { id: t.job.id, title: t.job.title, rawText: t.job.rawText, company: t.job.company, mustHave: t.job.mustHave, responsibilities: t.job.responsibilities ?? [], niceToHave: t.job.niceToHave, keywords: t.job.keywords } })),
     requirementRefs: job.joint ? jobRequirements(job) : undefined,
-    job: { title: job.title, rawText: job.rawText, responsibilities: job.responsibilities ?? [], mustHave: job.mustHave,
+    job: { title: job.title, rawText: job.rawText, generic: job.generic ?? false, responsibilities: job.responsibilities ?? [], mustHave: job.mustHave,
       niceToHave: job.niceToHave, keywords: job.keywords },
     candidate: { work, projects, education, courses,
       skills, certificates, awards },
@@ -333,7 +333,7 @@ function applyRepairs(original: AiSelectionOutput, response: unknown, allowedPat
 export async function planWithAi(s: Settings, p: ProfileDoc, job: JobParse, lang: Lang, targetPages: number, onStep?: (m: string) => void, template?: TemplateConfig): Promise<AiSelectionResult> {
   const brief = selectionBrief(p, job, lang, targetPages, template);
   const messages: ChatMsg[] = [{ role: 'system', content: SYS_FACTS },
-    { role: 'user', content: `${AI_PLAN_PROMPT}\n\n${JSON.stringify(brief)}` }];
+    { role: 'user', content: `${AI_PLAN_PROMPT}${job.generic ? `\n\n${GENERIC_PLAN_NOTE}` : ''}\n\n${JSON.stringify(brief)}` }];
   const options = { model: decisionModel(s), thinking: 'enabled' as const, timeoutMs: job.joint ? 900_000 : 360_000, maxTokens: job.joint ? 32_000 : 16_000 };
   onStep?.('1/3 正在选材：AI 阅读岗位与全部有效经历，规划简历重点；深度思考可能需要数分钟…');
   const original = normalizeJointOutput(await chatJson<AiSelectionOutput>(s, messages, options), job);

@@ -128,6 +128,11 @@
 - 测试：`tests/jobExplain.test.ts`（3 项）、`tests/e2e/job_explain_e2e.py`（6 项，需 `npm run build && npx vite preview --port 4173`）。
 - 未验证：真实 DeepSeek 的解读质量；第 3 步联合岗位的显示（逻辑与第 2 步同一组件，未做联合 e2e）。
 
+### 2.11 公版简历（2026-11-03，负责人提出）
+- 需求：没有具体岗位时，让 AI 从资料库生成一份「万金油 + 精炼」的公版简历。
+- 实现：第 2 步顶部新增「生成公版简历 →」按钮（`data-testid="generic-resume"`），用 `makeGenericJob`（`src/ai/genericJob.ts`，`JobParse.generic = true`，id 固定 `generic-resume`）合成一个只有通用能力要求的岗位，走同一条生成流程；`prompts.ts` 的 `GENERIC_PLAN_NOTE` / `GENERIC_WRITE_NOTE` 覆盖「基本填满」「按岗位找证据」：覆盖面广、每个方向挑最强一段、占页 75–85%、项目 3–4 段、不补候补（`extraReserves` 对 generic 跳过，reserves 置空）、headline 写通用方向。岗位要求解读栏对 generic 隐藏。
+- 测试：`tests/aiPlannerV112.test.ts` 末尾 3 项。未验证：真实 DeepSeek 的公版选材质量。
+
 ## 3. 验证（本轮实际运行结果）
 
 | 检查 | 结果 |

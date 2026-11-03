@@ -9,6 +9,7 @@ import { generateCoverKit, generatePrep } from '../src/ai/extras';
 import { generateRules } from '../src/ai/generate';
 import { parseJdAi } from '../src/ai/jd';
 import { resumeSkillCategory } from '../src/render/layout';
+import { makeGenericJob, GENERIC_JOB_ID } from '../src/ai/genericJob';
 
 const api = chatJson as unknown as ReturnType<typeof vi.fn>;
 beforeEach(() => api.mockReset());
@@ -396,5 +397,29 @@ describe('v1.12 evidence catalog and bounded local correction', () => {
     expect(writing).toBeGreaterThan(repair);
     expect(translation).toBeGreaterThan(writing);
     expect(api).toHaveBeenCalledTimes(4);
+  });
+});
+
+describe('2026-11 公版简历', () => {
+  it('makeGenericJob 生成合成岗位：通用要求、generic 标记、有文本哈希，不含公司信息', () => {
+    const j = makeGenericJob(library());
+    expect(j.id).toBe(GENERIC_JOB_ID); expect(j.generic).toBe(true); expect(j.textHash).toBeTruthy();
+    expect(j.mustHave.length).toBeGreaterThanOrEqual(3); expect(j.mustHave.every((x) => x.zh && x.en)).toBe(true);
+    expect(j.title.zh).toContain('公版'); expect(j.keywords.length).toBeGreaterThan(0);
+  });
+  it('公版：选材与撰写提示词带公版说明、岗位标记为 generic，且不补程序备选项目', async () => {
+    api.mockResolvedValueOnce(proposal());
+    api.mockResolvedValueOnce({ items: [] });
+    api.mockRejectedValueOnce(new Error('translation temporarily offline'));
+    const r = await generateResume(S, library(), makeGenericJob(library()), 'zh', 1);
+    const last = (i: number) => String(api.mock.calls[i][1].at(-1).content), planMsg = last(0), writeMsg = last(1);
+    expect(planMsg).toContain('公版简历模式'); expect(planMsg).toContain('"generic":true');
+    expect(writeMsg).toContain('公版简历模式');
+    expect(r.selection.projects).toEqual(['proj-hyd']); // 不因版面空位而补入其它项目
+  });
+  it('普通岗位的提示词不含公版说明', async () => {
+    api.mockResolvedValueOnce(proposal()); api.mockResolvedValueOnce({ items: [] }); api.mockRejectedValueOnce(new Error('x'));
+    await generateResume(S, library(), J, 'zh', 1);
+    expect(JSON.stringify(api.mock.calls[0][1])).not.toContain('公版简历模式');
   });
 });

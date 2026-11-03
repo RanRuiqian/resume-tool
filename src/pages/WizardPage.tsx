@@ -26,6 +26,7 @@ import { normalizeProfile } from '../storage/profileIO';
 import { buildLayout } from '../render/layout';
 import { Preview } from '../render/Preview';
 import { useEditTemplate } from '../render/useEditTemplate';
+import { makeGenericJob } from '../ai/genericJob';
 import { JobExplainPanel } from '../components/JobExplainPanel';
 import { measurePages, type PageInfo } from '../export/client';
 import { fileToDataUrl } from '../utils/download';
@@ -240,7 +241,7 @@ const setGen = (patch: Partial<GenState>) => { genState = { ...genState, ...patc
 const useGen = () => useSyncExternalStore((cb) => { genSubs.add(cb); return () => { genSubs.delete(cb); }; }, () => genState);
 
 function SingleStep2({ next, back }: { next: () => void; back: () => void }) {
-  const { settings, job, setJob, resume, setResume } = useApp();
+  const { settings, profile, job, setJob, resume, setResume } = useApp();
   // v1.10：每张截图单独保存识别原文，删除某张时可以重建文字；岗位正文 = 去掉网页噪声后的识别文字（可修改）
   const pre = uiStorage.getItem(JD_PREFILL_KEY);
   // 从投递记录带入的岗位文字优先；记下当前 job，避免随后被「切换岗位」同步覆盖。
@@ -329,6 +330,10 @@ function SingleStep2({ next, back }: { next: () => void; back: () => void }) {
     <div className="step">
       <h2>② 你想投哪个岗位？</h2>
       <p className="muted">把招聘页面截图拖进来（或 Ctrl+V 粘贴截图），也可以直接粘贴岗位文字。可以放多张截图。</p>
+      <div className="notice small row" data-testid="generic-box">
+        <span className="grow">还没有具体岗位？可以直接生成一份<b>公版简历</b>：AI 从你的资料库里挑最有代表性、适用面最广的内容，精炼成一页，投哪里都说得过去。</span>
+        <button data-testid="generic-resume" onClick={() => { const j = makeGenericJob(profile); setJdDraft({ shots: [], text: '', edited: false, info: '', err: '', jobId: j.id }); setJob(j); next(); }}>生成公版简历 →</button>
+      </div>
       <div className="grid2 top">
         <div className="card">
           <div className={`dropzone ${busy ? 'busy' : ''}`} onClick={() => fileRef.current?.click()} onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); addFiles(e.dataTransfer.files); }}>

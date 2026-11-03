@@ -1,6 +1,6 @@
 import type { Bi, GenItem, JobParse, Lang, LocalizedText, ProfileDoc, ResumeDoc, Settings } from '../types';
 import { chatJson } from './provider';
-import { AI_WRITE_PROMPT, LOCALIZE_PROMPT, SYS_FACTS } from './prompts';
+import { AI_WRITE_PROMPT, GENERIC_WRITE_NOTE, LOCALIZE_PROMPT, SYS_FACTS } from './prompts';
 import { checkConsistency, compareFacts, numberTokens } from './consistency';
 import { lt, other, uid } from '../locale/text';
 import { mockTranslate } from './translate';
@@ -160,7 +160,8 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   const T = (t: LocalizedText) => (t?.status?.[primary] === 'stale' ? lt(t, other(primary)) : lt(t, primary));
   const A = (t: LocalizedText) => (t?.status?.[sec] === 'stale' ? '' : (t?.[sec] ?? '').trim());
   const planned = await planWithAi(s, p, job, primary, targetPages, onStep, options.template);
-  const decision = { ...planned, reserves: [...planned.reserves, ...extraReserves(planned)] };
+  // 公版简历要精炼：不补程序备选的候补
+  const decision = job.generic ? { ...planned, reserves: [] } : { ...planned, reserves: [...planned.reserves, ...extraReserves(planned)] };
   const plan = { ...decision.plan, entries: capPlanFacts([...decision.plan.entries, ...decision.reserves], pageBudget(targetPages, primary, options.template, p).softFactTarget) };
   const idx = textIndex(p);
   const terms = jobTerms(job);
@@ -172,7 +173,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   const education = p.education.filter((e) => e.enabled).map((e) => ({ school: lt(e.school, 'zh'), schoolEn: lt(e.school, 'en'), degree: lt(e.degree, 'zh') || lt(e.degree, 'en'), major: lt(e.major, 'zh') || lt(e.major, 'en'), start: e.start, end: e.end, expectedConferralDate: e.expectedConferralDate ?? '', actualConferralDate: e.actualConferralDate ?? '' }));
   const fixedSummary = { zh: fixedSummaryText(p.profile.summary, 'zh'), en: fixedSummaryText(p.profile.summary, 'en') };
   const brief = {
-    job: { title: job.title, company: job.company?.full || job.company?.short || '', responsibilities: job.responsibilities ?? [], mustHave: job.mustHave, niceToHave: job.niceToHave, keywords: job.keywords },
+    job: { title: job.title, generic: job.generic ?? false, company: job.company?.full || job.company?.short || '', responsibilities: job.responsibilities ?? [], mustHave: job.mustHave, niceToHave: job.niceToHave, keywords: job.keywords },
     candidate: { education, fixedSummary },
     requirements: decision.requirements.filter((r) => r.assessment === 'direct' || r.assessment === 'transferable').map(({ text, tier, assessment, evidenceIds }) => ({ text, tier, assessment, evidenceIds })),
     gaps: decision.requirements.filter((r) => (r.assessment === 'gap' || r.assessment === 'learning') && !isUnjudged(r)).map((r) => r.text),
@@ -180,7 +181,7 @@ async function generatePrimaryAi(s: Settings, p: ProfileDoc, job: JobParse, prim
   };
   onStep?.('2/3 正在撰写：AI 按岗位同时撰写中英文简历、简介与求职方向…');
   const write = (b: typeof brief) => chatJson<WriteOut>(s, [{ role: 'system', content: SYS_FACTS },
-    { role: 'user', content: `${AI_WRITE_PROMPT}\n\n${JSON.stringify(b)}` }],
+    { role: 'user', content: `${AI_WRITE_PROMPT}${job.generic ? `\n\n${GENERIC_WRITE_NOTE}` : ''}\n\n${JSON.stringify(b)}` }],
   { model: decisionModel(s), thinking: 'enabled', timeoutMs: job.joint ? 600_000 : 360_000, maxTokens: 24_000 });
   // 输出被截断（finish_reason=length）时，只带前一半（优先级高的）事实重试一次；其余事实按资料库原文精简后进入简历。
   const out = await write(brief).catch((e: Error) => {
