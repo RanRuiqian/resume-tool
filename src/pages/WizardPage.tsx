@@ -502,6 +502,12 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
         </div>
       </div>
       <ResumeFactsOptions />
+      {resume && !!resume.notes?.length && (
+        <details className="card" data-testid="resume-notes">
+          <summary>生成与版面说明（{resume.notes.length} 条）{(() => { const d = resume.notes.find((n) => n.startsWith('版面诊断')); return d ? `：${d}` : ''; })()}</summary>
+          <ul className="small">{resume.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+        </details>
+      )}
       <EvidenceReport go={go} />
       {resume && (
         <div className="card">
