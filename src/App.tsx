@@ -8,6 +8,7 @@ import { LayoutPage } from './pages/LayoutPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { WizardPage } from './pages/WizardPage';
 import { ApplicationsPage } from './pages/ApplicationsPage';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { FEATURES } from './features';
 import { exitDemoUrl } from './storage/mode';
 
@@ -46,4 +47,4 @@ function Shell() {
   );
 }
 
-export default function App() { return <AppProvider><Shell /></AppProvider>; }
+export default function App() { return <ErrorBoundary><AppProvider><Shell /></AppProvider></ErrorBoundary>; }

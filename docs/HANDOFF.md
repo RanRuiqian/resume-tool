@@ -250,3 +250,12 @@ ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按�
 ### 2.18 V1 发布约定（2026-11-03 23:32，负责人决定）
 - 其余功能负责人已实测通过。**「投递管理」尚未用真实投递测试**：负责人这两天真实投递后实测，有问题再修；跑通后在 GitHub 打 `v1.0` 标记（git tag + Release），算第一阶段正式完成。**在此之前不要打 v1.0。**
 - V2 候选（未定）：按真实投递暴露的问题调优 > 面试准备（自我介绍练习、项目追问）> 投递管理增强（截止提醒、进度看板）> 账号与云同步（需后端，暂缓）> 双栏真分页、iPhone 细节。
+
+### 2.19 白屏防护（2026-11-04，负责人实测：识别岗位后点「生成简历」整页变白）
+- 现象：整页（连顶部导航都没有）变白 = React 渲染时抛了没人接的错，整个应用被卸载。此前应用没有任何错误边界。
+- 实测复现：往已保存的简历里注入 AI / 旧数据可能出现的畸形形状，13 种里有 10 种白屏（notes 含对象、skillGroups 缺 ids、headline 文字非字符串、evidenceReport 缺 targets/requirements、items 文字为 null、selection / consistency 缺失、岗位 mustHave / niceToHave 缺失）。负责人那次具体是哪一种**未能复现确认**（数据在他浏览器里），所以做了通用防护而不是只修一处。
+- 修复：
+  1. `src/components/ErrorBoundary.tsx`：包住整个应用。出错时显示具体报错 + 「重新加载 / 回到第 2 步 / 复制错误信息」，资料不清库；同时把最近一次错误存进 localStorage `lastUiError`。
+  2. `src/utils/sanitizeResume.ts`：`sanitizeResume` / `sanitizeJob` 只修形状（缺数组补空、文字补字符串、坏分组丢弃），有效内容不动；没问题时返回同一对象。接在 `store.tsx` 的读取（简历、岗位）、`setResume`、`setJob`、撤销处。
+- 测试：新增 `tests/sanitizeResume.test.ts`（8），全套 697/697；`resume_workspace_e2e` 25/25、`career_kit_e2e` 通过；畸形数据实测 13/13 不再白屏；错误边界用畸形 `job.joint` 强制崩溃验证显示与「回到第 2 步」可用。
+- 待办：若负责人再遇到，请他把错误边界里的报错文字发来（或在控制台读 `localStorage.lastUiError`），据此定位真正的来源并在**生成端**修掉。

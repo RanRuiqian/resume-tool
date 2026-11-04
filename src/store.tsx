@@ -1,6 +1,7 @@
 import { liveQuery } from 'dexie';
 import { Fragment, createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { assertProfileEpoch, clearPersonalData as clearStoredPersonalData, epochValue, persistProfile, PROFILE_EPOCH_KEY, profileEpoch as readProfileEpoch, StaleProfileWriteError } from './storage/clearProfile';
+import { sanitizeResume, sanitizeJob } from './utils/sanitizeResume';
 import type { JobParse, ProfileDoc, ResumeDoc, Settings, TemplateConfig } from './types';
 import { db, DEFAULT_SETTINGS } from './storage/db';
 import { loadSettings } from './storage/settingsLoad';
@@ -70,8 +71,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       // 首次确定的默认模板写入本机，之后导入资料也不会再变（演示模式写入的是独立演示库）
       if (!savedTpl) db.state.put({ id: 'templateId', value: tid });
       const jid = get('jobId') as string | undefined, rid = get('resumeId') as string | undefined;
-      if (jid) setJobS((await db.jobs.get(jid)) ?? null);
-      if (rid) setResumeS((await db.resumes.get(rid)) ?? null);
+      if (jid) setJobS(sanitizeJob((await db.jobs.get(jid)) ?? null));
+      if (rid) setResumeS(sanitizeResume((await db.resumes.get(rid)) ?? null));
       // ?demo：只读写独立的演示数据库（resume-tool-demo），真实资料库完全不碰
       if (IS_DEMO) {
         const d = await seedDemo(db);
@@ -156,14 +157,15 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const saveTemplate = (t: TemplateConfig) => { setCustom((c) => [...c.filter((x) => x.id !== t.id), t]); db.templates.put(t); };
   const deleteTemplate = (id: string) => { setCustom((c) => c.filter((x) => x.id !== id)); db.templates.delete(id); if (templateId === id) setTemplateId(BUILTIN_TEMPLATES[0].id); };
   const setTemplateId = (id: string) => { setTemplateIdS(id); db.state.put({ id: 'templateId', value: id }); };
-  const setJob = (j: JobParse | null) => { setJobS(j); if (j) db.jobs.put(j); db.state.put({ id: 'jobId', value: j?.id ?? '' }); };
-  const setResume = (r: ResumeDoc | null) => {
+  const setJob = (raw: JobParse | null) => { const j = sanitizeJob(raw); setJobS(j); if (j) db.jobs.put(j); db.state.put({ id: 'jobId', value: j?.id ?? '' }); };
+  const setResume = (raw: ResumeDoc | null) => {
     if (clearing.current || profileEpoch !== epochRef.current) return;
+    const r = sanitizeResume(raw);
     // 同一份简历的修改记入撤销栈（最多 50 步）；换岗位/重新生成则清空
     setHistory((h) => (resume && r && resume.id === r.id ? [...h.slice(-49), resume] : []));
     setResumeS(r); db.transaction('rw', db.resumes, db.state, async () => { await assertProfileEpoch(db, profileEpoch); if (r) await db.resumes.put(r); await db.state.put({ id: 'resumeId', value: r?.id ?? '' }); }).catch(reportWriteError);
   };
-  const undo = () => { if (clearing.current || profileEpoch !== epochRef.current) return; const prev = history[history.length - 1]; if (!prev) return; setHistory((h) => h.slice(0, -1)); setResumeS(prev); db.transaction('rw', db.resumes, db.state, async () => { await assertProfileEpoch(db, profileEpoch); await db.resumes.put(prev); }).catch(reportWriteError); };
+  const undo = () => { if (clearing.current || profileEpoch !== epochRef.current) return; const prev = history[history.length - 1]; if (!prev) return; setHistory((h) => h.slice(0, -1)); setResumeS(sanitizeResume(prev)); db.transaction('rw', db.resumes, db.state, async () => { await assertProfileEpoch(db, profileEpoch); await db.resumes.put(prev); }).catch(reportWriteError); };
   const templates = [...ALL_TEMPLATES, ...custom];
   const template = templates.find((t) => t.id === templateId) ?? BUILTIN_TEMPLATES[0];
 
