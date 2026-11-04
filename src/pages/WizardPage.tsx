@@ -4,7 +4,7 @@ import { AiDisclosure } from '../components/AiDisclosure';
 import { uiStorage } from '../storage/mode';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useApp } from '../store';
-import type { Lang, PhotoPosition } from '../types';
+import type { Lang, PhotoPosition, TemplateConfig } from '../types';
 import { SetupCard } from '../components/SetupCard';
 import { ItemsEditor } from '../components/ItemsEditor';
 import { ResumeNotice } from '../components/ResumeNotice';
@@ -26,6 +26,7 @@ import { normalizeProfile } from '../storage/profileIO';
 import { buildLayout } from '../render/layout';
 import { englishResidue } from '../render/enResidue';
 import { fillEnglishResidue } from '../ai/enFill';
+import { fitToOnePage, describeFit, FIT_LIMITS, type LangFit } from '../export/autoOnePage';
 import { Preview } from '../render/Preview';
 import { useEditTemplate } from '../render/useEditTemplate';
 import { FormatPanel } from '../components/FormatPanel';
@@ -493,6 +494,21 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
       else { setResume(out.resume); if (out.remaining) setErr(`还有 ${out.remaining} 处没能自动译好（译文数字对不上或仍含中文），请在左侧「逐条修改内容」里手动改成英文。`); }
     } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
+  /** 自动调整为 1 页：只微调字号 / 行距 / 间距 / 页边距（不删内容），有下限；放不下就保持原样。 */
+  const [fitMsg, setFitMsg] = useState<{ lines: string[]; backup: TemplateConfig | null } | null>(null);
+  const fitOnePage = async () => {
+    if (!resume) return;
+    setBusy('正在微调字号、行距、间距和页边距，尽量放进 1 页（按真实 PDF 页数测量，约需几十秒）…'); setErr(''); setFitMsg(null);
+    try {
+      const backup = structuredClone(template);
+      const r = await fitToOnePage(template, (t) => measurePages(profile, { ...t, page: { ...t.page, autoFit: false } }, resume), 1);
+      if (latestResume.current !== resume) { setErr('调整期间简历已修改，请再点一次。'); return; }
+      const say = (name: string, f: LangFit) => `${name}：${f.status === 'already' ? '已经是 1 页，无需调整' : f.status === 'fitted' ? `已调到 1 页（${describeFit(f)}）` : `调到下限仍超过 1 页，已保持原样（下限：正文 ${FIT_LIMITS.bodyPt} pt、行距 ${FIT_LIMITS.lineHeight}、页边距 ${FIT_LIMITS.marginMm} mm 等）。可点「自动删减到 1 页内」取消最不重要的内容，或改用 2 页`}`;
+      const ok = r.zh.status !== 'failed' || r.en.status !== 'failed';
+      if (r.changed || (ok && (template.page.targetPages || 1) !== 1)) editTpl((x) => { x.page = { ...x.page, ...r.template.page, targetPages: 1 }; x.spacing = r.template.spacing; x.locales = r.template.locales; });
+      setFitMsg({ lines: [say('中文版', r.zh), say('英文版', r.en)], backup: r.changed ? backup : null });
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
+  };
   /** 按实际 PDF 页数，从最不重要的内容开始暂时取消勾选，直到放进目标页数（可在左侧重新勾选；资料库不变）。 */
   const autoTrim = async () => {
     if (!resume) return;
@@ -551,6 +567,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
           <span className="sep" />
           <b>篇幅</b>
           {[1, 2].map((n) => <button key={n} className={template.page.targetPages === n ? 'active' : ''} onClick={() => { trimAfterMeasure.current = n < (template.page.targetPages || 1); editTpl((x) => { x.page.targetPages = n; }); }}>{n} 页内</button>)}
+          <button data-testid="fit-one-page" disabled={!resume || !!busy} title="只微调字号、行距、间距、页边距（有下限，不会压得太小太挤），不删内容；放不进 1 页就保持原样" onClick={fitOnePage}>自动调整为 1 页</button>
           <span className="sep" />
           <b>配色</b>
           {COLORS.map(([a, b]) => <button key={a} className={`swatch ${template.colors.primary === a ? 'active' : ''}`} style={{ background: `linear-gradient(135deg, ${a} 50%, ${b} 50%)` }} onClick={() => editTpl((x) => { x.colors.primary = a; x.colors.accent = b; })} />)}
@@ -573,6 +590,8 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
           {(['zh', 'en', 'both'] as const).map((v) => <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>{v === 'zh' ? '中文版' : v === 'en' ? 'English' : '中英对照'}</button>)}
           <span className="muted small">中文版 {pageText('zh')} · 英文版 {pageText('en')}</span>
         </div>
+        {fitMsg && <div className="notice small" data-testid="fit-result">{fitMsg.lines.map((l, i) => <div key={i}>{l}</div>)}
+          {fitMsg.backup && <button data-testid="fit-undo" onClick={() => { const b = fitMsg.backup!; editTpl((x) => { x.page = b.page; x.spacing = b.spacing; x.locales = b.locales; }); setFitMsg(null); }}>恢复调整前的版式</button>}</div>}
         {pages && pages !== 'error' && (pages.zh.overflow || pages.en.overflow) && <div className="notice warn small" data-testid="overflow-tip">实际 PDF 超出目标页数（上方页数按真实 PDF 测量；预览框里的「已用 %」只是估算）。<button className="primary" data-testid="auto-trim" disabled={!!busy} onClick={autoTrim}>自动删减到 {template.page.targetPages || 1} 页内</button> 会从最不重要的内容开始暂时取消勾选，可在左侧重新勾选；也可以改为「2 页内」。本工具不会为了塞进页面而把字号缩到难以阅读。</div>}
         {narrow && resume && (
           <div className="m-tabs" data-testid="m-tabs">
