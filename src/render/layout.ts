@@ -6,6 +6,7 @@ import { eduDateText } from './degree';
 import { inferWorkKind, isCampusKind } from './classify';
 import type { EducationEntry, Lang, ProfileDoc, ResumeDoc, TemplateConfig, ModuleKey, LocalizedText, Typography, PhotoPosition } from '../types';
 import { lt, formatRange, formatDate, moduleOrderFor } from '../locale/text';
+import { applyEnFill } from './enResidue';
 import { academicHighlight, academicGradeText, courseLines, profileForGeneration } from '../privacy/resume';
 
 /** 与输出格式无关的中间排版模型（PRD 7.3），预览 / PDF / Word 共用 */
@@ -83,7 +84,7 @@ function schoolRank(e: EducationEntry, lang: Lang): string {
   const t = lang === 'zh' ? (zh || en) : (en || (/^[\x20-\x7e]+$/.test(zh) ? zh : ''));
   return t ? (lang === 'zh' ? `（${t}）` : ` (${t})`) : '';
 }
-export function buildLayout(p: ProfileDoc, tplIn: TemplateConfig, lang: Lang, resume?: ResumeDoc | null): LayoutModel {
+function buildLayoutCore(p: ProfileDoc, tplIn: TemplateConfig, lang: Lang, resume?: ResumeDoc | null): LayoutModel {
   const tpl = withLangOverrides(tplIn, lang);
   p = profileWithResumeEdits(p, resume);
   const loc = tpl.locales[lang];
@@ -220,7 +221,7 @@ export function buildLayout(p: ProfileDoc, tplIn: TemplateConfig, lang: Lang, re
   return {
     lang, pageSize: tpl.page.size, marginMm: tpl.page.marginMm, columns: tpl.layout.columns, sidebarWidthPercent: tpl.layout.sidebarWidthPercent,
     headerStyle: tpl.layout.headerStyle, titleStyle: tpl.layout.titleStyle ?? 'underline', style: tpl.layout.style ?? 'default', headerAlign: tpl.layout.headerAlign ?? 'left', colors: tpl.colors, spacing: tpl.spacing, typography: loc.typography, photo,
-    header: { name: T(p.profile.name), headline: (resume?.headline?.[lang] ?? '').trim() || T(p.profile.headline), contacts, personal },
+    header: { name: T(p.profile.name), headline: resume?.headlineHidden ? '' : (resume?.headline?.[lang] ?? '').trim() || T(p.profile.headline), contacts, personal },
     main, side: sideS, movedFromSide,
   };
 }
@@ -245,4 +246,10 @@ export function estimateSectionPt(sec: LSection, colW: number, ty: Typography, s
     h += sp.itemGapMm * MM;
   }
   return h + sp.sectionGapMm * MM;
+}
+
+/** 预览 / PDF / Word 共用的入口：英文版在核心排版之上套用「英文补译」（resume.enFill，只改显示，不改资料库）。 */
+export function buildLayout(p: ProfileDoc, tpl: TemplateConfig, lang: Lang, resume?: ResumeDoc | null): LayoutModel {
+  const m = buildLayoutCore(p, tpl, lang, resume);
+  return lang === 'en' && resume?.enFill ? applyEnFill(m, resume.enFill) : m;
 }

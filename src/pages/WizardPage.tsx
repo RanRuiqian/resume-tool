@@ -24,6 +24,8 @@ import { trimToPages } from '../ai/trim';
 import { forEachText, needsTranslation, lt } from '../locale/text';
 import { normalizeProfile } from '../storage/profileIO';
 import { buildLayout } from '../render/layout';
+import { englishResidue } from '../render/enResidue';
+import { fillEnglishResidue } from '../ai/enFill';
 import { Preview } from '../render/Preview';
 import { useEditTemplate } from '../render/useEditTemplate';
 import { FormatPanel } from '../components/FormatPanel';
@@ -445,9 +447,12 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
     try {
       let r = await generateResume(settings, profile, job, primary, template.page.targetPages, setBusy, { template, measure: (r) => measurePages(profile, { ...template, page: { ...template.page, autoFit: false } }, r) });
       const labelled = await withLabelsAndProfile(r);
+      let filled = labelled.resume;
+      try { setBusy('正在检查英文版里残留的中文，并译成英文…'); filled = (await fillEnglishResidue(settings, labelled.profile, template, labelled.resume)).resume; }
+      catch (e) { filled = { ...labelled.resume, notes: [...(labelled.resume.notes ?? []), `英文版残留中文补译未完成：${(e as Error).message}`] }; }
       setBusy(`正在核对页数，保持 ${template.page.targetPages || 1} 页内…`);
       const fixedTpl = { ...template, page: { ...template.page, autoFit: false } };
-      r = await trimToPages(labelled.profile, fixedTpl, labelled.resume, (x) => measurePages(labelled.profile, fixedTpl, x));
+      r = await trimToPages(labelled.profile, fixedTpl, filled, (x) => measurePages(labelled.profile, fixedTpl, x));
       setResume({ ...r, templateId });
     }
     catch (e) { const at = genState.busy; setGen({ err: `${(e as Error).message}${at ? `（出错步骤：${at}）` : ''}`, errJob: job.id }); } finally { setGen({ busy: '', running: false }); }
@@ -478,6 +483,34 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
     setBusy('重新翻译修改过的条目…');
     try { const translated = await withLabels(ids.length ? await localizeAi(settings, profile, job, resume, ids) : resume); if (latestResume.current === resume) setResume(translated); else setErr('同步期间简历已修改，保留当前编辑；可按需再次同步。'); } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
   };
+  const enResidue = resume ? englishResidue(buildLayout(profile, template, 'en', resume)) : [];
+  const fixEnglish = async () => {
+    if (!resume) return;
+    setBusy('正在把英文版里残留的中文译成英文…'); setErr('');
+    try {
+      const out = await fillEnglishResidue(settings, profile, template, resume);
+      if (latestResume.current !== resume) setErr('补译期间简历已修改，请再点一次。');
+      else { setResume(out.resume); if (out.remaining) setErr(`还有 ${out.remaining} 处没能自动译好（译文数字对不上或仍含中文），请在左侧「逐条修改内容」里手动改成英文。`); }
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
+  };
+  /** 按实际 PDF 页数，从最不重要的内容开始暂时取消勾选，直到放进目标页数（可在左侧重新勾选；资料库不变）。 */
+  const autoTrim = async () => {
+    if (!resume) return;
+    setBusy(`正在按实际 PDF 页数删减低相关内容，保持 ${template.page.targetPages || 1} 页内…`); setErr('');
+    try {
+      const fixedTpl = { ...template, page: { ...template.page, autoFit: false } };
+      const next = await trimToPages(profile, fixedTpl, resume, (x) => measurePages(profile, fixedTpl, x));
+      if (latestResume.current !== resume) setErr('删减期间简历已修改，请再点一次。'); else setResume(next);
+    } catch (e) { setErr((e as Error).message); } finally { setBusy(''); }
+  };
+  // 刚把「篇幅」改小时，页数测完发现超出 → 自动删减一次（不会在其它时候偷偷删内容）
+  const trimAfterMeasure = useRef(false);
+  useEffect(() => {
+    if (trimAfterMeasure.current && pages && pages !== 'error') {
+      trimAfterMeasure.current = false;
+      if (pages.zh.overflow || pages.en.overflow) autoTrim();
+    }
+  });
   const pendingItems = resume?.items.filter((i) => i.syncStatus !== 'in-sync').length ?? 0;
   // 新勾选的条目可能只有一种语言的单位 / 职位 / 技能名：同样提示「同步翻译」。
   const pendingLabels = resume ? resumeLabelTargets(profile, resume).length : 0;
@@ -504,6 +537,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
         </div>
       )}
       {moved.length > 0 && <div className="notice warn" data-testid="side-warn">⚠ 侧栏放不下，已把「{[...new Set(moved.map((x) => template.locales.zh.sectionTitles?.[x.m] ?? x.m))].join('、')}」移到主栏末尾显示（{[...new Set(moved.map((x) => x.l === 'zh' ? '中文版' : '英文版'))].join('、')}），内容没有被截断。想放回侧栏可以在左侧清单减少条目，或换单栏样式。</div>}
+      {enResidue.length > 0 && <div className="notice warn" data-testid="en-residue">英文版里还有 {enResidue.length} 处中文（如「{enResidue[0].length > 24 ? enResidue[0].slice(0, 24) + '…' : enResidue[0]}」）。<button data-testid="en-residue-fix" disabled={!!busy || settings.demoMode} onClick={fixEnglish}>译成英文</button>{settings.demoMode && <span className="muted small">（演示模式不调用 AI）</span>}</div>}
       {pending > 0 && <div className="notice warn">{pendingItems ? `${pendingItems} 条文字` : ''}{pendingItems && pendingLabels ? '、' : ''}{pendingLabels ? `${pendingLabels} 个名称` : ''}的另一语言可按需同步，也可直接编辑和下载。<button onClick={resync}>同步翻译</button></div>}
 
       <div className="card quick-layout">
@@ -516,7 +550,7 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
           {(['left', 'right', 'none'] as PhotoPosition[]).map((p) => <button key={p} className={photoPos === p ? 'active' : ''} onClick={() => editTpl((x) => { x.locales.zh.photo.position = p; x.locales.zh.photo.enabled = p !== 'none'; })}>{p === 'left' ? '左上' : p === 'right' ? '右上' : '不放'}</button>)}
           <span className="sep" />
           <b>篇幅</b>
-          {[1, 2].map((n) => <button key={n} className={template.page.targetPages === n ? 'active' : ''} onClick={() => editTpl((x) => { x.page.targetPages = n; })}>{n} 页内</button>)}
+          {[1, 2].map((n) => <button key={n} className={template.page.targetPages === n ? 'active' : ''} onClick={() => { trimAfterMeasure.current = n < (template.page.targetPages || 1); editTpl((x) => { x.page.targetPages = n; }); }}>{n} 页内</button>)}
           <span className="sep" />
           <b>配色</b>
           {COLORS.map(([a, b]) => <button key={a} className={`swatch ${template.colors.primary === a ? 'active' : ''}`} style={{ background: `linear-gradient(135deg, ${a} 50%, ${b} 50%)` }} onClick={() => editTpl((x) => { x.colors.primary = a; x.colors.accent = b; })} />)}
@@ -525,11 +559,21 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
           <button className="link" onClick={() => go('layout')}>更多版式设置 →</button>
         </div>
         </details>
+        {resume && <div className="row" data-testid="headline-edit">
+          <b>姓名下方一行</b>
+          <label><input type="checkbox" data-testid="headline-show" checked={!resume.headlineHidden} onChange={(e) => setResume({ ...resume, headlineHidden: !e.target.checked })} /> 显示</label>
+          {!resume.headlineHidden && (['zh', 'en'] as const).map((l) => {
+            const cur = (resume.headline?.[l] ?? '').trim() || lt(profile.profile.headline, l, false);
+            return <input key={`${resume.id}-${l}-${cur}`} data-testid={`headline-${l}`} aria-label={l === 'zh' ? '姓名下方一行（中文）' : 'Headline under name (English)'} placeholder={l === 'zh' ? '求职方向（中文）' : 'Headline (English)'} defaultValue={cur} style={{ minWidth: 220 }}
+              onBlur={(e) => { const v = e.target.value.trim(); if (v !== cur) setResume({ ...resume, headline: { zh: resume.headline?.zh ?? '', en: resume.headline?.en ?? '', [l]: v } }); }} />;
+          })}
+          <span className="muted small">AI 会按岗位写这一行；可直接改，或取消「显示」。</span>
+        </div>}
         <div className="row">
           {(['zh', 'en', 'both'] as const).map((v) => <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>{v === 'zh' ? '中文版' : v === 'en' ? 'English' : '中英对照'}</button>)}
           <span className="muted small">中文版 {pageText('zh')} · 英文版 {pageText('en')}</span>
         </div>
-        {pages && pages !== 'error' && (pages.zh.overflow || pages.en.overflow) && <div className="notice warn small" data-testid="overflow-tip">超出目标页数：建议在左侧清单取消勾选和岗位关系最弱的条目（如与岗位无关的项目、奖项或证书），或改为「2 页内」。本工具不会为了塞进页面而把字号缩到难以阅读。</div>}
+        {pages && pages !== 'error' && (pages.zh.overflow || pages.en.overflow) && <div className="notice warn small" data-testid="overflow-tip">实际 PDF 超出目标页数（上方页数按真实 PDF 测量；预览框里的「已用 %」只是估算）。<button className="primary" data-testid="auto-trim" disabled={!!busy} onClick={autoTrim}>自动删减到 {template.page.targetPages || 1} 页内</button> 会从最不重要的内容开始暂时取消勾选，可在左侧重新勾选；也可以改为「2 页内」。本工具不会为了塞进页面而把字号缩到难以阅读。</div>}
         {narrow && resume && (
           <div className="m-tabs" data-testid="m-tabs">
             <button className={mTab === 'preview' ? 'active' : ''} data-testid="m-tab-preview" onClick={() => setMTab('preview')}>简历预览</button>

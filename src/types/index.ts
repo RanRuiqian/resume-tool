@@ -338,6 +338,8 @@ export interface ResumeDoc {
   entryEdits?: Record<string, ResumeEntryEdit>;
   /** 2026-11：按岗位定制的姓名下求职方向；缺省时显示资料库 profile.headline。 */
   headline?: Bi;
+  /** 2026-11：本份简历不显示姓名下方的求职方向一行。 */
+  headlineHidden?: boolean;
   /** 2026-11：AI 按岗位给出的技能分组（显示顺序与组名）；缺省或未覆盖的技能按资料库 category 分组。 */
   skillGroups?: { zh: string; en: string; ids: string[] }[];
   consistency: { checkedAt: string; issues: ConsistencyIssue[] };
@@ -351,6 +353,8 @@ export interface ResumeDoc {
   /** 固定版与本份简历的手动变体均可恢复；不写回母库。 */
   summaryBaseline?: GenItem;
   notes?: string[];
+  /** 英文版里仍是中文的整句 → 英文译文（2026-11）；只用于英文版的预览 / PDF / Word，不写回资料库。 */
+  enFill?: Record<string, string>;
   /** 求职信 / 自我介绍 / 面试准备（可选功能） */
   /** kitReview（v1.10.1，可选）：用户对「逐句核对未通过」的求职信/自我介绍做了人工核对并允许导出；只对 textHash 对应的那份文本有效 */
   extras?: { coverLetter?: Bi; selfIntro?: Bi; prep?: PrepDirection[]; kitReview?: { overrideAt: string; textHash: string; issues: number; profileHash?: string; jobHash?: string; resumeHash?: string } };

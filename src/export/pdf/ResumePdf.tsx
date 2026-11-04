@@ -19,8 +19,8 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
       : m.titleStyle === 'bar'
         ? { fontSize: body + 2, fontWeight: 700, color: m.colors.primary, borderLeftWidth: 3, borderLeftColor: m.colors.accent, paddingLeft: 6, marginBottom: 4 }
         : m.titleStyle === 'rule'
-          ? { fontSize: body + 1.5, fontWeight: 700, color: m.colors.primary, borderBottomWidth: 0.5, borderBottomColor: m.colors.muted, paddingBottom: 1, marginBottom: 3, letterSpacing: m.lang === 'en' ? 0.3 : 0 }
-        : { fontSize: body + 2, fontWeight: 700, color: m.colors.primary, borderBottomWidth: 0.6, borderBottomColor: m.colors.primary, paddingBottom: 1.5, marginBottom: 3 },
+          ? { fontSize: body + 1.5, fontWeight: 700, color: m.colors.primary, borderBottomWidth: 0.5, borderBottomColor: m.colors.muted, paddingBottom: 2.5, marginBottom: 3, letterSpacing: m.lang === 'en' ? 0.3 : 0 }
+        : { fontSize: body + 2, fontWeight: 700, color: m.colors.primary, borderBottomWidth: 0.6, borderBottomColor: m.colors.primary, paddingBottom: 3, marginBottom: 3 },
     section: { marginBottom: m.spacing.sectionGapMm * MM },
     block: { marginBottom: m.spacing.itemGapMm * MM },
     row: { flexDirection: 'row', justifyContent: 'space-between' },
