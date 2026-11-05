@@ -46,21 +46,27 @@ export interface BuildZipResult { zip: Uint8Array; files: Record<string, Uint8Ar
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
 /** 生成 4 个文件并打包；单个文件失败时记录错误、仍打包其余文件 */
-export async function buildZip(p: ProfileDoc, tpl: TemplateConfig, r: ResumeDoc | null, names: ExportNames, fontBase: string, onProgress?: (s: string) => void, extraFiles: Record<string, Uint8Array> = {}): Promise<BuildZipResult> {
+export type ZipFileKey = keyof ExportNames['files'];
+/** only：只生成这几个文件（缺省 = 全部四个）。只要 Word 时仍会先按 PDF 排版确定缩排级别，保证 Word 与 PDF 版面一致，但 PDF 不放进 zip。 */
+export async function buildZip(p: ProfileDoc, tpl: TemplateConfig, r: ResumeDoc | null, names: ExportNames, fontBase: string, onProgress?: (s: string) => void, extraFiles: Record<string, Uint8Array> = {}, only?: ZipFileKey[]): Promise<BuildZipResult> {
   registerPdfFonts(fontBase);
   const zip = new JSZip();
   const files: Record<string, Uint8Array> = {};
   const errors: string[] = [];
   const pages = { zh: 0, en: 0 }, fitLevel = { zh: 0, en: 0 };
-  const langs: [Lang, string, string][] = [['zh', names.files.cnPdf, names.files.cnDocx], ['en', names.files.enPdf, names.files.enDocx]];
-  for (const [lang, pdfName, docxName] of langs) {
+  const langs: [Lang, ZipFileKey, ZipFileKey][] = [['zh', 'cnPdf', 'cnDocx'], ['en', 'enPdf', 'enDocx']];
+  const want = (k: ZipFileKey) => !only || only.includes(k);
+  for (const [lang, pdfKey, docxKey] of langs) {
+    if (!want(pdfKey) && !want(docxKey)) continue;
+    const pdfName = names.files[pdfKey], docxName = names.files[docxKey];
     let used = tpl;
     onProgress?.(pdfName); await tick();
     try {
       const f = await renderPdfFit(p, tpl, lang, r);
-      files[pdfName] = f.bytes; pages[lang] = f.pages; fitLevel[lang] = f.level; used = f.tpl;
-      zip.file(pdfName, f.bytes, { binary: true });
+      pages[lang] = f.pages; fitLevel[lang] = f.level; used = f.tpl;
+      if (want(pdfKey)) { files[pdfName] = f.bytes; zip.file(pdfName, f.bytes, { binary: true }); }
     } catch (e) { errors.push(`${pdfName}: ${(e as Error).message}`); }
+    if (!want(docxKey)) continue;
     onProgress?.(docxName); await tick();
     try { files[docxName] = await docxBytes(buildLayout(p, used, lang, r)); zip.file(docxName, files[docxName], { binary: true }); }
     catch (e) { errors.push(`${docxName}: ${(e as Error).message}`); }

@@ -274,3 +274,10 @@ ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按�
 - 结果提示（`data-testid=fit-result`）逐语言写明调了什么，带「恢复调整前的版式」按钮（`fit-undo`）。
 - 测试：`tests/autoOnePage2026_11.test.ts`（7，假测量覆盖：本来就放得下 / 能调进 / 最小幅度 / 下限放不下 / 中英文分别 / 不调高低于下限的值 / 测量不可用）；真实浏览器 + 真 PDF 实测：11.5pt 资料 2 页→1 页（正文 11.5→11.3 等），撤销可还原；全套 710/710。
 - 部署：2026-11-04 晚 GitHub Actions 一次部署 job 长时间「queued」（未分到运行机，非代码问题）；workflow 有 `cancel-in-progress`，新推送会顶掉它。
+
+### 2.22 语言单独成栏 / 导出 zip 可勾选 / 联系方式链接（2026-11-05）
+- **专业技能**：语言类技能（PTE/IELTS/英语/日语等，`isLanguageSkill`）单独一行“语言 / Languages”，其它分组名里的“与语言”会被去掉；不再和办公混在一起。测试 `tests/langSkillGroup2026_11.test.ts`。
+- **导出 zip**：`ExportDialog` 四个文件（中/英 × PDF/Word）各有勾选框，选择存 `localStorage.zipFiles`；`buildZip(..., only?: ZipFileKey[])` 只生成勾选项（没勾英文就不渲染英文 PDF）；全不选时下载按钮禁用。投递管理里的 zip 仍导出全部。
+- **联系方式链接**：第三步“姓名下方一行”下面新增“链接”行（GitHub / 领英 / 作品集网站：勾选 + 输入框，`data-testid=link-*` / `link-show-*`）。输入写进资料库 contacts，并自动勾选显示（写 `resume.contactVisibility`）。版面里显示去掉 `https://` 和 `www.`（`shortUrl`），点击地址补全 https（`toHref`）。`LayoutModel.header.hrefs` 与 `contacts` 同序；PDF 用 `<Link>`、Word 用 `ExternalHyperlink`、预览用 `<a>`。测试 `tests/contactLinks2026_11.test.ts`；旧测试 `coursesV113` 改为期望短显示。
+- 验证：vitest 715/715，tsc 干净，浏览器实测（填链接→预览显示→zip 只勾中文 PDF 只出 1 个文件，PDF 里 2 个可点击链接），回归 e2e `resume_workspace_e2e` 25/25、`career_kit_e2e` 10/10。
+- 未做：个人作品集网站（见与负责人的讨论，建议 V2 单独立项）。

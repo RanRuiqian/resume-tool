@@ -1,4 +1,4 @@
-import { Document, Page, View, Text, Image, StyleSheet } from '@react-pdf/renderer';
+import { Document, Page, View, Text, Image, Link, StyleSheet } from '@react-pdf/renderer';
 import type { LayoutModel, LSection } from '../../render/layout';
 import { MM } from '../../render/layout';
 import { fontFor } from './fonts';
@@ -31,7 +31,9 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
   });
   const photoPt = (m.photo?.sizeMm ?? 28) * MM;
   const photoEl = m.photo ? <Image src={m.photo.dataUrl} style={{ width: photoPt * (m.photo?.aspect ?? 0.8), height: photoPt, objectFit: 'cover' }} /> : null;
-  const contactLine = [...m.header.contacts, ...m.header.personal].join(eng ? '  ·  ' : '  |  ');
+  const sep = eng ? '  ·  ' : '  |  ';
+  const contactParts: { text: string; href?: string }[] = [...m.header.contacts.map((text, i) => ({ text, href: m.header.hrefs?.[i] })), ...m.header.personal.map((text) => ({ text }))];
+  const contactLine = contactParts.map((x) => x.text).join(sep);
   const twoCol = m.columns === 2 && m.side.length > 0;
 
   const renderBlock = (s: LSection, b: LSection['blocks'][number], i: number, narrow: boolean) => (!narrow && s.key === 'skills' && b.text ? (
@@ -83,7 +85,7 @@ export function ResumePdf({ m }: { m: LayoutModel }) {
     <View style={{ flex: 1, alignItems: m.headerAlign === 'center' ? 'center' : 'flex-start' }}>
       <Text style={[st.name, F(m.header.name)]}>{m.header.name}</Text>
       {m.header.headline ? <Text style={[st.headline, F(m.header.headline)]}>{m.header.headline}</Text> : null}
-      {contactLine ? <Text style={[st.contact, F(contactLine), { textAlign: m.headerAlign === 'center' ? 'center' : 'left' }]}>{contactLine}</Text> : null}
+      {contactLine ? <Text style={[st.contact, F(contactLine), { textAlign: m.headerAlign === 'center' ? 'center' : 'left' }]}>{contactParts.map((x, i) => <Text key={i}>{i > 0 ? sep : ''}{x.href ? <Link src={x.href} style={{ color: 'inherit', textDecoration: 'none' }}>{x.text}</Link> : x.text}</Text>)}</Text> : null}
     </View>
   );
   const photoInHeader = !!photoEl;

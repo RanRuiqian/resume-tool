@@ -586,6 +586,23 @@ function Step3({ back, go }: { back: () => void; go: (p: string) => void }) {
           })}
           <span className="muted small">AI 会按岗位写这一行；可直接改，或取消「显示」。</span>
         </div>}
+        {resume && <div className="row" data-testid="contact-links">
+          <b>链接</b>
+          {([['github', 'GitHub', 'github.com/你的用户名'], ['linkedin', '领英 LinkedIn', 'linkedin.com/in/你的主页'], ['portfolio', '作品集网站', 'yourname.com']] as const).map(([k, label, ph]) => {
+            const vis = (resume.contactVisibility ?? profile.profile.contacts.visibility) ?? {};
+            const cur = profile.profile.contacts[k] ?? '';
+            return <span key={`${k}-${cur}`} style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              <label><input type="checkbox" data-testid={`link-show-${k}`} checked={vis[k] === true} onChange={(e) => setResume({ ...resume, contactVisibility: { ...vis, [k]: e.target.checked } })} /> {label}</label>
+              <input data-testid={`link-${k}`} aria-label={label} placeholder={ph} defaultValue={cur} style={{ width: 190 }}
+                onBlur={(e) => {
+                  const v = e.target.value.trim(); if (v === cur) return;
+                  setProfile({ ...profile, profile: { ...profile.profile, contacts: { ...profile.profile.contacts, [k]: v } } });
+                  if (v && vis[k] !== true) setResume({ ...resume, contactVisibility: { ...vis, [k]: true } });
+                }} />
+            </span>;
+          })}
+          <span className="muted small">填好并勾选后显示在姓名下方，PDF / Word 里可点击。</span>
+        </div>}
         <div className="row">
           {(['zh', 'en', 'both'] as const).map((v) => <button key={v} className={view === v ? 'active' : ''} onClick={() => setView(v)}>{v === 'zh' ? '中文版' : v === 'en' ? 'English' : '中英对照'}</button>)}
           <span className="muted small">中文版 {pageText('zh')} · 英文版 {pageText('en')}</span>

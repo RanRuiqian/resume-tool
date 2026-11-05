@@ -27,7 +27,7 @@ export interface LayoutModel {
   spacing: TemplateConfig['spacing'];
   typography: Typography;
   photo: { dataUrl: string; position: Exclude<PhotoPosition, 'none'>; sizeMm: number; aspect: number } | null;
-  header: { name: string; headline: string; contacts: string[]; personal: string[] };
+  header: { name: string; headline: string; contacts: string[]; /** 与 contacts 同序，可点击的链接地址（无则 undefined） */ hrefs?: (string | undefined)[]; personal: string[] };
   main: LSection[];
   side: LSection[];
   /** 侧栏放不下、被移到主栏末尾的模块（用于提示，不静默截断） */
@@ -54,6 +54,22 @@ export function skillName(name: string, cat: string): string {
   const m = n.match(/^([^:：()（）]{1,30}?)\s*[:：]\s*(.+)$/);
   if (m && cat) n = `${m[1]} ${m[2]}`;
   return n;
+}
+
+const PURE_LANG_LABEL = /^(?:语言|语言能力|外语|外语能力|languages?|language skills)$/i;
+/** 语言类技能：自然语言名称或语言考试成绩（编程语言不算）。按名称 / 分类的中英文一起识别。 */
+const LANG_SKILL = /(?:^|[^A-Za-z])(?:English|Mandarin|Cantonese|Japanese|German|French|Spanish|Korean|Malay)(?=$|[^A-Za-z])|英语|英文|日语|德语|法语|西班牙语|韩语|马来语|普通话|粤语|母语|口语|听说读写|IELTS|TOEFL|PTE|CET-?[46]|TOEIC|雅思|托福|四级|六级/i;
+/** 联系方式里的网址：显示时去掉协议和 www，点击地址补全 https:// */
+export function shortUrl(u: string): string { return u.trim().replace(/^https?:\/\//i, '').replace(/^www\./i, '').replace(/\/+$/, ''); }
+export function toHref(u?: string): string | undefined {
+  const t = (u ?? '').trim();
+  if (!t || /\s/.test(t) || !/[a-z0-9-]+\.[a-z]{2,}/i.test(t)) return undefined;
+  return /^https?:\/\//i.test(t) ? t : `https://${t}`;
+}
+
+export function isLanguageSkill(s: { name: LocalizedText; category?: LocalizedText }): boolean {
+  const name = `${s.name?.zh ?? ''} ${s.name?.en ?? ''}`;
+  return LANG_SKILL.test(name) || PURE_LANG_LABEL.test((s.category?.zh ?? '').trim()) && !/Python|C\+\+|Java|MATLAB|SQL/i.test(name) || PURE_LANG_LABEL.test((s.category?.en ?? '').trim()) && !/Python|C\+\+|Java|MATLAB|SQL/i.test(name);
 }
 
 /** 旧资料导入可能把「编程语言 / Python」误当作口语语言；不修改母库，只修正简历显示分类。 */
@@ -158,16 +174,29 @@ function buildLayoutCore(p: ProfileDoc, tplIn: TemplateConfig, lang: Lang, resum
   const sk = byIds(p.skills, sel.skills);
   if (sk.length) {
     // 2026-11：先按 AI 给本岗位的分组与顺序；未分组的（如用户后来手动勾选的）再按资料库分类。
-    const groups = new Map<string, string[]>();
+    // 2026-11-05：语言类技能（英语、PTE、雅思、CET 等）不论 AI 把它分在哪一组，统一单独成一栏「语言」，不和办公等混在一起。
+    type Item = { t: string; lang: boolean };
+    const groups = new Map<string, Item[]>();
     const placed = new Set<string>();
+    const add = (label: string, it: Item) => groups.set(label, [...(groups.get(label) ?? []), it]);
     for (const g of resume?.skillGroups ?? []) {
-      const names = g.ids.map((id) => sk.find((s) => s.id === id)).filter((s): s is typeof sk[number] => !!s && !placed.has(s.id) && !!placed.add(s.id)).map((s) => skillName(T(s.name), ''));
       const label = (g[lang] || g[lang === 'zh' ? 'en' : 'zh'] || '').trim();
-      if (names.length) groups.set(label, [...(groups.get(label) ?? []), ...names]);
+      for (const s of g.ids.map((id) => sk.find((x) => x.id === id)).filter((x): x is typeof sk[number] => !!x && !placed.has(x.id) && !!placed.add(x.id)))
+        add(label, { t: skillName(T(s.name), ''), lang: isLanguageSkill(s) || PURE_LANG_LABEL.test((g.zh || g.en || '').trim()) });
     }
     sk.filter((s) => !placed.has(s.id)).forEach((s) => { const raw = T(s.category), c = resumeSkillCategory(raw, T(s.name), lang);
-      groups.set(c, [...(groups.get(c) ?? []), skillName(T(s.name), raw)]); });
-    sections.skills = { key: 'skills', title: title('skills'), blocks: [...groups].map(([c, names]) => ({ title: c || undefined, bullets: [], text: names.join(lang === 'zh' ? '、' : ', ') })) };
+      add(c, { t: skillName(T(s.name), raw), lang: isLanguageSkill(s) || PURE_LANG_LABEL.test(c.trim()) }); });
+    const langItems = [...groups.values()].flat().filter((i) => i.lang);
+    const rows: [string, string[]][] = [];
+    for (const [label, items] of groups) {
+      const rest = items.filter((i) => !i.lang);
+      if (!rest.length) continue;
+      // 语言已单独成栏：其它组标题里的「与语言」去掉（「办公与语言」→「办公」）
+      const stripped = langItems.length ? label.replace(/\s*[与和及&/、,，]\s*(语言|外语|Languages?)(能力|\s*skills)?|(语言|外语|Languages?)(能力|\s*skills)?\s*[与和及&/、,，]\s*/i, '').trim() : label;
+      rows.push([stripped || label, rest.map((i) => i.t)]);
+    }
+    if (langItems.length) rows.push([lang === 'zh' ? '语言' : 'Languages', langItems.map((i) => i.t)]);
+    sections.skills = { key: 'skills', title: title('skills'), blocks: rows.map(([c, names]) => ({ title: c || undefined, bullets: [], text: names.join(lang === 'zh' ? '、' : ', ') })) };
   }
   // v1.10：PTE / IELTS / CET 等语言考试成绩不是职业资格证书——归入技能里的「语言」组（旧数据兼容：按名称识别）
   const langCerts = !order.includes('skills') ? [] : byIds(p.certificates, sel.certificates).filter((e) => LANG_TEST.test(`${e.name.zh ?? ''} ${e.name.en ?? ''}`));
@@ -213,7 +242,13 @@ function buildLayoutCore(p: ProfileDoc, tplIn: TemplateConfig, lang: Lang, resum
 
   const c = p.profile.contacts;
   const visibility = resume?.contactVisibility ?? c.visibility ?? {};
-  const contacts = [c.phone, c.email, T(c.location), ...(['github', 'linkedin', 'website', 'portfolio'] as const).filter((k) => visibility[k] === true).map((k) => c[k])].filter((x): x is string => !!x && !!x.trim());
+  const LINK_KEYS = ['github', 'linkedin', 'website', 'portfolio'] as const;
+  const contactEntries: { text: string; href?: string }[] = ([
+    ...[c.phone, c.email, T(c.location)].map((x) => ({ text: x as string })),
+    ...LINK_KEYS.filter((k) => visibility[k] === true).map((k) => ({ text: c[k] ?? '', href: toHref(c[k]) })),
+  ] as { text: string; href?: string }[]).filter((x) => !!x.text && !!x.text.trim()).map((x) => (x.href ? { text: shortUrl(x.text), href: x.href } : x));
+  const contacts = contactEntries.map((x) => x.text);
+  const hrefs = contactEntries.map((x) => x.href);
   const personal = loc.personalFields.map((f) => (p.profile.personal[f] ? `${PERSONAL_LABEL[lang][f]}: ${p.profile.personal[f]}` : '')).filter(Boolean);
   const photo = loc.photo.enabled && loc.photo.position !== 'none' && p.profile.photo
     ? { dataUrl: p.profile.photo, position: loc.photo.position, sizeMm: loc.photo.sizeMm, aspect: p.profile.photoAspect ?? 0.8 } : null;
@@ -221,7 +256,7 @@ function buildLayoutCore(p: ProfileDoc, tplIn: TemplateConfig, lang: Lang, resum
   return {
     lang, pageSize: tpl.page.size, marginMm: tpl.page.marginMm, columns: tpl.layout.columns, sidebarWidthPercent: tpl.layout.sidebarWidthPercent,
     headerStyle: tpl.layout.headerStyle, titleStyle: tpl.layout.titleStyle ?? 'underline', style: tpl.layout.style ?? 'default', headerAlign: tpl.layout.headerAlign ?? 'left', colors: tpl.colors, spacing: tpl.spacing, typography: loc.typography, photo,
-    header: { name: T(p.profile.name), headline: resume?.headlineHidden ? '' : (resume?.headline?.[lang] ?? '').trim() || T(p.profile.headline), contacts, personal },
+    header: { name: T(p.profile.name), headline: resume?.headlineHidden ? '' : (resume?.headline?.[lang] ?? '').trim() || T(p.profile.headline), contacts, hrefs, personal },
     main, side: sideS, movedFromSide,
   };
 }

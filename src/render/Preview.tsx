@@ -140,7 +140,7 @@ export function Preview({ m, scale = 0.75 }: { m: LayoutModel; scale?: number })
           <div style={{ flex: 1, textAlign: m.headerAlign }}>
             <div style={{ fontSize: pt(ty.nameSizePt), fontWeight: 700, color: m.colors.primary, lineHeight: 1.2 }}>{m.header.name || '（姓名）'}</div>
             {m.header.headline && <div style={{ color: m.colors.accent, fontSize: pt(ty.bodySizePt + (eng ? 0.5 : 1.5)), marginTop: eng ? 2 : 0 }}>{m.header.headline}</div>}
-            <div style={{ color: m.colors.muted, fontSize: pt(ty.bodySizePt - 0.5), marginTop: eng ? 2 : 0 }}>{[...m.header.contacts, ...m.header.personal].join(eng ? '  ·  ' : '  |  ')}</div>
+            <div style={{ color: m.colors.muted, fontSize: pt(ty.bodySizePt - 0.5), marginTop: eng ? 2 : 0 }}>{[...m.header.contacts.map((t, i) => ({ t, h: m.header.hrefs?.[i] })), ...m.header.personal.map((t) => ({ t, h: undefined as string | undefined }))].map((x, i) => <span key={i}>{i > 0 ? (eng ? '  ·  ' : '  |  ') : ''}{x.h ? <a href={x.h} target="_blank" rel="noreferrer" style={{ color: 'inherit', textDecoration: 'none' }}>{x.t}</a> : x.t}</span>)}</div>
           </div>
           {m.photo?.position === 'right' && photo}
         </div>

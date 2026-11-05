@@ -1,6 +1,6 @@
 import {
   Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell, WidthType, BorderStyle, ImageRun,
-  TabStopType, LevelFormat, LineRuleType, ShadingType, AlignmentType, HeadingLevel, VerticalAlign, TableLayoutType,
+  TabStopType, LevelFormat, LineRuleType, ShadingType, AlignmentType, HeadingLevel, VerticalAlign, TableLayoutType, ExternalHyperlink,
 } from 'docx';
 import type { LayoutModel, LSection } from '../../render/layout';
 
@@ -90,8 +90,15 @@ export function buildDocx(m: LayoutModel): Document {
   const al = m.headerAlign === 'center' ? AlignmentType.CENTER : AlignmentType.LEFT;
   const headerParas: Paragraph[] = [new Paragraph({ alignment: al, heading: HeadingLevel.TITLE, children: [new TextRun(m.header.name)] })];
   if (m.header.headline) headerParas.push(new Paragraph({ alignment: al, children: [new TextRun({ text: m.header.headline, color: hex(m.colors.accent), size: sz + 3 })] }));
-  const contact = [...m.header.contacts, ...m.header.personal].join(eng ? '  ·  ' : '  |  ');
-  if (contact) headerParas.push(new Paragraph({ alignment: al, children: [new TextRun({ text: contact, color: hex(m.colors.muted), size: sz - 1 })] }));
+  const sepTxt = eng ? '  ·  ' : '  |  ';
+  const cOpt = { color: hex(m.colors.muted), size: sz - 1 };
+  const cKids: (TextRun | ExternalHyperlink)[] = [];
+  const cParts: { text: string; href?: string }[] = [...m.header.contacts.map((text, i) => ({ text, href: m.header.hrefs?.[i] })), ...m.header.personal.map((text) => ({ text }))];
+  cParts.forEach((x, i) => {
+    if (i > 0) cKids.push(new TextRun({ text: sepTxt, ...cOpt }));
+    cKids.push(x.href ? new ExternalHyperlink({ link: x.href, children: [new TextRun({ text: x.text, ...cOpt })] }) : new TextRun({ text: x.text, ...cOpt }));
+  });
+  if (cKids.length) headerParas.push(new Paragraph({ alignment: al, children: cKids }));
   headerParas.push(eng ? new Paragraph({ spacing: { after: 40 }, children: [] }) : new Paragraph({ border: { bottom: { style: BorderStyle.SINGLE, size: 8, color: hex(m.headerStyle === 'band' ? m.colors.accent : m.colors.primary), space: 2 } }, spacing: { after: 120 }, children: [] }));
 
   const children: (Paragraph | Table)[] = [];

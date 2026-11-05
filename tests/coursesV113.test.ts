@@ -101,8 +101,8 @@ describe('v1.13 privacy and source safety', () => {
     profile.skills = [{ id: 'pte', enabled: true, name: { zh: 'PTE Academic MOCK', en: 'PTE Academic MOCK' } }]; r.selection.skills = ['pte'];
     const m = buildLayout(profile, template(), 'en', r); const text = JSON.stringify(m);
     expect(text).toContain('Marine Engineering'); expect(text).not.toMatch(/IELTS|fluent|Mechanical Engineering|example.com\/resume-tool/);
-    r.contactVisibility = { github: true }; expect(buildLayout(profile, template(), 'en', r).header.contacts).toContain(profile.profile.contacts.github);
-    expect(buildLayout(profile, template(), 'en', r).header.contacts).not.toContain(profile.profile.contacts.website);
+    r.contactVisibility = { github: true }; expect(buildLayout(profile, template(), 'en', r).header.contacts).toContain(profile.profile.contacts.github!.replace(/^https?:\/\//, '').replace(/^www\./, '').replace(/\/+$/, ''));
+    expect(buildLayout(profile, template(), 'en', r).header.contacts).not.toContain((profile.profile.contacts.website ?? '').replace(/^https?:\/\//, ''));
   });
   it('preserves selected names and explicitly chosen score snapshots; later master edits cannot change the saved version', () => {
     const profile = p(), r = generateRules(profile, jobs().A, 'zh'); const ids = profile.courses!.slice(0, 2).map((c) => c.id);
