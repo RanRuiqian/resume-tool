@@ -10,6 +10,7 @@ import { PostingForm } from '../components/tracker/PostingForm';
 import { ExtLink, PostingDetail } from '../components/tracker/PostingDetail';
 import { ImportPanel } from '../components/tracker/ImportPanel';
 import { BackupPanel } from '../components/tracker/BackupPanel';
+import { QuickRecord } from '../components/tracker/QuickRecord';
 
 /** 求职投递：岗位库 + 申请进度 + 详情 + 统计 + 导入 + 备份。路由：#applications[/new|/import|/backup|/<岗位id>[/edit]] */
 export function ApplicationsPage({ sub, go }: { sub: string; go: (p: string) => void }) {
@@ -42,7 +43,8 @@ export function ApplicationsPage({ sub, go }: { sub: string; go: (p: string) => 
   const tabs = (
     <div className="row tracker-tabs">
       <button className={!seg ? 'active' : ''} onClick={() => go('applications')}>{L('岗位与进度', 'Jobs & progress')}</button>
-      <button data-testid="nav-new" className={seg === 'new' ? 'active' : ''} onClick={() => go('applications/new')}>➕ {L('新增岗位', 'Add job')}</button>
+      <button data-testid="nav-record" className={seg === 'record' ? 'active' : 'primary'} onClick={() => go('applications/record')}>📝 {L('记录投递', 'Log application')}</button>
+      <button data-testid="nav-new" className={seg === 'new' ? 'active' : ''} onClick={() => go('applications/new')}>➕ {L('手动新增岗位', 'Add job manually')}</button>
       <button data-testid="nav-import" className={seg === 'import' ? 'active' : ''} onClick={() => go('applications/import')}>{L('导入记录', 'Import')}</button>
       <button data-testid="nav-backup" className={seg === 'backup' ? 'active' : ''} onClick={() => go('applications/backup')}>{L('备份与恢复', 'Backup & restore')}</button>
     </div>
@@ -53,11 +55,12 @@ export function ApplicationsPage({ sub, go }: { sub: string; go: (p: string) => 
       <p className="muted small">{L('岗位库只记录岗位本身；收藏或投递后才会建立申请记录。所有数据只保存在本机浏览器，不会自动投递或发送邮件。', 'Jobs are stored separately from applications. Everything stays in this browser; nothing is auto-applied or emailed.')}</p>
       {tabs}
       {seg === 'new' && <PostingForm all={postings} onCancel={() => go('applications')} onSave={async (v, status) => { const r = await addPosting(db, v, status); await reload(); go(`applications/${r.posting.id}`); }} />}
+      {seg === 'record' && <QuickRecord postings={postings} onDone={reload} go={go} />}
       {seg === 'import' && <ImportPanel postings={postings} apps={apps} onDone={reload} />}
       {seg === 'backup' && <BackupPanel isDemo={isDemo} onDone={reload} />}
       {sel && action === 'edit' && <PostingForm initial={sel} all={postings} onCancel={() => go(`applications/${sel.id}`)} onSave={async (v) => { await updatePosting(db, { ...sel, ...v, priority: v.priority ?? sel.priority }); await reload(); go(`applications/${sel.id}`); }} />}
       {sel && !action && <PostingDetail key={sel.id} posting={sel} go={go} onChanged={reload} onEdit={() => go(`applications/${sel.id}/edit`)} onDelete={() => del(sel.id)} />}
-      {seg && !sel && !['new', 'import', 'backup'].includes(seg) && <div className="notice warn">岗位不存在（可能已删除）。<button className="link" onClick={() => go('applications')}>返回列表</button></div>}
+      {seg && !sel && !['new', 'record', 'import', 'backup'].includes(seg) && <div className="notice warn">岗位不存在（可能已删除）。<button className="link" onClick={() => go('applications')}>返回列表</button></div>}
       {!seg && (<>
         <div className="stats" data-testid="stats">
           {([['岗位总数', 'Jobs', stats.postings, 'st-postings'], ['已收藏', 'Saved', stats.saved, 'st-saved'], ['待投递（未计入投递）', 'To apply (not counted)', stats.pending, 'st-pending'], ['已投递（累计）', 'Applied', stats.applied, 'st-applied'], ['等待回复', 'Waiting', stats.waiting, 'st-waiting'], ['笔试 / 面试', 'Test / interview', stats.testOrInterview, 'st-ti'], ['Offer', 'Offers', stats.offer, 'st-offer'], ['被拒', 'Rejected', stats.rejected, 'st-rejected']] as const).map(([z, e, n, id]) => <div key={id} className="stat" data-testid={id}><div className="n">{n}</div><div className="muted small">{L(z, e)}</div></div>)}
@@ -75,7 +78,7 @@ export function ApplicationsPage({ sub, go }: { sub: string; go: (p: string) => 
           <select data-testid="f-priority" value={fPri} onChange={(e) => setFPri(e.target.value)}><option value="">{L('全部优先级', 'All priorities')}</option>{([1, 2, 3] as Priority[]).map((p) => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}</select>
           <span className="muted small">{list.length} / {postings.length}</span>
         </div>
-        {postings.length === 0 ? <div className="card empty" data-testid="empty">{L('还没有岗位。点「新增岗位」手动添加，或在「导入记录」导入以前的投递表格。', 'No jobs yet. Add one or import a spreadsheet.')}</div> : (
+        {postings.length === 0 ? <div className="card empty" data-testid="empty">{L('还没有岗位。投完一个岗位后点「记录投递」，拖入投递成功截图或选一份生成过的简历即可；也可以在「导入记录」导入以前的投递表格。', 'No jobs yet. Add one or import a spreadsheet.')}</div> : (
           <div className="scroll-x"><table className="items tracker-list" data-testid="posting-list"><thead><tr><th>{L('企业 / 岗位', 'Company / title')}</th><th>{L('城市', 'City')}</th><th>{L('类型', 'Type')}</th><th>{L('状态', 'Status')}</th><th>{L('截止', 'Deadline')}</th><th>{L('优先级', 'Priority')}</th><th>{L('链接', 'Link')}</th><th /></tr></thead><tbody>
             {list.map((p) => { const a = latest.get(p.id); return (
               <tr key={p.id} data-testid="posting-row">

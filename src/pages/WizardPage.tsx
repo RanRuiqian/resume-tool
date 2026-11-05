@@ -17,6 +17,8 @@ import { analyzeJob, isAnalysisStale } from '../ai/jd';
 import { extractJdBody } from '../ai/jdText';
 import { JD_PREFILL_KEY, TRACKER_RETURN_KEY, type TrackerReturn } from '../tracker/useTracker';
 import { linkResumeSnapshot } from '../tracker/repo';
+import { defaultPdfLangs, storeResumePdfs } from '../tracker/quickRecord';
+import { makeResumePdfs } from '../tracker/resumePdf';
 import { db } from '../storage/db';
 import { generateResume, localizeAi, runConsistency } from '../ai/generate';
 import { fillResumeLabels, resumeLabelTargets } from '../ai/labels';
@@ -81,20 +83,32 @@ export function WizardPage({ go }: { go: (p: string) => void }) {
 
 /** 从「求职投递」岗位详情进入时显示：生成后一键把简历快照关联回该岗位 */
 function TrackerReturnBanner({ go }: { go: (p: string) => void }) {
-  const { resume, profile, job } = useApp();
+  const { resume, profile, job, template } = useApp();
+  const [busy, setBusy] = useState(false);
   const [ret, setRet] = useState<TrackerReturn | null>(() => { try { const v = uiStorage.getItem(TRACKER_RETURN_KEY); return v ? JSON.parse(v) : null; } catch { return null; } });
   const [err, setErr] = useState('');
   if (!ret) return null;
   const clear = () => { uiStorage.setItem(TRACKER_RETURN_KEY, ''); setRet(null); };
   const linkBack = async () => {
     if (!resume) return;
-    try { await linkResumeSnapshot(db, ret.applicationId, { resume, profile, job, label: `${ret.label} · 生成于 ${resume.createdAt.slice(0, 16).replace('T', ' ')}` }); clear(); go(`applications/${ret.postingId}`); }
+    setBusy(true);
+    try {
+      await linkResumeSnapshot(db, ret.applicationId, { resume, profile, job, label: `${ret.label} · 生成于 ${resume.createdAt.slice(0, 16).replace('T', ' ')}` });
+      // 2026-11：同时存放工具生成的 PDF（失败不影响关联，可在岗位详情里重新生成）
+      try {
+        const langs = defaultPdfLangs(job);
+        const r = await makeResumePdfs(profile, template, resume, job, { company: ret.label.split(' · ')[0] ?? '', title: ret.label.split(' · ')[1] ?? '' }, langs);
+        await storeResumePdfs(db, ret.applicationId, ret.postingId, r.files, 'generated', { replaceGenerated: true });
+      } catch (e) { console.warn('store generated pdf failed', e); }
+      clear(); go(`applications/${ret.postingId}`);
+    }
     catch (e) { setErr((e as Error).message); }
+    finally { setBusy(false); }
   };
   return (
     <div className="notice tracker-return" data-testid="tracker-return">
       正在为岗位「<b>{ret.label}</b>」准备简历。生成并检查满意后：
-      <button className="primary" data-testid="link-back" disabled={!resume} onClick={linkBack}>关联当前简历并返回该岗位</button>
+      <button className="primary" data-testid="link-back" disabled={!resume || busy} onClick={linkBack}>{busy ? '正在存放简历 PDF…' : '关联当前简历并返回该岗位'}</button>
       <button className="link" onClick={() => go(`applications/${ret.postingId}`)}>先返回岗位</button><button className="link" onClick={clear}>不关联</button>
       {err && <div className="bad">{err}</div>}
     </div>

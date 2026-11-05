@@ -81,6 +81,8 @@ export interface ResumeArtifact {
   attachmentId?: string;
   /** 是否为实际提交版本 */
   submitted: boolean;
+  /** 2026-11：简历文件来源。generated = 本工具生成的 PDF；user = 自己修改后上传；旧数据为空（按「上传文件」显示） */
+  origin?: 'generated' | 'user';
 }
 
 export type AttachmentKind = 'resume-submitted' | 'jd-screenshot' | 'apply-proof' | 'assessment' | 'interview' | 'offer' | 'other';

@@ -6,12 +6,14 @@ import { uiStorage } from '../../storage/mode';
 import { exportZip } from '../../export/client';
 import { buildExportNames, guessRoleAbbr } from '../../export/naming';
 import { downloadBytes } from '../../utils/download';
-import { addAttachment, addSubmittedResume, changeStatus, createApplication, deleteAttachment, linkResumeSnapshot, listEvents, nowIso, saveApplication, StorageError, uid, verifyAttachment } from '../../tracker/repo';
+import { addAttachment, changeStatus, createApplication, deleteAttachment, linkResumeSnapshot, listEvents, nowIso, saveApplication, StorageError, uid, verifyAttachment } from '../../tracker/repo';
 import { APP_STATUSES, ATTACH_KIND_LABEL, PRIORITY_LABEL, RECRUIT_LABEL, STATUS_LABEL, type Application, type ApplicationEvent, type Attachment, type AttachmentKind, type JobPosting, type ResumeArtifact } from '../../tracker/types';
 import { JD_PREFILL_KEY, TRACKER_RETURN_KEY, type TrackerReturn } from '../../tracker/useTracker';
 import type { Lang } from '../../types';
+import { defaultPdfLangs, isPdfArtifact, localStamp, listGeneratedResumes, removeResumePdf, storeResumePdfs, type GeneratedResumeOption } from '../../tracker/quickRecord';
+import { makeResumePdfs } from '../../tracker/resumePdf';
 
-const fmt = (s?: string) => (s ? s.slice(0, 16).replace('T', ' ') : '');
+const fmt = (s?: string) => localStamp(s);
 const safeHref = (u?: string) => (u && /^https?:\/\//i.test(u.trim()) ? u.trim() : undefined);
 export function ExtLink({ url, label }: { url?: string; label?: string }) {
   const h = safeHref(url); if (!url) return <span className="muted">—</span>;
@@ -42,6 +44,17 @@ export function PostingDetail({ posting, go, onEdit, onDelete, onChanged }: { po
   const [kind, setKind] = useState<AttachmentKind | 'auto'>('auto');
   const [upLangs, setUpLangs] = useState<Lang[]>(['zh']);
   const fileRef = useRef<HTMLInputElement>(null), subRef = useRef<HTMLInputElement>(null);
+  const [options, setOptions] = useState<GeneratedResumeOption[]>([]);
+  const [pickId, setPickId] = useState('');
+  const [pdfLangs, setPdfLangs] = useState<Lang[]>(['zh']);
+  const [replaceGen, setReplaceGen] = useState(true);
+  const [busy, setBusy] = useState('');
+  // oxlint-disable-next-line react/set-state-in-effect
+  useEffect(() => { listGeneratedResumes(db).then((o) => {
+    setOptions(o);
+    const best = o.find((x) => posting.jobParseId && x.job?.id === posting.jobParseId) ?? o.find((x) => x.resume.id === resume?.id) ?? o[0];
+    if (best) { setPickId(best.resume.id); setPdfLangs(defaultPdfLangs(best.job)); }
+  }); }, [posting.jobParseId, resume?.id]);
   const app = apps.find((a) => a.id === appId) ?? null;
 
   const load = useCallback(async () => {
@@ -65,11 +78,38 @@ export function PostingDetail({ posting, go, onEdit, onDelete, onChanged }: { po
     else await changeStatus(db, app.id, to, st.note || undefined, at);
     setSt({ to: '', note: '', at: '' }); await done(`状态已更新为「${STATUS_LABEL[to]}」，历史已保留`);
   };
+  /** 生成工具版 PDF 并存进本申请（替换旧的工具版；不影响自己上传的版本） */
+  const storeGenerated = async (appIdArg: string, args: { profile: typeof profile; resume: NonNullable<typeof resume>; job: typeof job; tpl?: typeof template }, langs: Lang[]) => {
+    if (!langs.length) return '';
+    setBusy('正在生成并存放简历 PDF…');
+    try {
+      const r = await makeResumePdfs(args.profile, args.tpl ?? template, args.resume, args.job, { company: posting.company, title: posting.title }, langs);
+      await storeResumePdfs(db, appIdArg, posting.id, r.files, 'generated', { replaceGenerated: true });
+      return r.errors.length ? `；PDF 有问题：${r.errors.join('；')}` : `；已存放工具生成的 ${r.files.map((f) => (f.lang === 'zh' ? '中文' : '英文')).join(' + ')} PDF`;
+    } catch (e) { return `；PDF 没有生成：${(e as Error).message}`; }
+    finally { setBusy(''); }
+  };
   const linkCurrent = async () => {
-    if (!resume) return setMsg({ t: 'error', m: '当前没有生成好的简历。可以点「用这个 JD 生成简历」先生成。' });
+    const opt = options.find((o) => o.resume.id === pickId);
+    const r = opt?.resume ?? resume, j = opt ? opt.job : job;
+    if (!r) return setMsg({ t: 'error', m: '还没有生成过简历。可以点「用这个 JD 生成简历」先生成。' });
     const a = await ensureApp('preparing'); setAppId(a.id);
-    await linkResumeSnapshot(db, a.id, { resume, profile, job, label: `${posting.company} · ${posting.title} · 生成于 ${fmt(resume.createdAt)}` });
-    await done('已关联简历快照。之后修改资料或重新生成都不会改变这个快照。', 'ok');
+    await linkResumeSnapshot(db, a.id, { resume: r, profile, job: j, label: `${posting.company} · ${posting.title} · 生成于 ${fmt(r.createdAt)}` });
+    const extra = await storeGenerated(a.id, { profile, resume: r, job: j }, pdfLangs);
+    await done(`已关联简历快照${extra}。之后修改资料或重新生成都不会改变它。`, extra.includes('没有生成') || extra.includes('有问题') ? 'warn' : 'ok');
+  };
+  /** 用最近一次关联的快照重新生成工具版 PDF */
+  const regenPdf = async () => {
+    const snap = arts.find((a) => a.kind === 'snapshot');
+    if (!snap || !app) return setMsg({ t: 'error', m: '先关联一份简历，才能生成工具版 PDF' });
+    const sn = await resolveArtifact(db, snap).catch((e) => { setMsg({ t: 'error', m: (e as Error).message }); return null; });
+    if (!sn?.resume || !sn.profile) return;
+    const extra = await storeGenerated(app.id, { profile: sn.profile, resume: sn.resume, job: sn.job ?? null, tpl: sn.template ?? templates.find((t) => t.id === snap.templateId) }, pdfLangs);
+    await done(extra.replace(/^；/, '') || '没有选择语言', extra.includes('没有生成') || extra.includes('有问题') ? 'warn' : 'ok');
+  };
+  const removePdf = async (a: ResumeArtifact) => {
+    if (!confirm(`删除「${a.label}」？${a.origin === 'generated' ? '（工具生成的版本，之后可以重新生成）' : ''}`)) return;
+    await removeResumePdf(db, a); await done('已删除');
   };
   const toGenerate = async () => {
     const a = await ensureApp('preparing');
@@ -89,8 +129,12 @@ export function PostingDetail({ posting, go, onEdit, onDelete, onChanged }: { po
   };
   const uploadSubmitted = async (files: FileList) => {
     const f = files[0]; if (!f) return;
-    try { const a = await ensureApp('applied'); setAppId(a.id); await addSubmittedResume(db, a.id, posting.id, await readFile(f), upLangs); await done(`「${f.name}」已标记为实际提交版本`); }
-    catch (e) { await done(e instanceof StorageError ? e.message : `保存失败：${(e as Error).message}`, 'error'); }
+    try {
+      const a = await ensureApp('applied'); setAppId(a.id);
+      await storeResumePdfs(db, a.id, posting.id, [{ ...(await readFile(f)), languages: upLangs.length ? upLangs : ['zh'] }], 'user', { replaceGenerated: replaceGen });
+      await done(`「${f.name}」已存为实际提交版本${replaceGen ? '，工具生成的版本已删除' : ''}`);
+    } catch (e) { await done(e instanceof StorageError ? e.message : `保存失败：${(e as Error).message}`, 'error'); }
+    finally { if (subRef.current) subRef.current.value = ''; }
   };
   const openAtt = async (a: Attachment, download: boolean) => {
     const b = await db.attachmentBlobs.get(a.id); if (!b) return setMsg({ t: 'error', m: `附件「${a.name}」的文件本体缺失（可能来自不含附件的轻量备份）` });
@@ -139,27 +183,52 @@ export function PostingDetail({ posting, go, onEdit, onDelete, onChanged }: { po
           <input data-testid="status-note" placeholder="备注（可选），如：收到测评邮件" value={st.note} onChange={(e) => setSt({ ...st, note: e.target.value })} />
           <div className="row end"><button className="primary" data-testid="status-apply" disabled={!st.to} onClick={doStatus}>记录状态变化</button></div>
           <h4>状态历史</h4>
-          <ol className="timeline" data-testid="history">{events.map((e) => <li key={e.id}><b>{e.at.slice(0, 10)}</b> {e.from ? `${STATUS_LABEL[e.from]} → ` : ''}<b>{STATUS_LABEL[e.to]}</b>{e.by === 'import' && <span className="chip">导入</span>}{e.note && <div className="muted small">{e.note}</div>}</li>)}{!events.length && <li className="muted">暂无记录</li>}</ol>
+          <ol className="timeline" data-testid="history">{events.map((e) => <li key={e.id}><b>{localStamp(e.at, 10)}</b> {e.from ? `${STATUS_LABEL[e.from]} → ` : ''}<b>{STATUS_LABEL[e.to]}</b>{e.by === 'import' && <span className="chip">导入</span>}{e.note && <div className="muted small">{e.note}</div>}</li>)}{!events.length && <li className="muted">暂无记录</li>}</ol>
           {app && <label>申请结果 / 结论<textarea rows={2} data-testid="result" defaultValue={app.result ?? ''} onBlur={(e) => upd((a) => { a.result = e.target.value; })} /></label>}
         </div>
 
         <div className="card" data-testid="resume-card">
+          <h4>投递用的简历 PDF</h4>
+          <p className="muted small">默认存放本工具生成的 PDF；如果你自己微调过，删除默认版本并上传你的 PDF，以最后放进来的为「实际提交版本」。</p>
+          <ul className="artifacts" data-testid="resume-pdfs">{arts.filter(isPdfArtifact).map((a) => { const x = atts.find((t) => t.id === a.attachmentId); return (
+            <li key={a.id} data-testid="resume-pdf">
+              <span className={`chip ${a.origin === 'user' ? 'st-ok' : ''}`} data-testid="pdf-origin">{a.origin === 'generated' ? '工具生成' : a.origin === 'user' ? '我修改的版本' : '上传的文件'}</span>
+              {a.submitted && <span className="chip st-ok" data-testid="pdf-submitted">实际提交版本</span>} <b>{a.label}</b>
+              <span className="muted small"> {a.languages.map((l) => (l === 'zh' ? '中' : '英')).join('/')} · {fmt(a.createdAt)}{x ? ` · ${(x.size / 1024).toFixed(0)} KB` : ''}</span>
+              <div className="row">{x && <><button className="link" onClick={() => openAtt(x, false)}>预览</button><button className="link" onClick={() => openAtt(x, true)}>下载</button></>}
+                {!a.submitted && <button className="link" onClick={async () => { await db.artifacts.where('applicationId').equals(a.applicationId).modify((y: ResumeArtifact) => { y.submitted = y.id === a.id; }); await load(); }}>设为实际提交版本</button>}
+                <button className="link danger" data-testid="pdf-delete" onClick={() => removePdf(a)}>删除</button></div>
+            </li>); })}
+            {!arts.some(isPdfArtifact) && <li className="muted" data-testid="no-pdf">还没有简历 PDF。{arts.some((a) => a.kind === 'snapshot') ? '可点下面「生成工具版 PDF」。' : '先在下面关联一份生成过的简历，会自动存放 PDF。'}</li>}
+          </ul>
+          <div className="row small">
+            <button data-testid="upload-submitted" onClick={() => subRef.current?.click()}>📤 上传我修改后的 PDF</button>
+            {(['zh', 'en'] as Lang[]).map((l) => <label key={l} className="check"><input type="checkbox" checked={upLangs.includes(l)} onChange={(e) => setUpLangs(e.target.checked ? [...upLangs, l] : upLangs.filter((x) => x !== l))} />{l === 'zh' ? '中文' : '英文'}</label>)}
+            <label className="check"><input type="checkbox" data-testid="replace-generated" checked={replaceGen} onChange={(e) => setReplaceGen(e.target.checked)} />同时删除工具生成的版本</label>
+            <input ref={subRef} data-testid="submitted-input" type="file" accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden onChange={(e) => e.target.files && uploadSubmitted(e.target.files)} />
+          </div>
+          {busy && <div className="muted small" data-testid="pdf-busy">⏳ {busy}</div>}
+
           <h4>关联的简历版本</h4>{app?.resumeVersionId && <p className="small" data-testid="shared-version-id">共同版本 ID：{app.resumeVersionId}</p>}
           <p className="muted small">关联时会保存当时简历和资料的完整快照；之后修改资料或重新生成，已投递的版本都不会改变。</p>
+          <div className="row small">
+            <select data-testid="link-pick" value={pickId} onChange={(e) => { setPickId(e.target.value); setPdfLangs(defaultPdfLangs(options.find((o) => o.resume.id === e.target.value)?.job)); }} style={{ maxWidth: 380 }}>
+              {!options.length && <option value="">（还没有生成过简历）</option>}
+              {options.map((o) => <option key={o.resume.id} value={o.resume.id}>{o.label}</option>)}
+            </select>
+            <span>存 PDF：</span>{(['zh', 'en'] as Lang[]).map((l) => <label key={l} className="check"><input type="checkbox" data-testid={`link-pdf-${l}`} checked={pdfLangs.includes(l)} onChange={(e) => setPdfLangs(e.target.checked ? [...pdfLangs, l] : pdfLangs.filter((x) => x !== l))} />{l === 'zh' ? '中文' : '英文'}</label>)}
+          </div>
           <div className="row">
-            <button data-testid="link-current" disabled={!resume} onClick={linkCurrent}>🔗 关联当前生成的简历{resume ? `（${fmt(resume.createdAt)}）` : ''}</button>
+            <button data-testid="link-current" disabled={!pickId && !resume || !!busy} onClick={linkCurrent}>🔗 关联这份简历</button>
+            {arts.some((a) => a.kind === 'snapshot') && <button data-testid="regen-pdf" disabled={!!busy || !pdfLangs.length} onClick={regenPdf}>🖨 生成工具版 PDF</button>}
             <button data-testid="to-generate" onClick={toGenerate}>✨ 用这个 JD 生成简历</button>
           </div>
-          <div className="row small"><span>上传实际提交的文件：</span>{(['zh', 'en'] as Lang[]).map((l) => <label key={l} className="check"><input type="checkbox" checked={upLangs.includes(l)} onChange={(e) => setUpLangs(e.target.checked ? [...upLangs, l] : upLangs.filter((x) => x !== l))} />{l === 'zh' ? '中文' : '英文'}</label>)}
-            <button data-testid="upload-submitted" onClick={() => subRef.current?.click()}>📤 上传 PDF / DOCX</button>
-            <input ref={subRef} data-testid="submitted-input" type="file" accept=".pdf,.docx,.doc,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden onChange={(e) => e.target.files && uploadSubmitted(e.target.files)} /></div>
-          <ul className="artifacts" data-testid="artifacts">{arts.map((a) => (
+          <ul className="artifacts" data-testid="artifacts">{arts.filter((a) => !isPdfArtifact(a)).map((a) => (
             <li key={a.id} data-testid="artifact">
-              {a.submitted && <span className="chip st-ok">实际提交版本</span>} <b>{a.label}</b> <span className="muted small">{a.languages.map((l) => (l === 'zh' ? '中' : '英')).join('/')} · {a.kind === 'snapshot' ? `快照 · 简历生成于 ${fmt(a.resumeCreatedAt)}` : '上传文件'} · 关联于 {fmt(a.createdAt)}</span>
-              <div className="row">{a.kind === 'snapshot' && <button className="link" onClick={() => exportSnapshot(a)}>按快照导出 PDF/Word</button>}
-                {a.kind === 'snapshot' && <button className="link" onClick={() => db.artifacts.update(a.id, { submitted: !a.submitted }).then(load)}>{a.submitted ? '取消「实际提交」标记' : '标记为实际提交版本'}</button>}
-                {a.attachmentId && <button className="link" onClick={() => { const x = atts.find((t) => t.id === a.attachmentId); if (x) openAtt(x, true); }}>下载文件</button>}</div>
-            </li>))}{!arts.length && <li className="muted">还没有关联简历</li>}</ul>
+              {a.submitted && <span className="chip st-ok">实际提交版本</span>} <b>{a.label}</b> <span className="muted small">{a.languages.map((l) => (l === 'zh' ? '中' : '英')).join('/')} · 快照 · 简历生成于 {fmt(a.resumeCreatedAt)} · 关联于 {fmt(a.createdAt)}</span>
+              <div className="row"><button className="link" onClick={() => exportSnapshot(a)}>按快照导出 PDF/Word</button>
+                <button className="link" onClick={() => db.artifacts.update(a.id, { submitted: !a.submitted }).then(load)}>{a.submitted ? '取消「实际提交」标记' : '标记为实际提交版本'}</button></div>
+            </li>))}{!arts.some((a) => !isPdfArtifact(a)) && <li className="muted">还没有关联简历</li>}</ul>
         </div>
       </div>
 

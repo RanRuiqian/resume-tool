@@ -58,7 +58,7 @@ with sync_playwright() as p:
     linked=pg.evaluate(DUMP,'resume-tool')['artifacts']
     chk('直接关联当前简历，快照内容保存且无事实审查门槛', pg.locator('[data-testid=artifact]').count()==1 and '事实审查' not in pg.locator('[data-testid=artifact]').first.inner_text() and linked[0]['kind']=='snapshot' and linked[0]['resume']['id']==d['resume']['id'] and linked[0]['resume']['items']==d['resume']['items'])
     pg.set_input_files('[data-testid=submitted-input]',os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','fixtures','files','Mock_Vision_Engineer_CN.pdf')); pg.wait_for_timeout(500)
-    chk('上传实际提交的 PDF，标记为实际提交版本', '实际提交版本' in pg.locator('[data-testid=artifacts]').inner_text() and 'Mock_Vision_Engineer_CN.pdf' in pg.locator('[data-testid=artifacts]').inner_text())
+    chk('上传实际提交的 PDF，标记为实际提交版本（替换工具生成版）', '实际提交版本' in pg.locator('[data-testid=resume-pdfs]').inner_text() and 'Mock_Vision_Engineer_CN.pdf' in pg.locator('[data-testid=resume-pdfs]').inner_text() and '我修改的版本' in pg.locator('[data-testid=resume-pdfs]').inner_text() and '工具生成' not in pg.locator('[data-testid=resume-pdfs]').inner_text())
     pg.set_input_files('[data-testid=att-input]',os.path.join(os.path.dirname(os.path.abspath(__file__)),'..','fixtures','files','jd_screenshot_mock.png')); pg.wait_for_timeout(500)
     chk('拖入 / 选择附件保存到本机（含 SHA-256）', pg.locator('[data-testid=attachment-row]').count()==2 and 'SHA-256' in pg.locator('[data-testid=attachments-card]').inner_text())
     pg.locator('[data-testid=resume-card]').screenshot(path=S+'p4_resume_link.png')
@@ -76,7 +76,7 @@ with sync_playwright() as p:
     pg.click('[data-testid=to-generate]'); pg.wait_for_selector('[data-testid=tracker-return]')
     chk('从岗位进入生成流程：JD 已预填', '工业缺陷检测算法' in pg.locator('textarea').first.input_value())
     pg.click('[data-testid=link-back]'); pg.wait_for_selector('[data-testid=posting-detail]')
-    chk('生成后一键关联并返回岗位', pg.locator('[data-testid=artifact]').count()==3)
+    chk('生成后一键关联并返回岗位（快照 + 自动存工具版 PDF）', pg.locator('[data-testid=artifact]').count()==2 and '工具生成' in pg.locator('[data-testid=resume-pdfs]').inner_text())
     # 导入 CSV
     nav('applications/import'); pg.set_input_files('[data-testid=import-file]', FX+'applications-mock.csv'); pg.wait_for_selector('[data-testid=import-preview]')
     kinds=pg.locator('[data-testid=import-row]').evaluate_all('e=>e.map(x=>x.dataset.kind)'); print('kinds',kinds)

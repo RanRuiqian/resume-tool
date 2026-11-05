@@ -70,7 +70,7 @@ with sync_playwright() as p:
     pg.set_input_files('[data-testid=att-input]', FILES['png']); pg.wait_for_timeout(400)
     hist=pg.locator('[data-testid=history] li').all_inner_texts()
     chk('手动更新状态：历史 2 条且顺序正确', len(hist)==2 and '已投递' in hist[0] and '面试中' in hist[1])
-    chk('PDF（实际提交）、DOCX、图片附件均已保存', pg.locator('[data-testid=attachment-row]').count()==3 and '实际提交版本' in pg.locator('[data-testid=artifacts]').inner_text())
+    chk('PDF（实际提交）、DOCX、图片附件均已保存', pg.locator('[data-testid=attachment-row]').count()==3 and '实际提交版本' in pg.locator('[data-testid=resume-pdfs]').inner_text())
     before=pg.evaluate(DUMP,'resume-tool')
     sha={a['name']:a['sha256'] for a in before['attachments']}
     chk('附件 SHA-256 与原文件一致', all(sha[os.path.basename(f)]==hashlib.sha256(open(f,'rb').read()).hexdigest() for f in FILES.values()))

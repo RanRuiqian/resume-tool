@@ -281,3 +281,16 @@ ExportDialog 导出 zip 后显示「中文/英文 PDF（保存/分享）」按�
 - **联系方式链接**：第三步“姓名下方一行”下面新增“链接”行（GitHub / 领英 / 作品集网站：勾选 + 输入框，`data-testid=link-*` / `link-show-*`）。输入写进资料库 contacts，并自动勾选显示（写 `resume.contactVisibility`）。版面里显示去掉 `https://` 和 `www.`（`shortUrl`），点击地址补全 https（`toHref`）。`LayoutModel.header.hrefs` 与 `contacts` 同序；PDF 用 `<Link>`、Word 用 `ExternalHyperlink`、预览用 `<a>`。测试 `tests/contactLinks2026_11.test.ts`；旧测试 `coursesV113` 改为期望短显示。
 - 验证：vitest 715/715，tsc 干净，浏览器实测（填链接→预览显示→zip 只勾中文 PDF 只出 1 个文件，PDF 里 2 个可点击链接），回归 e2e `resume_workspace_e2e` 25/25、`career_kit_e2e` 10/10。
 - 未做：个人作品集网站（见与负责人的讨论，建议 V2 单独立项）。
+
+### 2.23 「记录投递」+ 岗位详情「简历 PDF」区（2026-11-05，负责人需求）
+- **入口**：求职投递 → 「📝 记录投递」（路由 `#applications/record`，`components/tracker/QuickRecord.tsx`）。原「新增岗位」改名「手动新增岗位」，保留作兜底。
+- **截图 → 字段**（`tracker/quickRecord.ts`）：拖入 / 选择 / Ctrl+V 粘贴，可多张；一张截图一条草稿，同公司同岗位的截图自动合并。
+  - 识别用哪套 API：页面上的「截图识别用」下拉，只列 **有看图模型且填了 Key** 的配置 + 「本机文字识别」。默认：上次选择 → 当前启用配置（若有看图模型）→ 第一套有看图模型的配置 → 本机。选择存 `uiStorage.applyOcrProfile`。用的是哪套配置在下拉里明示（不是悄悄用别的 Key）。
+  - 看图模型一次出 JSON 字段（`visionApplyFields`）；失败或没识别出公司 / 岗位 → 本机 OCR（tesseract）+ 当前配置的文字模型整理（`extractApplyFields`），无 Key 则纯规则（`parseApplyRules`）。规则：只取截图里写明的内容；「截止日期 / 有效期」行不当投递时间；只有月日时按今天推断年份且不落在未来。
+  - 识别后按公司（+岗位）自动匹配历史简历（`matchResume`，公司必须对得上）。
+- **选简历**：`listGeneratedResumes` 列出 `db.resumes` 全部（新→旧，附岗位分析）。选中后公司 / 岗位 / JD / jobParseId 从岗位分析带入（截图有的以截图为准，`draftPosting`）。也可「没有截图，直接选简历新建一条」，此时自动加待办「补上传投递成功截图（可选）」。
+- **保存**（`recordApplication`）：重复岗位（同链接 / 同公司同岗位同城市 / 同一 jobParseId / 同公司同岗位且一边没写城市）默认「合并到已有」，只补空字段；已有申请在「待筛选 / 收藏 / 待投递 / 准备材料」→ 改为已投递（追加历史），已投递及之后不动，已结束 → 另建一次申请。截图存为 `apply-proof` 附件；关联简历快照；生成并存放工具版 PDF（默认语言：英文 JD → 英文，其余中文；可勾选）。
+- **简历 PDF 区**（`PostingDetail.tsx` 的 resume-card）：`ResumeArtifact.origin?: 'generated' | 'user'`（新增可选字段，旧数据为空显示「上传的文件」，备份恢复无需改动）。默认存工具生成 PDF；「上传我修改后的 PDF」默认勾选「同时删除工具生成的版本」；以最后放入的为「实际提交版本」（`storeResumePdfs`）；删除实际提交版本时最新一份接替（`removeResumePdf`）；有快照时可「生成工具版 PDF」。「关联这份简历」现在可从下拉选任意历史简历，并自动存 PDF；生成页的「关联当前简历并返回该岗位」也会自动存 PDF。PDF 生成走 `tracker/resumePdf.ts`（与下载同一套排版 / 自动适配，用当前版式模板）。
+- 时间显示修正：详情页的投递时间 / 附件时间 / 状态历史原来直接截 UTC 字符串（比北京时间早 8 小时），改为 `localStamp` 按本地时间显示。
+- 测试：`tests/quickRecord2026_11.test.ts`（12 条）；e2e `tests/e2e/quick_record_e2e.py`（看图路径用拦截的假接口、本机识别路径用真实 tesseract，33/33）；`tracker_e2e` 33/33、`release_e2e` 35/35（两处断言改为新「简历 PDF」区）、`resume_workspace_e2e` 25/25、`career_kit_e2e` 10/10；vitest 727/727。
+- 待负责人用真实截图确认：通义千问看图模型对真实招聘网站截图的识别准确度。
